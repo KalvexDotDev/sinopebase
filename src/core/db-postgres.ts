@@ -11,26 +11,42 @@ import type { DatabaseSchema } from './db'
 
 export interface PostgresConfig {
   postgresUrl: string
+  /** Optional read replica URL — SELECT queries route here when configured */
+  readReplicaUrl?: string
   maxPoolSize?: number
 }
 
 /**
- * PostgreSQL database wrapper with the same interface as MemoryDatabase
- * so it can be dropped in as a replacement.
+ * PostgreSQL database wrapper with optional read replica support.
+ * When a readReplicaUrl is configured, SELECT and COUNT queries are routed
+ * to the replica pool while writes go to the primary.
  */
 export class PostgresDatabase {
-  private kysely: Kysely<DatabaseSchema>
-  private pool: pg.Pool
+  private writer: Kysely<DatabaseSchema>
+  private reader: Kysely<DatabaseSchema>
+  private writerPool: pg.Pool
+  private readerPool: pg.Pool | null = null
 
   constructor(private config: PostgresConfig) {
-    this.pool = new pg.Pool({
+    this.writerPool = new pg.Pool({
       connectionString: config.postgresUrl,
       max: config.maxPoolSize ?? 10,
     })
-    const dialect = new PostgresDialect({
-      pool: this.pool,
+    this.writer = new Kysely<DatabaseSchema>({
+      dialect: new PostgresDialect({ pool: this.writerPool }),
     })
-    this.kysely = new Kysely<DatabaseSchema>({ dialect })
+
+    if (config.readReplicaUrl) {
+      this.readerPool = new pg.Pool({
+        connectionString: config.readReplicaUrl,
+        max: config.maxPoolSize ?? 10,
+      })
+      this.reader = new Kysely<DatabaseSchema>({
+        dialect: new PostgresDialect({ pool: this.readerPool }),
+      })
+    } else {
+      this.reader = this.writer // fallback to primary
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -38,16 +54,29 @@ export class PostgresDatabase {
   // -----------------------------------------------------------------------
 
   async connect(): Promise<void> {
-    await sql`SELECT 1`.execute(this.kysely)
+    await sql`SELECT 1`.execute(this.writer)
+    if (this.readerPool) {
+      await sql`SELECT 1`.execute(this.reader)
+    }
   }
 
   async close(): Promise<void> {
-    await this.kysely.destroy()
-    await this.pool.end()
+    await this.writer.destroy()
+    await this.writerPool.end()
+    if (this.readerPool) {
+      await this.reader.destroy()
+      await this.readerPool.end()
+    }
   }
 
-  /** Expose the underlying pg.Pool for direct use (e.g. by better-auth). */
-  getPool(): pg.Pool { return this.pool }
+  /** Expose the writer pg.Pool for direct use (e.g. by better-auth). */
+  getPool(): pg.Pool { return this.writerPool }
+
+  /** Expose the reader Kysely for read-only queries. */
+  getReader(): Kysely<DatabaseSchema> { return this.reader }
+
+  /** Expose the writer Kysely. */
+  getWriter(): Kysely<DatabaseSchema> { return this.writer }
 
   // -----------------------------------------------------------------------
   // Table management
@@ -61,7 +90,7 @@ export class PostgresDatabase {
         is_complete BOOLEAN DEFAULT false,
         user_id TEXT
       )
-    `.execute(this.kysely)
+    `.execute(this.writer)
   }
 
   async hasTable(table: string): Promise<boolean> {
@@ -70,12 +99,12 @@ export class PostgresDatabase {
         SELECT FROM information_schema.tables
         WHERE table_name = ${table}
       )
-    `.execute(this.kysely)
+    `.execute(this.writer)
     return (result.rows[0] as { exists: boolean })?.exists ?? false
   }
 
   async dropTable(table: string): Promise<void> {
-    await sql`DROP TABLE IF EXISTS ${sql.table(table)}`.execute(this.kysely)
+    await sql`DROP TABLE IF EXISTS ${sql.table(table)}`.execute(this.writer)
   }
 
   // -----------------------------------------------------------------------
@@ -85,7 +114,7 @@ export class PostgresDatabase {
   async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     const id = record['id'] ?? crypto.randomUUID()
     const data = { ...record, id }
-    await this.kysely
+    await this.writer
       .insertInto(table as never)
       .values(data as never)
       .execute()
@@ -95,7 +124,7 @@ export class PostgresDatabase {
   async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     const id = record['id'] ?? crypto.randomUUID()
     const data = { ...record, id }
-    await this.kysely
+    await this.writer
       .insertInto(table as never)
       .values(data as never)
       .onConflict((oc) => oc.column('id').doUpdateSet(data as never))
@@ -110,7 +139,7 @@ export class PostgresDatabase {
     limit?: number,
     offset?: number,
   ): Promise<Record<string, unknown>[]> {
-    let query = this.kysely.selectFrom(table as never).selectAll()
+    let query = this.reader.selectFrom(table as never).selectAll()
 
     for (const filter of filters) {
       query = this.applyFilter(query as never, filter) as never
@@ -134,7 +163,7 @@ export class PostgresDatabase {
     filters: Filter[],
     data: Record<string, unknown>,
   ): Promise<Record<string, unknown>[]> {
-    let query = this.kysely.updateTable(table as never).set(data as never)
+    let query = this.writer.updateTable(table as never).set(data as never)
 
     for (const filter of filters) {
       query = this.applyFilter(query as never, filter) as never
@@ -148,7 +177,7 @@ export class PostgresDatabase {
     table: string,
     filters: Filter[],
   ): Promise<Record<string, unknown>[]> {
-    let query = this.kysely.deleteFrom(table as never)
+    let query = this.writer.deleteFrom(table as never)
 
     for (const filter of filters) {
       query = this.applyFilter(query as never, filter) as never
@@ -162,7 +191,7 @@ export class PostgresDatabase {
     table: string,
     filters: Filter[] = [],
   ): Promise<number> {
-    let query = this.kysely
+    let query = this.reader
       .selectFrom(table as never)
       .select(sql<number>`count(*)`.as('count'))
 
@@ -179,9 +208,9 @@ export class PostgresDatabase {
   // -----------------------------------------------------------------------
 
   private applyFilter(
-    query: ReturnType<typeof this.kysely.selectFrom>,
+    query: ReturnType<typeof this.writer.selectFrom>,
     filter: Filter,
-  ): ReturnType<typeof this.kysely.selectFrom> {
+  ): ReturnType<typeof this.writer.selectFrom> {
     const col = filter.column as never
 
     switch (filter.operator) {
