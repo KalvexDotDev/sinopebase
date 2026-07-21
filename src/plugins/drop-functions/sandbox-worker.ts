@@ -1,15 +1,17 @@
 // ---------------------------------------------------------------------------
 // DropFunctions — Sandbox Worker (Bun Worker isolate)
 //
-// This file runs inside a separate Bun Worker thread with restricted globals.
-// It receives function metadata via postMessage, dynamically imports the user's
-// edge function, calls it with a reconstructed Request, and posts the result
-// back to the parent thread.
+// Runs inside a dedicated Bun Worker thread. Receives invocation data via
+// postMessage, dynamically imports the user's edge function, calls it with a
+// reconstructed Request, and posts the result/error back to the parent.
+//
+// Types are inlined because import paths don't resolve from Blob URL workers.
 // ---------------------------------------------------------------------------
 
-import type { SandboxMessage } from '../types'
+type SandboxMessage =
+  | { type: 'result'; data: unknown }
+  | { type: 'error'; error: string; stack?: string }
 
-/** Data received from the parent thread when the worker is started. */
 interface WorkerData {
   filePath: string
   serializedReq: {
@@ -55,9 +57,19 @@ self.onmessage = async (event: MessageEvent<WorkerData>) => {
     // Execute the handler and capture the result
     const result = await handler(request, ctx)
 
-    // Post success back to the parent thread
-    const message: SandboxMessage = { type: 'result', data: result }
-    self.postMessage(message)
+    // Response objects are not structured-cloneable — serialize them
+    if (result instanceof Response) {
+      const serialized = {
+        __response: true,
+        status: result.status,
+        statusText: result.statusText,
+        headers: Object.fromEntries(result.headers.entries()),
+        body: await result.text(),
+      }
+      self.postMessage({ type: 'result', data: serialized } as SandboxMessage)
+    } else {
+      self.postMessage({ type: 'result', data: result } as SandboxMessage)
+    }
   } catch (err) {
     // Post error back to the parent thread
     const message: SandboxMessage = {

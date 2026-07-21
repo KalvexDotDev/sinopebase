@@ -16,6 +16,7 @@ import {
   parseWindow,
 } from '../middleware'
 import type { FunctionModule } from '../types'
+import { executeInSandbox } from '../sandbox'
 
 /**
  * Create the function execution route group.
@@ -112,26 +113,14 @@ export function createExecuteRoutes(
         body: request.body ? await request.text() : '',
       }
 
-      // Build a real Request for the function handler
-      const fnRequest = new Request(request.url, {
-        method: serialisedReq.method || 'GET',
-        headers: new Headers(serialisedReq.headers || {}),
-        body: serialisedReq.body && serialisedReq.method !== 'GET'
-          ? serialisedReq.body
-          : undefined,
-      })
-
-      // Execute the function with timeout
+      // Execute the function in an isolated Bun Worker with timeout
       try {
-        const result = await Promise.race([
-          handler(fnRequest, ctx),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error(`Function execution timed out after ${resolvedConfig.timeout}ms`)),
-              resolvedConfig.timeout,
-            ),
-          ),
-        ])
+        const result = await executeInSandbox(
+          filePath,
+          serialisedReq,
+          JSON.parse(JSON.stringify(ctx)),
+          { timeout: resolvedConfig.timeout },
+        )
 
         // If the function returns a Response object, forward it directly
         if (result instanceof Response) {
