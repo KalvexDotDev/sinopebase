@@ -253,13 +253,14 @@ describe('FieldsList', () => {
     expect(list.getByName('title')).toBeDefined()
   })
 
-  it('fromJSON skips unknown types', () => {
+  it('fromJSON creates generic fallback for unknown types', () => {
     const json = [
       { type: 'unknown_type', name: 'bad', id: 'fld1' },
       { type: 'text', name: 'good', id: 'fld2' },
     ]
     const list = FieldsList.fromJSON(json)
-    expect(list.length).toBe(1)
+    expect(list.length).toBe(2) // unknown type preserved as generic field
+    expect(list.getByName('bad')).toBeDefined()
     expect(list.getByName('good')).toBeDefined()
   })
 

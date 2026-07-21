@@ -492,6 +492,9 @@ export class Record extends BaseModel {
       }
     }
 
+    // Always include the id
+    result[FieldNameId] = this.id
+
     // Add helper collection reference fields
     result[FieldNameCollectionId] = this.collection.id
     result[FieldNameCollectionName] = this.collection.name

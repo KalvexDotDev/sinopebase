@@ -306,6 +306,12 @@ export class FieldsList {
           ;(field as Record<string, unknown>)[key] = item[key]
         }
         list.add(field)
+      } else {
+        // Fallback: create a generic field object for unregistered types
+        const genericField: Record<string, unknown> = { ...item }
+        if (Object.keys(genericField).length > 0) {
+          list.add(genericField as import('~/core/field.ts').Field)
+        }
       }
     }
 
