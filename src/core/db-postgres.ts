@@ -46,6 +46,9 @@ export class PostgresDatabase {
     await this.pool.end()
   }
 
+  /** Expose the underlying pg.Pool for direct use (e.g. by better-auth). */
+  getPool(): pg.Pool { return this.pool }
+
   // -----------------------------------------------------------------------
   // Table management
   // -----------------------------------------------------------------------

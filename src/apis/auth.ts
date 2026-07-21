@@ -13,6 +13,7 @@ import {
   generateRefreshToken,
   ACCESS_TOKEN_EXPIRES_IN,
 } from './auth-jwt'
+import { bridgeSignInResponse, bridgeGetUserResponse, bridgeErrorResponse } from '~/tools/auth-better/supabase-bridge'
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -215,3 +216,114 @@ export const authPlugin = new Elysia()
   )
 
 export { sessionResponse, userResponse, errorResponse }
+
+export function createAuthPlugin(auth: any) {
+  return new Elysia()
+    .post('/auth/v1/signup', async ({ body, set }) => {
+      const { email, password } = body as { email: string; password: string }
+      if (!email || !password) {
+        set.status = 400
+        return errorResponse('Email and password are required', 400)
+      }
+      try {
+        // Sign up via better-auth, then sign in to get a session token
+        await auth.api.signUpEmail({ body: { email, password, name: '' } })
+        const signInResult = await auth.api.signInEmail({ body: { email, password } })
+        return bridgeSignInResponse(signInResult)
+      } catch (err: any) {
+        set.status = 400
+        return errorResponse(err?.message || 'Signup failed', 400)
+      }
+    })
+    .post('/auth/v1/token', async ({ body, query, set }) => {
+      const grantType = (query as any)?.grant_type as string | undefined
+      if (grantType === 'password') {
+        const { email, password } = body as { email: string; password: string }
+        if (!email || !password) {
+          set.status = 400
+          return errorResponse('Invalid login credentials', 400)
+        }
+        try {
+          const result = await auth.api.signInEmail({ body: { email, password } })
+          return bridgeSignInResponse(result)
+        } catch (err: any) {
+          set.status = 400
+          return errorResponse(err?.message || 'Invalid login credentials', 400)
+        }
+      }
+      if (grantType === 'refresh_token') {
+        const { refresh_token } = body as { refresh_token?: string }
+        if (!refresh_token) {
+          set.status = 400
+          return errorResponse('Invalid refresh token', 400)
+        }
+        try {
+          // Validate the session token via direct DB query
+          const db = (auth as any).__db
+          const sessions = await db
+            .selectFrom('session')
+            .innerJoin('user', 'session.userId', 'user.id')
+            .select(['user.id', 'user.email', 'user.emailVerified', 'user.name', 'user.image', 'user.role', 'user.createdAt', 'user.updatedAt'])
+            .where('session.token', '=', refresh_token)
+            .where('session.expiresAt', '>', new Date())
+            .execute()
+          if (sessions.length === 0) {
+            set.status = 400
+            return errorResponse('Invalid refresh token', 400)
+          }
+          const row = sessions[0]!
+          return bridgeSignInResponse({ token: refresh_token, user: row })
+        } catch {
+          set.status = 400
+          return errorResponse('Invalid refresh token', 400)
+        }
+      }
+      set.status = 400
+      return errorResponse('Invalid grant type', 400)
+    })
+    .post('/auth/v1/logout', async ({ headers }) => {
+      const authHeader = headers.authorization
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice(7).trim()
+        await auth.api.signOut({ headers: new Headers({ Authorization: 'Bearer ' + token }) }).catch(() => {})
+      }
+      return { error: null }
+    })
+    .get('/auth/v1/user', async ({ headers, set }) => {
+      const authHeader = headers.authorization
+      if (!authHeader?.startsWith('Bearer ')) {
+        set.status = 401
+        return { message: 'Invalid authorization header' }
+      }
+      const token = authHeader.slice(7).trim()
+      if (!token) {
+        set.status = 401
+        return { message: 'Invalid authorization header' }
+      }
+      // better-auth's getSession is cookie-based, so we query the DB directly
+      // for Bearer token validation.
+      try {
+        const db = (auth as any).__db
+        const sessions = await db
+          .selectFrom('session')
+          .innerJoin('user', 'session.userId', 'user.id')
+          .select(['user.id', 'user.email', 'user.emailVerified', 'user.name', 'user.image', 'user.role', 'user.createdAt', 'user.updatedAt'])
+          .where('session.token', '=', token)
+          .where('session.expiresAt', '>', new Date())
+          .execute()
+        if (sessions.length === 0) {
+          set.status = 401
+          return { message: 'Invalid token' }
+        }
+        const row = sessions[0]!
+        const response = bridgeGetUserResponse({ user: row })
+        if (response.error) {
+          set.status = response.error.status
+        }
+        return response
+      } catch {
+        set.status = 401
+        return { message: 'Invalid authorization header' }
+      }
+    })
+}

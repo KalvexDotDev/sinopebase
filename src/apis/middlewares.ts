@@ -259,6 +259,47 @@ export function loadAuthToken() {
   }
 }
 
+/**
+ * Drop-in for loadAuthToken() that resolves the token via a Better Auth
+ * server instance instead of local JWT decoding.
+ *
+ * Calls `auth.api.getSession()` with the bearer token and populates
+ * `ctx.store.auth` with a shape compatible with `requireAuth()`:
+ * `{ id, email, collection, collectionId, role }`.
+ *
+ * If the token is missing or invalid the middleware silently continues,
+ * exactly like `loadAuthToken()`.
+ */
+export function loadAuthTokenWithBetterAuth(auth: any) {
+  return async (ctx: {
+    request: Request
+    store: Record<string, unknown>
+  }): Promise<void> => {
+    if (ctx.store['auth'] != null) return
+    const authHeader = ctx.request.headers.get('authorization') ?? ''
+    const token = authHeader.length > 7 && authHeader.slice(0, 7).toLowerCase() === 'bearer '
+      ? authHeader.slice(7)
+      : authHeader
+    if (!token) return
+    try {
+      const result = await auth.api.getSession({
+        headers: new Headers({ authorization: 'Bearer ' + token }),
+      })
+      if (result && result.user) {
+        ctx.store['auth'] = {
+          id: result.user.id,
+          email: result.user.email,
+          collection: result.user.role || 'authenticated',
+          collectionId: result.user.role || 'authenticated',
+          role: result.user.role || 'authenticated',
+        }
+      }
+    } catch {
+      // Silently ignore invalid tokens
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // activityLogger — log API requests
 // ---------------------------------------------------------------------------

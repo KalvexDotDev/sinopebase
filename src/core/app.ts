@@ -480,7 +480,8 @@ export interface App {
 
 import { Elysia } from 'elysia'
 import { createRealtimeWebSocketHandler } from '../apis/realtime'
-import { authPlugin } from '../apis/auth'
+import { authPlugin, createAuthPlugin } from '../apis/auth'
+import { createAuth } from '../tools/auth-better'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { MemoryDatabase } from './db-memory'
 import { PostgresDatabase } from './db-postgres'
@@ -517,6 +518,7 @@ export class Sinopebase {
   private server: Elysia | null = null
   private db: IDatabase | null = null
   private fileStore: IFileStore | null = null
+  private auth: any = null
 
   constructor(config: AppConfig) {
     this.config = {
@@ -549,6 +551,16 @@ export class Sinopebase {
       await pg.connect()
       this.db = pg
       console.log('Database: PostgreSQL connected')
+
+      // Initialize better-auth with PostgreSQL
+      try {
+        const pool = pg.getPool()
+        this.auth = await createAuth(pool, { jwtSecret: this.config.jwtSecret })
+        console.log('Auth: better-auth initialized (PostgreSQL)')
+      } catch (err) {
+        console.warn('Auth: better-auth init failed, falling back to in-memory:', (err as Error).message)
+        this.auth = null
+      }
     } else {
       this.db = new MemoryDatabase()
       console.log('Database: in-memory (no POSTGRES_URL set)')
@@ -559,10 +571,28 @@ export class Sinopebase {
     const s3AccessKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
     const s3SecretKey = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
     if (s3Endpoint && s3AccessKey && s3SecretKey) {
+      // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
+      // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
+      let host = s3Endpoint
+      let port = 9000
+      let useSSL = false
+      try {
+        const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
+        host = url.hostname
+        if (url.port) port = Number(url.port)
+        useSSL = url.protocol === 'https:'
+      } catch {
+        // Fallback: treat as bare host:port
+        const parts = s3Endpoint.split(':')
+        host = parts[0] ?? s3Endpoint
+        if (parts[1]) port = Number(parts[1])
+      }
       this.fileStore = new S3FileStore({
-        endpoint: s3Endpoint,
+        endpoint: host,
+        port,
         accessKey: s3AccessKey,
         secretKey: s3SecretKey,
+        useSSL,
       })
       console.log(`Storage: S3 (${this.config.minioEndpoint})`)
     } else {
@@ -586,7 +616,7 @@ export class Sinopebase {
       .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler())
 
       // ── Auth — /auth/v1/* ──
-      .use(authPlugin)
+      .use(this.auth ? createAuthPlugin(this.auth) : authPlugin)
 
       // ── PostgREST routes ──
     mountPostgrestRoutes(this.server, this.db)
@@ -638,6 +668,9 @@ export class Sinopebase {
   getConfig(): AppConfig {
     return { ...this.config }
   }
+
+  /** Expose the better-auth instance (null if in-memory mode). */
+  getAuth(): any { return this.auth }
 
   /**
    * Create required tables in the in-memory database.
