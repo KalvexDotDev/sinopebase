@@ -1,0 +1,44 @@
+# Sinopebase development infrastructure
+# Start with: docker compose up -d
+# Stop with:  docker compose down
+
+services:
+  # PostgreSQL 18 — database backend
+  postgres:
+    image: postgres:18.4-alpine
+    container_name: sinopebase-pg
+    environment:
+      POSTGRES_USER: sinopebase
+      POSTGRES_PASSWORD: sinopebase
+      POSTGRES_DB: sinopebase
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sinopebase']
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  # RustFS — S3-compatible object storage (Apache 2.0, MinIO alternative)
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: sinopebase-storage
+    environment:
+      RUSTFS_ROOT_USER: rustfsadmin
+      RUSTFS_ROOT_PASSWORD: rustfsadmin
+    ports:
+      - '9000:9000'  # S3 API
+      - '9001:9001'  # Web console
+    volumes:
+      - storagedata:/data
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:9000/health']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  storagedata:

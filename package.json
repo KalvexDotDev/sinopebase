@@ -1,0 +1,41 @@
+{
+  "name": "sinopebase",
+  "version": "0.0.0",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "compile": "bun build src/index.ts --compile --outfile sinopebase",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "lint": "biome check src/ tests/",
+    "format": "biome format --write src/ tests/",
+    "typecheck": "bun run tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./sdk": "./src/sdk/client.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/ws": "^8.18.1",
+    "biome": "^0.3.3",
+    "bun-types": "^1.3.14"
+  },
+  "peerDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52",
+    "adm-zip": "^0.6.0",
+    "better-auth": "^1.6.23",
+    "elysia": "^1.4.29",
+    "kysely": "^0.29.4",
+    "minio": "^8.0.7",
+    "pg": "^8.22.0",
+    "randexp": "^0.5.3",
+    "ws": "^8.21.1"
+  }
+}
