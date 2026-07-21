@@ -481,6 +481,7 @@ export interface App {
 import { Elysia } from 'elysia'
 import { createRealtimeWebSocketHandler } from '../apis/realtime'
 import { authPlugin, createAuthPlugin } from '../apis/auth'
+import { verifyAccessToken } from '../apis/auth-jwt'
 import { createAuth } from '../tools/auth-better'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { MemoryDatabase } from './db-memory'
@@ -611,6 +612,19 @@ export class Sinopebase {
     await this.ensureTables()
 
     this.server = new Elysia()
+      // ── Security middleware ──
+      .onError(({ error, set }) => {
+        console.error('[PANIC RECOVER]', error.message, (error.stack ?? '').slice(0, 2048))
+        set.status = 500
+        return { message: 'Internal server error', code: '500' }
+      })
+      .onRequest(({ set }) => {
+        set.headers['x-xss-protection'] = '1; mode=block'
+        set.headers['x-content-type-options'] = 'nosniff'
+        set.headers['x-frame-options'] = 'SAMEORIGIN'
+        set.headers['referrer-policy'] = 'strict-origin-when-cross-origin'
+      })
+
       // Health check
       .get('/api/health', () => ({
         code: 200,
@@ -624,6 +638,45 @@ export class Sinopebase {
 
       // ── Auth — /auth/v1/* ──
       .use(this.auth ? createAuthPlugin(this.auth) : authPlugin)
+
+      // ── Auth guard for /rest/v1/* and /storage/v1/* ──
+      .onRequest(async ({ request, set }) => {
+        const url = new URL(request.url)
+        if (url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/storage/v1/')) {
+          // Skip auth for OPTIONS preflight
+          if (request.method === 'OPTIONS') return
+          const authHeader = request.headers.get('authorization') ?? ''
+          const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
+          if (!token) {
+            set.status = 401
+            return { message: 'Authorization required', code: '401' }
+          }
+          // Validate the token
+          try {
+            if (this.auth) {
+              // better-auth: lookup session directly
+              const db = (this.auth as any).__db
+              if (db) {
+                const sessions = await db
+                  .selectFrom('session')
+                  .where('session.token', '=', token)
+                  .where('session.expiresAt', '>', new Date())
+                  .execute()
+                if (sessions.length === 0) {
+                  set.status = 401
+                  return { message: 'Invalid authorization token', code: '401' }
+                }
+              }
+            } else {
+              // In-memory: verify JWT signature
+              await verifyAccessToken(token)
+            }
+          } catch {
+            set.status = 401
+            return { message: 'Invalid authorization token', code: '401' }
+          }
+        }
+      })
 
       // ── PostgREST routes ──
     mountPostgrestRoutes(this.server, this.db)

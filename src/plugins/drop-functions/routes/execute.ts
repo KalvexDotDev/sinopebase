@@ -30,6 +30,12 @@ export function createExecuteRoutes(
     .all('/api/functions/v1/:name', async ({ request, params, set, headers }) => {
       const functionName = params.name
 
+      // Prevent path traversal — only allow alphanumeric, hyphens, underscores
+      if (!/^[a-zA-Z0-9_-]+$/.test(functionName)) {
+        set.status = 400
+        return { error: 'Invalid function name', status: 400 }
+      }
+
       // Rate limiting
       const ip = headers['x-forwarded-for'] as string
         || headers['x-real-ip'] as string

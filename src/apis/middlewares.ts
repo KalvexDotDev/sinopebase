@@ -18,6 +18,7 @@
 
 import type { Elysia } from 'elysia'
 import { ParseUnverifiedJWT } from '~/tools/security/jwt'
+import { verifyAccessToken } from './auth-jwt'
 import {
   ApiError,
   BadRequestError,
@@ -98,7 +99,7 @@ export function requireAuth(...optCollectionNames: string[]) {
     }
 
     try {
-      const payload = ParseUnverifiedJWT(token)
+      const payload = await verifyAccessToken(token)
 
       // Store the decoded token payload so downstream handlers can read auth context
       ctx.store['auth'] = payload
@@ -144,7 +145,7 @@ export function requireSuperuserOrOwnerAuth(ownerIdPathParam = 'id') {
     }
 
     try {
-      const payload = ParseUnverifiedJWT(token)
+      const payload = await verifyAccessToken(token)
       ctx.store['auth'] = payload
 
       const coll = (payload['collection'] as string) ?? ''
@@ -181,7 +182,7 @@ export function requireSameCollectionContextAuth(collectionParam = 'collection')
     }
 
     try {
-      const payload = ParseUnverifiedJWT(token)
+      const payload = await verifyAccessToken(token)
       ctx.store['auth'] = payload
 
       const tokenCollectionId =
@@ -191,7 +192,7 @@ export function requireSameCollectionContextAuth(collectionParam = 'collection')
       // In PocketBase this resolves FindCachedCollectionByNameOrId
       const routeCollection = ctx.params[collectionParam] ?? ''
 
-      if (tokenCollectionId !== routeCollection && tokenCollectionId !== routeCollection) {
+      if (tokenCollectionId !== routeCollection) {
         throw new ForbiddenError(
           `The request requires auth record from ${payload['collection'] ?? 'the specified'} collection.`,
         )
@@ -215,7 +216,7 @@ export function requireGuestOnly() {
     const token = getAuthTokenFromRequest(ctx.request)
     if (token) {
       try {
-        ParseUnverifiedJWT(token)
+        await verifyAccessToken(token)
         throw new BadRequestError('The request can be accessed only by guests.')
       } catch (err) {
         if (err instanceof BadRequestError) throw err
@@ -251,7 +252,7 @@ export function loadAuthToken() {
     if (!token) return
 
     try {
-      const payload = ParseUnverifiedJWT(token)
+      const payload = await verifyAccessToken(token)
       ctx.store['auth'] = payload
     } catch {
       // Silently ignore — invalid/expired token

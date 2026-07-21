@@ -173,10 +173,20 @@ export const authPlugin = new Elysia()
 
   .post(
     '/auth/v1/logout',
-    async () => {
-      // The SDK clears the local session on the client side.
-      // Server-side, we don't receive the user's JWT from the SDK's current
-      // implementation, so we just acknowledge the request.
+    async ({ headers }) => {
+      // Invalidate the user's refresh tokens if a Bearer token is provided
+      const authHeader = headers.authorization
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice(7).trim()
+        if (token) {
+          try {
+            const payload = await verifyAccessToken(token)
+            authStore.removeAllRefreshTokensForUser(payload.sub)
+          } catch {
+            // Token invalid — still acknowledge logout
+          }
+        }
+      }
       return { error: null }
     },
   )

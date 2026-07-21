@@ -24,6 +24,7 @@ describe('DropFunctions Plugin', () => {
   let app: Sinopebase
   let baseUrl: string
   let plugin: DropFunctionsPlugin
+  let authToken = ''
 
   beforeAll(async () => {
     cleanupTestFunctions()
@@ -67,6 +68,16 @@ describe('DropFunctions Plugin', () => {
     await plugin.register(app['server'] as any, (app as any).getAuth?.())
 
     baseUrl = 'http://127.0.0.1:8093'
+
+    // Sign up and get an auth token for management CRUD tests
+    const signupRes = await fetch(baseUrl + '/auth/v1/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'fn-admin-' + Date.now() + '@test.com', password: 'secure-admin-password-99' })
+    })
+    const signupJson = await signupRes.json() as any
+    console.log('Signup status:', signupRes.status, 'body:', JSON.stringify(signupJson).slice(0, 200))
+    authToken = signupJson.data?.session?.access_token || ''
   })
 
   afterAll(async () => {
@@ -117,7 +128,9 @@ describe('DropFunctions Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('lists all functions', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1')
+    const res = await fetch(baseUrl + '/api/functions/v1', {
+      headers: { Authorization: 'Bearer ' + authToken }
+    })
     expect(res.status).toBe(200)
     const json = await res.json() as any
     expect(json.data).toBeInstanceOf(Array)
@@ -125,7 +138,9 @@ describe('DropFunctions Plugin', () => {
   })
 
   it('gets function source', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/hello/source')
+    const res = await fetch(baseUrl + '/api/functions/v1/hello/source', {
+      headers: { Authorization: 'Bearer ' + authToken }
+    })
     expect(res.status).toBe(200)
     const json = await res.json() as any
     expect(json.data.name).toBe('hello')
@@ -135,7 +150,7 @@ describe('DropFunctions Plugin', () => {
   it('creates a new function', async () => {
     const res = await fetch(baseUrl + '/api/functions/v1', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
       body: JSON.stringify({
         name: 'test-new',
         source: 'export default async function handler(req, ctx) { return { ok: true } }',
@@ -150,7 +165,7 @@ describe('DropFunctions Plugin', () => {
     // Create first
     await fetch(baseUrl + '/api/functions/v1', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
       body: JSON.stringify({
         name: 'to-delete',
         source: 'export default async () => ({})',
@@ -159,6 +174,7 @@ describe('DropFunctions Plugin', () => {
     // Delete
     const res = await fetch(baseUrl + '/api/functions/v1/to-delete', {
       method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + authToken },
     })
     expect(res.status).toBe(200)
   })

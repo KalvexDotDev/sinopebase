@@ -6,11 +6,12 @@
 import { Elysia } from 'elysia'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
+import { validateFunctionAuth, extractBearerToken } from '../middleware'
 
 /**
- * Create the function management route group (superuser-only).
+ * Create the function management route group (requires valid auth token).
  */
-export function createManageRoutes(functionsDir: string) {
+export function createManageRoutes(functionsDir: string, auth: any) {
   // Ensure the directory exists
   if (!existsSync(functionsDir)) {
     mkdirSync(functionsDir, { recursive: true })
@@ -18,7 +19,12 @@ export function createManageRoutes(functionsDir: string) {
 
   return new Elysia()
     // List all functions
-    .get('/api/functions/v1', () => {
+    .get('/api/functions/v1', async ({ request, set }) => {
+      if (auth) {
+        const token = extractBearerToken(request)
+        const user = await validateFunctionAuth(auth, token)
+        if (!user) { set.status = 401; return { error: 'Authentication required', status: 401 } }
+      }
       const files = readFunctionFiles(functionsDir)
       return { data: files, count: files.length }
     })
@@ -117,6 +123,8 @@ export function createManageRoutes(functionsDir: string) {
 // ---------------------------------------------------------------------------
 
 function findFunctionFile(dir: string, name: string): string | null {
+  // Prevent path traversal attacks
+  if (name.includes('..') || name.includes('/') || name.includes('\\')) return null
   for (const ext of ['.ts', '.js']) {
     const candidate = resolve(dir, name + ext)
     if (existsSync(candidate)) return candidate

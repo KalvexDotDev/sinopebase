@@ -36,8 +36,8 @@ export class DropFunctionsPlugin {
     // Mount function execution routes
     app.use(createExecuteRoutes(this.options, this.auth))
 
-    // Mount function management routes (superuser-only in production)
-    app.use(createManageRoutes(this.options.functionsDir))
+    // Mount function management routes (auth-required)
+    app.use(createManageRoutes(this.options.functionsDir, this.auth))
 
     console.log(`DropFunctions: watching "${this.options.functionsDir}"`)
   }
