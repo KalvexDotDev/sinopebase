@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.1 — 2026-07-21
+
+### Added
+- Supabase-compatible `/functions/v1/*` path alias (alongside `/api/functions/v1/*`)
+- `sinopebase.functions.invoke()` SDK method matching `supabase.functions.invoke()`
+- Shared `lookupSessionByToken()` helper — deduplicates 5 session queries
+- `FunctionsClient` type exported from SDK
+
+### Changed
+- Rate-limit cleanup interval now lazily initialised (not at module import)
+- Lint + typecheck: clean
+
 ## v0.2.0 — 2026-07-21
 
 ### Added

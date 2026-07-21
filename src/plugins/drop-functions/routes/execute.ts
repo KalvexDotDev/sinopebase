@@ -23,11 +23,12 @@ import type { FunctionModule } from '../types'
 export function createExecuteRoutes(
   options: DropFunctionsPluginOptions,
   auth: any,
+  prefix = '/api/functions/v1',
 ) {
   const functionsDir = options.functionsDir || './functions'
 
   return new Elysia()
-    .all('/api/functions/v1/:name', async ({ request, params, set, headers }) => {
+    .all(prefix + '/:name', async ({ request, params, set, headers }) => {
       const functionName = params.name
 
       // Prevent path traversal — only allow alphanumeric, hyphens, underscores

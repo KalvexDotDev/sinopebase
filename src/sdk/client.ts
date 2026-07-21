@@ -12,6 +12,7 @@ import type { PostgrestClient } from './database'
 import type { AuthClient } from './auth'
 import type { StorageClient } from './storage'
 import type { RealtimeClient } from './realtime'
+import type { FunctionsClient } from './functions'
 
 // ---------------------------------------------------------------------------
 // Response types — mirror supabase-js
@@ -56,6 +57,9 @@ export interface SinopebaseClient {
   /** Realtime client (Supabase Realtime-compatible) */
   realtime: RealtimeClient
 
+  /** Edge Functions client (Supabase Functions-compatible) */
+  functions: FunctionsClient
+
   /** Base URL of the connected backend */
   supabaseUrl: string
 
@@ -88,15 +92,16 @@ class SinopebaseClientImpl implements SinopebaseClient {
   public readonly auth: AuthClient
   public readonly storage: StorageClient
   public readonly realtime: RealtimeClient
+  public readonly functions: FunctionsClient
 
   constructor(url: string, key: string) {
     this.supabaseUrl = url.replace(/\/$/, '')
     this.supabaseKey = key
 
-    // Lazy — these will be implemented as we port each layer
     this.auth = createAuthClient(this.supabaseUrl, this.supabaseKey)
     this.storage = createStorageClient(this.supabaseUrl, this.supabaseKey)
     this.realtime = createRealtimeClient(this.supabaseUrl, this.supabaseKey)
+    this.functions = createFunctionsClient(this.supabaseUrl, this.supabaseKey)
   }
 
   from<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -114,3 +119,4 @@ import { createPostgrestClient } from './database'
 import { createAuthClient } from './auth-impl'
 import { createStorageClient } from './storage-impl'
 import { createRealtimeClient } from './realtime-impl'
+import { createFunctionsClient } from './functions'

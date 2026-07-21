@@ -33,11 +33,13 @@ export class DropFunctionsPlugin {
   async register(app: Elysia, auth?: any): Promise<void> {
     this.auth = auth ?? null
 
-    // Mount function execution routes
-    app.use(createExecuteRoutes(this.options, this.auth))
+    // Mount under Sinopebase path
+    app.use(createExecuteRoutes(this.options, this.auth, '/api/functions/v1'))
+    app.use(createManageRoutes(this.options.functionsDir, this.auth, '/api/functions/v1'))
 
-    // Mount function management routes (auth-required)
-    app.use(createManageRoutes(this.options.functionsDir, this.auth))
+    // Mount under Supabase-compatible path
+    app.use(createExecuteRoutes(this.options, this.auth, '/functions/v1'))
+    app.use(createManageRoutes(this.options.functionsDir, this.auth, '/functions/v1'))
 
     console.log(`DropFunctions: watching "${this.options.functionsDir}"`)
   }

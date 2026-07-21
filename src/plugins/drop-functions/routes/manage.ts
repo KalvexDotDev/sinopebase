@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // DropFunctions — Function CRUD management endpoints
-// Superuser-only routes for listing, creating, updating, deleting functions.
+// Auth-required routes for listing, creating, updating, deleting functions.
 // ---------------------------------------------------------------------------
 
 import { Elysia } from 'elysia'
@@ -9,9 +9,13 @@ import { resolve, basename } from 'node:path'
 import { validateFunctionAuth, extractBearerToken } from '../middleware'
 
 /**
- * Create the function management route group (requires valid auth token).
+ * Create the function management route group (auth-required).
+ *
+ * @param functionsDir Directory containing function files
+ * @param auth          better-auth instance (null in dev/in-memory mode)
+ * @param prefix        Route prefix (default: /api/functions/v1)
  */
-export function createManageRoutes(functionsDir: string, auth: any) {
+export function createManageRoutes(functionsDir: string, auth: any, prefix = '/api/functions/v1') {
   // Ensure the directory exists
   if (!existsSync(functionsDir)) {
     mkdirSync(functionsDir, { recursive: true })
@@ -19,7 +23,7 @@ export function createManageRoutes(functionsDir: string, auth: any) {
 
   return new Elysia()
     // List all functions
-    .get('/api/functions/v1', async ({ request, set }) => {
+    .get(prefix, async ({ request, set }) => {
       if (auth) {
         const token = extractBearerToken(request)
         const user = await validateFunctionAuth(auth, token)
@@ -30,7 +34,7 @@ export function createManageRoutes(functionsDir: string, auth: any) {
     })
 
     // Get a specific function's source (separate path to avoid collision with execute)
-    .get('/api/functions/v1/:name/source', ({ params, set }) => {
+    .get(prefix + '/:name/source', ({ params, set }) => {
       const filePath = findFunctionFile(functionsDir, params.name)
       if (!filePath) {
         set.status = 404
@@ -47,7 +51,7 @@ export function createManageRoutes(functionsDir: string, auth: any) {
     })
 
     // Create a new function
-    .post('/api/functions/v1', ({ body, set }) => {
+    .post(prefix, ({ body, set }) => {
       const { name, source } = body as { name?: string; source?: string }
       if (!name || !source) {
         set.status = 400
@@ -75,7 +79,7 @@ export function createManageRoutes(functionsDir: string, auth: any) {
     })
 
     // Update a function
-    .patch('/api/functions/v1/:name', ({ params, body, set }) => {
+    .patch(prefix + '/:name', ({ params, body, set }) => {
       const filePath = findFunctionFile(functionsDir, params.name)
       if (!filePath) {
         set.status = 404
@@ -106,7 +110,7 @@ export function createManageRoutes(functionsDir: string, auth: any) {
     })
 
     // Delete a function
-    .delete('/api/functions/v1/:name', ({ params, set }) => {
+    .delete(prefix + '/:name', ({ params, set }) => {
       const filePath = findFunctionFile(functionsDir, params.name)
       if (!filePath) {
         set.status = 404

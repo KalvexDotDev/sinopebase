@@ -11,6 +11,7 @@ export type { PostgrestClient, PostgrestFilterBuilder, FilterOperator } from './
 export type { AuthClient, User, Session, AuthResponse, AuthError, AuthChangeEvent } from './sdk/auth'
 export type { StorageClient, StorageBucket, Bucket, FileObject, UploadOptions } from './sdk/storage'
 export type { RealtimeClient, RealtimeChannel } from './sdk/realtime'
+export type { FunctionsClient, FunctionResponse, FunctionInvokeOptions } from './sdk/functions'
 
 // Backend — exported for programmatic use (when used as a library)
 export { Sinopebase } from './core/app'
