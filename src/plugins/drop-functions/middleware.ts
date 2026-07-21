@@ -18,9 +18,11 @@ export async function validateFunctionAuth(
   token: string | null,
 ): Promise<FunctionAuth | null> {
   if (!token) return null
+  if (!auth) return null
 
   try {
     const db = (auth as any).__db
+    if (!db) return null
     const sessions = await db
       .selectFrom('session')
       .innerJoin('user', 'session.userId', 'user.id')

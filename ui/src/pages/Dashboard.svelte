@@ -4,7 +4,7 @@
   let data = $state<any>(null)
 
   $effect(() => {
-    health().then(r => { data = r })
+    health().then(r => { data = r }).catch(() => { data = { db: 'error', storage: 'error' } })
   })
 </script>
 

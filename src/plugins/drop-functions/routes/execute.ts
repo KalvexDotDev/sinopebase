@@ -125,8 +125,8 @@ export function createExecuteRoutes(
           ),
         ])
 
-        // If the function returns a Response object, forward it
-        if (result && typeof result === 'object' && (result as any).__type === 'response') {
+        // If the function returns a Response object, forward it directly
+        if (result instanceof Response) {
           return result
         }
 

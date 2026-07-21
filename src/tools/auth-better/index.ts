@@ -8,6 +8,9 @@
 
 import { betterAuth } from 'better-auth'
 import pg from 'pg'
+
+// Guard against redundant DDL on hot reload or multiple createAuth calls
+let tablesEnsured = false
 import { Kysely } from 'kysely'
 
 import {
@@ -36,7 +39,10 @@ export async function createAuth(
 ): Promise<ReturnType<typeof betterAuth>> {
   // Create a typed Kysely for table creation and direct queries.
   const db = createBetterAuthDB(pool)
-  await createAuthTables(db)
+  if (!tablesEnsured) {
+    await createAuthTables(db)
+    tablesEnsured = true
+  }
 
   const secret =
     options?.jwtSecret ||

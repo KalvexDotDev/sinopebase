@@ -104,35 +104,39 @@ export class OpenAIProvider extends BaseAIProvider {
     const decoder = new TextDecoder()
     let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
 
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data: ')) continue
-        const data = trimmed.slice(6)
-        if (data === '[DONE]') return
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const data = trimmed.slice(6)
+          if (data === '[DONE]') return
 
-        try {
-          const parsed = JSON.parse(data)
-          yield {
-            id: parsed.id || crypto.randomUUID(),
-            model: parsed.model || model,
-            choices: (parsed.choices || []).map((c: any) => ({
-              index: c.index || 0,
-              delta: c.delta || {},
-              finishReason: c.finish_reason || null,
-            })),
+          try {
+            const parsed = JSON.parse(data)
+            yield {
+              id: parsed.id || crypto.randomUUID(),
+              model: parsed.model || model,
+              choices: (parsed.choices || []).map((c: any) => ({
+                index: c.index || 0,
+                delta: c.delta || {},
+                finishReason: c.finish_reason || null,
+              })),
+            }
+          } catch {
+            // Skip malformed chunks
           }
-        } catch {
-          // Skip malformed chunks
         }
       }
+    } finally {
+      reader.releaseLock()
     }
   }
 

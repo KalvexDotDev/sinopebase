@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { Elysia } from 'elysia'
-import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
 
 /**
@@ -126,11 +126,6 @@ function findFunctionFile(dir: string, name: string): string | null {
 
 function readFunctionFiles(dir: string): Array<{ name: string; path: string; size: number }> {
   if (!existsSync(dir)) return []
-
-  const { readdirSync, statSync } = require('node:fs') as {
-    readdirSync: (path: string) => string[]
-    statSync: (path: string) => { isDirectory(): boolean; size: number }
-  }
 
   const files: Array<{ name: string; path: string; size: number }> = []
   for (const entry of readdirSync(dir)) {

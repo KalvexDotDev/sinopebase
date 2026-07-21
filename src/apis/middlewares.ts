@@ -286,12 +286,16 @@ export function loadAuthTokenWithBetterAuth(auth: any) {
         headers: new Headers({ authorization: 'Bearer ' + token }),
       })
       if (result && result.user) {
+        // Map better-auth user to PocketBase auth store shape.
+        // better-auth has no "collection" concept — we derive it from role.
+        const role: string = result.user.role || 'authenticated'
+        const isSuperuser = role === 'superuser' || role === 'admin'
         ctx.store['auth'] = {
           id: result.user.id,
           email: result.user.email,
-          collection: result.user.role || 'authenticated',
-          collectionId: result.user.role || 'authenticated',
-          role: result.user.role || 'authenticated',
+          collection: isSuperuser ? '_superusers' : role,
+          collectionId: isSuperuser ? '_superusers' : role,
+          role,
         }
       }
     } catch {

@@ -9,7 +9,7 @@ import { toSinopebaseUser, toSinopebaseSession, toAuthResponse, ACCESS_TOKEN_EXP
  *   { token: string, user: { id, email, emailVerified?, createdAt?, updatedAt?, ... } }
  */
 export function bridgeSignInResponse(result: any): AuthResponse {
-  if (!result || !result.token) {
+  if (!result || !result.token || !result.user) {
     return toAuthResponse(null, null, 'Authentication failed', 400)
   }
 

@@ -263,7 +263,7 @@ export function createAuthPlugin(auth: any) {
           const sessions = await db
             .selectFrom('session')
             .innerJoin('user', 'session.userId', 'user.id')
-            .select(['user.id', 'user.email', 'user.emailVerified', 'user.name', 'user.image', 'user.role', 'user.createdAt', 'user.updatedAt'])
+            .select(['session.id as sessionId', 'user.id', 'user.email', 'user.emailVerified', 'user.name', 'user.image', 'user.role', 'user.createdAt', 'user.updatedAt'])
             .where('session.token', '=', refresh_token)
             .where('session.expiresAt', '>', new Date())
             .execute()
@@ -271,8 +271,15 @@ export function createAuthPlugin(auth: any) {
             set.status = 400
             return errorResponse('Invalid refresh token', 400)
           }
-          const row = sessions[0]!
-          return bridgeSignInResponse({ token: refresh_token, user: row })
+          const row = sessions[0] as any
+          // Rotate the session token — invalidate old token, issue new one
+          const newToken = crypto.randomUUID().replace(/-/g, '')
+          await db
+            .updateTable('session')
+            .set({ token: newToken, updatedAt: new Date() })
+            .where('session.id', '=', row.sessionId)
+            .execute()
+          return bridgeSignInResponse({ token: newToken, user: row })
         } catch {
           set.status = 400
           return errorResponse('Invalid refresh token', 400)
