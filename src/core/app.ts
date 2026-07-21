@@ -1,16 +1,486 @@
 /**
  * Sinopebase Core Application
  *
- * Port of PocketBase core/app.go + core/base.go
- * The central App interface — ~175 methods in the Go version.
+ * Port of PocketBase core/app.go — the central App interface.
  *
- * This is the Skeleton. Layer 2 porting (ultracode) fills it in.
+ * The App interface is the backbone of PocketBase/Sinopebase.
+ * It defines ~175 methods covering database access, model CRUD,
+ * event hooks, auth, files, mailer, cron, settings, subscriptions,
+ * and backup operations.
+ *
+ * This interface exists to make testing easier and to allow users to
+ * create common and pluggable helpers without depending on a specific
+ * wrapped app struct.
  */
+
+import type { Hook } from '~/tools/hook/hook'
+import type { TaggedHook } from '~/tools/hook/tagged'
+import type { Store } from '~/tools/store/store'
+import type { IDatabase } from './db-interface'
+import type {
+  BootstrapEvent,
+  ServeEvent,
+  TerminateEvent,
+  BackupEvent,
+  ModelEvent,
+  ModelErrorEvent,
+  RecordEvent,
+  RecordErrorEvent,
+  RecordEnrichEvent,
+  CollectionEvent,
+  CollectionErrorEvent,
+  MailerEvent,
+  MailerRecordEvent,
+  RealtimeConnectEvent,
+  RealtimeMessageEvent,
+  RealtimeSubscribeEvent,
+  SettingsListEvent,
+  SettingsUpdateEvent,
+  SettingsReloadEvent,
+  RecordsListEvent,
+  RecordViewEvent,
+  RecordCreateEvent,
+  RecordUpdateEvent,
+  RecordDeleteEvent,
+  RecordAuthEvent,
+  RecordAuthWithPasswordEvent,
+  RecordAuthWithOAuth2Event,
+  RecordAuthRefreshEvent,
+  RecordRequestPasswordResetEvent,
+  RecordConfirmPasswordResetEvent,
+  RecordRequestVerificationEvent,
+  RecordConfirmVerificationEvent,
+  RecordRequestEmailChangeEvent,
+  RecordConfirmEmailChangeEvent,
+  RecordCreateOTPRequestEvent,
+  RecordAuthWithOTPRequestEvent,
+  CollectionsListEvent,
+  CollectionRequestEvent,
+  CollectionCreateEvent,
+  CollectionUpdateEvent,
+  CollectionDeleteEvent,
+  CollectionsImportRequestEvent,
+  FileTokenRequestEvent,
+  FileDownloadRequestEvent,
+  BatchRequestEvent,
+} from './events'
+import type { Model } from './db_model'
+
+// ---------------------------------------------------------------------------
+// App interface — the backbone of Sinopebase
+// ---------------------------------------------------------------------------
+
+/**
+ * App defines the main application interface.
+ *
+ * Note that the interface is not intended to be implemented manually by
+ * users. Use BaseApp (either directly or as an extended class).
+ *
+ * This interface exists to make testing easier and to allow users to
+ * create common and pluggable helpers.
+ */
+export interface App {
+  // ---------------------------------------------------------------
+  // Lifecycle & config
+  // ---------------------------------------------------------------
+
+  /**
+   * UnsafeWithoutHooks returns a shallow copy of the current app
+   * WITHOUT any registered hooks.
+   *
+   * Using the returned app instance may cause data integrity errors
+   * since Record validations and data normalizations rely on hooks.
+   */
+  unsafeWithoutHooks(): App
+
+  /** Logger returns the default app logger. */
+  logger(): unknown
+
+  /** IsBootstrapped checks if the application was initialized. */
+  isBootstrapped(): boolean
+
+  /** IsTransactional checks if the current app instance is part of a transaction. */
+  isTransactional(): boolean
+
+  /** TxInfo returns the transaction info (if any). */
+  txInfo(): unknown
+
+  /** Bootstrap initializes the application. */
+  bootstrap(): Promise<void>
+
+  /** ResetBootstrapState releases initialized core resources. */
+  resetBootstrapState(): Promise<void>
+
+  /** DataDir returns the app data directory path. */
+  dataDir(): string
+
+  /** EncryptionEnv returns the name of the app secret env key. */
+  encryptionEnv(): string
+
+  /** IsDev returns whether the app is in dev mode. */
+  isDev(): boolean
+
+  /** Settings returns the loaded app settings. */
+  settings(): unknown
+
+  /** Store returns the app runtime store. */
+  store(): Store<string, unknown>
+
+  /** ReloadSettings reinitializes and reloads stored application settings. */
+  reloadSettings(): Promise<void>
+
+  /** Restart restarts the current running application process. */
+  restart(): Promise<void>
+
+  /** CreateBackup creates a new backup. */
+  createBackup(name: string): Promise<void>
+
+  /** RestoreBackup restores a backup and restarts the app. */
+  restoreBackup(name: string): Promise<void>
+
+  /** RunSystemMigrations applies system migrations. */
+  runSystemMigrations(): Promise<void>
+
+  /** RunAppMigrations applies app migrations. */
+  runAppMigrations(): Promise<void>
+
+  /** RunAllMigrations applies all migrations. */
+  runAllMigrations(): Promise<void>
+
+  // ---------------------------------------------------------------
+  // DB methods
+  // ---------------------------------------------------------------
+
+  /** DB returns the default database builder. */
+  db(): IDatabase
+
+  /** ConcurrentDB returns the concurrent database builder for reads. */
+  concurrentDB(): IDatabase
+
+  /** NonconcurrentDB returns the non-concurrent database builder for writes. */
+  nonconcurrentDB(): IDatabase
+
+  /** HasTable checks if a table exists. */
+  hasTable(tableName: string): Promise<boolean>
+
+  /** TableColumns returns column names for a table. */
+  tableColumns(tableName: string): Promise<string[]>
+
+  /** TableInfo returns table info for the specified table. */
+  tableInfo(tableName: string): Promise<unknown[]>
+
+  /** TableIndexes returns a map of index names to definitions. */
+  tableIndexes(tableName: string): Promise<Record<string, string>>
+
+  /** DeleteTable drops the specified table. */
+  deleteTable(tableName: string): Promise<void>
+
+  /** Vacuum reclaims unused database disk space. */
+  vacuum(): Promise<void>
+
+  // ---------------------------------------------------------------
+  // Model persistence
+  // ---------------------------------------------------------------
+
+  /** ModelQuery creates a preconfigured select query for a model. */
+  modelQuery(model: Model): unknown
+
+  /** Delete deletes a model from the database. */
+  delete(model: Model): Promise<void>
+
+  /** Save validates and saves a model into the database. */
+  save(model: Model): Promise<void>
+
+  /** SaveNoValidate saves a model without performing validations. */
+  saveNoValidate(model: Model): Promise<void>
+
+  /** Validate triggers the OnModelValidate hook. */
+  validate(model: Model): Promise<void>
+
+  /** RunInTransaction wraps a function into a transaction. */
+  runInTransaction(fn: (txApp: App) => Promise<void>): Promise<void>
+
+  // ---------------------------------------------------------------
+  // Log queries
+  // ---------------------------------------------------------------
+
+  /** LogQuery returns a new Log select query. */
+  logQuery(): unknown
+
+  /** FindLogById finds a log entry by id. */
+  findLogById(id: string): Promise<unknown>
+
+  /** DeleteOldLogs deletes logs created before a timestamp. */
+  deleteOldLogs(createdBefore: Date): Promise<void>
+
+  // ---------------------------------------------------------------
+  // Collection queries
+  // ---------------------------------------------------------------
+
+  /** CollectionQuery returns a new Collection select query. */
+  collectionQuery(): unknown
+
+  /** FindAllCollections finds all collections by optional types. */
+  findAllCollections(...collectionTypes: string[]): Promise<unknown[]>
+
+  /** FindCollectionByNameOrId finds a collection by name or id. */
+  findCollectionByNameOrId(nameOrId: string): Promise<unknown>
+
+  /** IsCollectionNameUnique checks if a collection name is unique. */
+  isCollectionNameUnique(name: string, ...excludeIds: string[]): Promise<boolean>
+
+  /** ImportCollections imports collections data. */
+  importCollections(toImport: Record<string, unknown>[], deleteMissing: boolean): Promise<void>
+
+  /** SyncRecordTableSchema syncs record table schema for a collection. */
+  syncRecordTableSchema(newCollection: unknown, oldCollection: unknown): Promise<void>
+
+  // ---------------------------------------------------------------
+  // Record queries
+  // ---------------------------------------------------------------
+
+  /** RecordQuery returns a new Record select query. */
+  recordQuery(collectionModelOrIdentifier: unknown): unknown
+
+  /** FindRecordById finds a record by its id. */
+  findRecordById(
+    collectionModelOrIdentifier: unknown,
+    recordId: string,
+    ...optFilters: Array<(q: unknown) => Promise<void>>
+  ): Promise<unknown>
+
+  /** FindRecordsByIds finds records by their ids. */
+  findRecordsByIds(
+    collectionModelOrIdentifier: unknown,
+    recordIds: string[],
+    ...optFilters: Array<(q: unknown) => Promise<void>>
+  ): Promise<unknown[]>
+
+  /** FindAllRecords finds all records with optional expressions. */
+  findAllRecords(
+    collectionModelOrIdentifier: unknown,
+    ...exprs: unknown[]
+  ): Promise<unknown[]>
+
+  /** FindFirstRecordByData finds the first record matching a key-value pair. */
+  findFirstRecordByData(
+    collectionModelOrIdentifier: unknown,
+    key: string,
+    value: unknown,
+  ): Promise<unknown>
+
+  /** FindRecordsByFilter finds records by a filter string. */
+  findRecordsByFilter(
+    collectionModelOrIdentifier: unknown,
+    filter: string,
+    sort: string,
+    limit: number,
+    offset: number,
+    ...params: Record<string, unknown>[]
+  ): Promise<unknown[]>
+
+  /** FindFirstRecordByFilter finds the first record matching a filter. */
+  findFirstRecordByFilter(
+    collectionModelOrIdentifier: unknown,
+    filter: string,
+    ...params: Record<string, unknown>[]
+  ): Promise<unknown>
+
+  /** CountRecords returns the total number of records in a collection. */
+  countRecords(
+    collectionModelOrIdentifier: unknown,
+    ...exprs: unknown[]
+  ): Promise<number>
+
+  /** FindAuthRecordByToken finds the auth record associated with a JWT. */
+  findAuthRecordByToken(
+    token: string,
+    ...validTypes: string[]
+  ): Promise<unknown>
+
+  /** FindAuthRecordByEmail finds the auth record by email. */
+  findAuthRecordByEmail(
+    collectionModelOrIdentifier: unknown,
+    email: string,
+  ): Promise<unknown>
+
+  /** CanAccessRecord checks if a record can be accessed by a request. */
+  canAccessRecord(
+    record: unknown,
+    requestInfo: unknown,
+    accessRule: string | null,
+  ): Promise<boolean>
+
+  /** ExpandRecord expands the relations of a single Record model. */
+  expandRecord(
+    record: unknown,
+    expands: string[],
+    optFetchFunc?: unknown,
+  ): Promise<Record<string, Error>>
+
+  /** ExpandRecords expands the relations of multiple Record models. */
+  expandRecords(
+    records: unknown[],
+    expands: string[],
+    optFetchFunc?: unknown,
+  ): Promise<Record<string, Error>>
+
+  // ---------------------------------------------------------------
+  // Event hooks — App lifecycle
+  // ---------------------------------------------------------------
+
+  onBootstrap(): Hook<BootstrapEvent>
+  onServe(): Hook<ServeEvent>
+  onTerminate(): Hook<TerminateEvent>
+  onBackupCreate(): Hook<BackupEvent>
+  onBackupRestore(): Hook<BackupEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Model CRUD
+  // ---------------------------------------------------------------
+
+  onModelValidate(...tags: string[]): TaggedHook<ModelEvent>
+
+  onModelCreate(...tags: string[]): TaggedHook<ModelEvent>
+  onModelCreateExecute(...tags: string[]): TaggedHook<ModelEvent>
+  onModelAfterCreateSuccess(...tags: string[]): TaggedHook<ModelEvent>
+  onModelAfterCreateError(...tags: string[]): TaggedHook<ModelErrorEvent>
+
+  onModelUpdate(...tags: string[]): TaggedHook<ModelEvent>
+  onModelUpdateExecute(...tags: string[]): TaggedHook<ModelEvent>
+  onModelAfterUpdateSuccess(...tags: string[]): TaggedHook<ModelEvent>
+  onModelAfterUpdateError(...tags: string[]): TaggedHook<ModelErrorEvent>
+
+  onModelDelete(...tags: string[]): TaggedHook<ModelEvent>
+  onModelDeleteExecute(...tags: string[]): TaggedHook<ModelEvent>
+  onModelAfterDeleteSuccess(...tags: string[]): TaggedHook<ModelEvent>
+  onModelAfterDeleteError(...tags: string[]): TaggedHook<ModelErrorEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Record proxy hooks
+  // ---------------------------------------------------------------
+
+  onRecordEnrich(...tags: string[]): TaggedHook<RecordEnrichEvent>
+  onRecordValidate(...tags: string[]): TaggedHook<RecordEvent>
+
+  onRecordCreate(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordCreateExecute(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordAfterCreateSuccess(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordAfterCreateError(...tags: string[]): TaggedHook<RecordErrorEvent>
+
+  onRecordUpdate(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordUpdateExecute(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordAfterUpdateSuccess(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordAfterUpdateError(...tags: string[]): TaggedHook<RecordErrorEvent>
+
+  onRecordDelete(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordDeleteExecute(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordAfterDeleteSuccess(...tags: string[]): TaggedHook<RecordEvent>
+  onRecordAfterDeleteError(...tags: string[]): TaggedHook<RecordErrorEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Collection proxy hooks
+  // ---------------------------------------------------------------
+
+  onCollectionValidate(...tags: string[]): TaggedHook<CollectionEvent>
+
+  onCollectionCreate(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionCreateExecute(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionAfterCreateSuccess(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionAfterCreateError(...tags: string[]): TaggedHook<CollectionErrorEvent>
+
+  onCollectionUpdate(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionUpdateExecute(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionAfterUpdateSuccess(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionAfterUpdateError(...tags: string[]): TaggedHook<CollectionErrorEvent>
+
+  onCollectionDelete(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionDeleteExecute(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionAfterDeleteSuccess(...tags: string[]): TaggedHook<CollectionEvent>
+  onCollectionAfterDeleteError(...tags: string[]): TaggedHook<CollectionErrorEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Mailer
+  // ---------------------------------------------------------------
+
+  onMailerSend(): Hook<MailerEvent>
+  onMailerRecordPasswordResetSend(...tags: string[]): TaggedHook<MailerRecordEvent>
+  onMailerRecordVerificationSend(...tags: string[]): TaggedHook<MailerRecordEvent>
+  onMailerRecordEmailChangeSend(...tags: string[]): TaggedHook<MailerRecordEvent>
+  onMailerRecordOTPSend(...tags: string[]): TaggedHook<MailerRecordEvent>
+  onMailerRecordAuthAlertSend(...tags: string[]): TaggedHook<MailerRecordEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Realtime
+  // ---------------------------------------------------------------
+
+  onRealtimeConnectRequest(): Hook<RealtimeConnectEvent>
+  onRealtimeMessageSend(): Hook<RealtimeMessageEvent>
+  onRealtimeSubscribeRequest(): Hook<RealtimeSubscribeEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Settings
+  // ---------------------------------------------------------------
+
+  onSettingsListRequest(): Hook<SettingsListEvent>
+  onSettingsUpdateRequest(): Hook<SettingsUpdateEvent>
+  onSettingsReload(): Hook<SettingsReloadEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Files
+  // ---------------------------------------------------------------
+
+  onFileDownloadRequest(...tags: string[]): TaggedHook<FileDownloadRequestEvent>
+  onFileTokenRequest(...tags: string[]): TaggedHook<FileTokenRequestEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Record Auth API
+  // ---------------------------------------------------------------
+
+  onRecordAuthRequest(...tags: string[]): TaggedHook<RecordAuthEvent>
+  onRecordAuthWithPasswordRequest(...tags: string[]): TaggedHook<RecordAuthWithPasswordEvent>
+  onRecordAuthWithOAuth2Request(...tags: string[]): TaggedHook<RecordAuthWithOAuth2Event>
+  onRecordAuthRefreshRequest(...tags: string[]): TaggedHook<RecordAuthRefreshEvent>
+  onRecordRequestPasswordResetRequest(...tags: string[]): TaggedHook<RecordRequestPasswordResetEvent>
+  onRecordConfirmPasswordResetRequest(...tags: string[]): TaggedHook<RecordConfirmPasswordResetEvent>
+  onRecordRequestVerificationRequest(...tags: string[]): TaggedHook<RecordRequestVerificationEvent>
+  onRecordConfirmVerificationRequest(...tags: string[]): TaggedHook<RecordConfirmVerificationEvent>
+  onRecordRequestEmailChangeRequest(...tags: string[]): TaggedHook<RecordRequestEmailChangeEvent>
+  onRecordConfirmEmailChangeRequest(...tags: string[]): TaggedHook<RecordConfirmEmailChangeEvent>
+  onRecordRequestOTPRequest(...tags: string[]): TaggedHook<RecordCreateOTPRequestEvent>
+  onRecordAuthWithOTPRequest(...tags: string[]): TaggedHook<RecordAuthWithOTPRequestEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Record CRUD API
+  // ---------------------------------------------------------------
+
+  onRecordsListRequest(...tags: string[]): TaggedHook<RecordsListEvent>
+  onRecordViewRequest(...tags: string[]): TaggedHook<RecordViewEvent>
+  onRecordCreateRequest(...tags: string[]): TaggedHook<RecordCreateEvent>
+  onRecordUpdateRequest(...tags: string[]): TaggedHook<RecordUpdateEvent>
+  onRecordDeleteRequest(...tags: string[]): TaggedHook<RecordDeleteEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Collection API
+  // ---------------------------------------------------------------
+
+  onCollectionsListRequest(): Hook<CollectionsListEvent>
+  onCollectionViewRequest(): Hook<CollectionRequestEvent>
+  onCollectionCreateRequest(): Hook<CollectionCreateEvent>
+  onCollectionUpdateRequest(): Hook<CollectionUpdateEvent>
+  onCollectionDeleteRequest(): Hook<CollectionDeleteEvent>
+  onCollectionsImportRequest(): Hook<CollectionsImportRequestEvent>
+
+  // ---------------------------------------------------------------
+  // Event hooks — Batch
+  // ---------------------------------------------------------------
+
+  onBatchRequest(): Hook<BatchRequestEvent>
+}
 
 import { Elysia } from 'elysia'
 import { createRealtimeWebSocketHandler } from '../apis/realtime'
 import { authPlugin } from '../apis/auth'
-import type { IDatabase } from './db-interface'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { MemoryDatabase } from './db-memory'
 import { PostgresDatabase } from './db-postgres'
@@ -46,7 +516,7 @@ export class Sinopebase {
   private config: AppConfig
   private server: Elysia | null = null
   private db: IDatabase | null = null
-  private store: IFileStore | null = null
+  private fileStore: IFileStore | null = null
 
   constructor(config: AppConfig) {
     this.config = {
@@ -89,14 +559,14 @@ export class Sinopebase {
     const s3AccessKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
     const s3SecretKey = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
     if (s3Endpoint && s3AccessKey && s3SecretKey) {
-      this.store = new S3FileStore({
+      this.fileStore = new S3FileStore({
         endpoint: s3Endpoint,
         accessKey: s3AccessKey,
         secretKey: s3SecretKey,
       })
       console.log(`Storage: S3 (${this.config.minioEndpoint})`)
     } else {
-      this.store = new LocalFileStore(this.config.dataDir ?? './pb_data')
+      this.fileStore = new LocalFileStore(this.config.dataDir ?? './pb_data')
       console.log('Storage: local filesystem (no RUSTFS_ENDPOINT set)')
     }
 
@@ -109,7 +579,7 @@ export class Sinopebase {
         code: 200,
         message: 'Sinopebase is running',
         db: this.db instanceof PostgresDatabase ? 'postgresql' : 'memory',
-        storage: this.store instanceof S3FileStore ? 's3' : 'local',
+        storage: this.fileStore instanceof S3FileStore ? 's3' : 'local',
       }))
 
       // ── Realtime WebSocket ──
@@ -122,7 +592,7 @@ export class Sinopebase {
     mountPostgrestRoutes(this.server, this.db)
 
     // ── Storage — /storage/v1/* ──
-    this.server.use(createStoragePlugin(this.store))
+    this.server.use(createStoragePlugin(this.fileStore))
 
     // ── Stub routes — return 501 until ported ──
 
@@ -152,6 +622,21 @@ export class Sinopebase {
       this.server = null
     }
     this.db = null
+  }
+
+  /** Expose the database for base class usage. */
+  getDatabase(): IDatabase | null {
+    return this.db
+  }
+
+  /** Expose the file store. */
+  getFileStore(): IFileStore | null {
+    return this.fileStore
+  }
+
+  /** Expose the config. */
+  getConfig(): AppConfig {
+    return { ...this.config }
   }
 
   /**
