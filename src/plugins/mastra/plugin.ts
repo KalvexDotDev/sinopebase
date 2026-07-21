@@ -14,6 +14,7 @@ import type { MastraPluginOptions } from './config'
 import { DEFAULTS } from './config'
 import { OpenAIProvider } from '~/tools/ai/openai'
 import type { AIProvider } from '~/tools/ai/provider'
+import { createMockProvider } from '~/tools/ai/mock-provider'
 import { createChatRoutes } from './routes/chat'
 import { createEmbeddingsRoutes } from './routes/embeddings'
 
@@ -65,48 +66,3 @@ export class MastraPlugin {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Mock provider for development/testing (no API key required)
-// ---------------------------------------------------------------------------
-
-function createMockProvider(): AIProvider {
-  return {
-    displayName: () => 'mock',
-
-    async chat(messages) {
-      return {
-        id: crypto.randomUUID(),
-        model: 'mock',
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: 'assistant',
-              content: `[Mock AI] Echo: ${messages[messages.length - 1]?.content || 'No input'}`,
-            },
-            finishReason: 'stop',
-          },
-        ],
-      }
-    },
-
-    async *chatStream(messages) {
-      const content = `[Mock AI] Echo: ${messages[messages.length - 1]?.content || 'No input'}`
-      yield {
-        id: crypto.randomUUID(),
-        model: 'mock',
-        choices: [{ index: 0, delta: { role: 'assistant', content }, finishReason: 'stop' }],
-      }
-    },
-
-    async embeddings(texts) {
-      return {
-        model: 'mock-embedding',
-        data: texts.map((_, i) => ({
-          index: i,
-          embedding: new Array(128).fill(0).map(() => Math.random()),
-        })),
-      }
-    },
-  }
-}
