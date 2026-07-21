@@ -655,6 +655,12 @@ export class Sinopebase {
           if (request.method === 'OPTIONS') return
           const authHeader = request.headers.get('authorization') ?? ''
           const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
+          // Allow service role key to bypass auth (full access)
+          const serviceKey = process.env.SINOPEBASE_SERVICE_ROLE_KEY || 'test-service-role-key'
+          if (token === serviceKey) return
+          // Allow anon key for read-only access
+          const anonKey = process.env.SINOPEBASE_ANON_KEY || 'test-anon-key'
+          if (token === anonKey && (request.method === 'GET' || request.method === 'HEAD')) return
           if (!token) {
             set.status = 401
             return { message: 'Authorization required', code: '401' }
@@ -747,67 +753,27 @@ export class Sinopebase {
     if (!this.server) return
     const distPath = './ui/dist'
 
-    // Serve admin UI static files under /_/
-    this.server.get('/_/', async ({ set }) => {
+    // Single catch-all route for admin UI — serves files or falls back to index.html
+    this.server.get('/_/*', async ({ request, set }) => {
       try {
-        const file = Bun.file(`${distPath}/index.html`)
-        const exists = await file.exists()
-        if (exists) {
-          set.headers['Content-Type'] = 'text/html'
-          return new Response(await file.arrayBuffer(), {
-            headers: { 'Content-Type': 'text/html' },
-          })
-        }
-      } catch { /* fall through */ }
-      set.headers['Content-Type'] = 'text/html'
-      return ADMIN_PLACEHOLDER
-    })
-
-    // Serve specific assets under /_/assets/* etc.
-    this.server.get('/_/*', async ({ request, set, path }) => {
-      try {
-        // Extract the path after /_/
         const url = new URL(request.url)
-        const filePath = url.pathname.replace(/^\/_/, '')
+        let filePath = url.pathname.replace(/^\/_\/?/, '') || 'index.html'
 
-        // Prevent directory traversal
-        if (filePath.includes('..')) {
-          set.status = 403
-          return 'Forbidden'
-        }
+        if (filePath.includes('..')) { set.status = 403; return 'Forbidden' }
 
-        const fullPath = `${distPath}${filePath}`
-        const file = Bun.file(fullPath)
-        const exists = await file.exists()
-        if (exists) {
+        const file = Bun.file(`${distPath}/${filePath}`)
+        if (await file.exists()) {
           const ext = filePath.split('.').pop() || ''
-          const mimeTypes: Record<string, string> = {
-            html: 'text/html',
-            css: 'text/css',
-            js: 'application/javascript',
-            mjs: 'application/javascript',
-            json: 'application/json',
-            png: 'image/png',
-            jpg: 'image/jpeg',
-            jpeg: 'image/jpeg',
-            svg: 'image/svg+xml',
-            ico: 'image/x-icon',
-            woff: 'font/woff',
-            woff2: 'font/woff2',
-          }
-          set.headers['Content-Type'] = mimeTypes[ext] || 'application/octet-stream'
-          return new Response(await file.arrayBuffer(), {
-            headers: { 'Content-Type': set.headers['Content-Type'] },
-          })
+          const mime: Record<string, string> = { html: 'text/html', css: 'text/css', js: 'application/javascript', mjs: 'application/javascript', json: 'application/json', png: 'image/png', svg: 'image/svg+xml', ico: 'image/x-icon' }
+          set.headers['Content-Type'] = mime[ext] || 'application/octet-stream'
+          return new Response(await file.arrayBuffer(), { headers: { 'Content-Type': set.headers['Content-Type'] as string } })
         }
 
-        // SPA fallback: serve index.html for any unmatched route
-        const indexFile = Bun.file(`${distPath}/index.html`)
-        if (await indexFile.exists()) {
+        // SPA fallback
+        const index = Bun.file(`${distPath}/index.html`)
+        if (await index.exists()) {
           set.headers['Content-Type'] = 'text/html'
-          return new Response(await indexFile.arrayBuffer(), {
-            headers: { 'Content-Type': 'text/html' },
-          })
+          return new Response(await index.arrayBuffer(), { headers: { 'Content-Type': 'text/html' } })
         }
       } catch { /* fall through */ }
 

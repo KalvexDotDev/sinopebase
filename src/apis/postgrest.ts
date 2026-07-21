@@ -69,21 +69,16 @@ export function mountPostgrestRoutes(app: Elysia, db: IDatabase): void {
       offset = range.from
     }
 
-    const result = db.select(table, { filters, orFilters, order, limit, offset })
+    const rows = db.select(table, filters, undefined, limit, offset)
 
     // Content-Range header for count requests
     if (prefer.count === 'exact') {
-      const total = result.total
-      if (result.rows.length === 0) {
-        set.headers['content-range'] = `*/${total}`
-      } else {
-        const last = (offset ?? 0) + result.rows.length - 1
-        set.headers['content-range'] = `0-${last}/${total}`
-      }
+      const total = rows.length
+      set.headers['content-range'] = `*/${total}`
     }
 
     // Return rows
-    return result.rows
+    return rows
   })
 
   // -----------------------------------------------------------------------
@@ -97,10 +92,10 @@ export function mountPostgrestRoutes(app: Elysia, db: IDatabase): void {
     const filters = parseFilters(query as Record<string, string>)
     const orFilters = parseOrQueryParams(query as Record<string, string>)
 
-    const result = db.select(table, { filters, orFilters })
+    const rows = db.select(table, filters || orFilters)
 
     // Always set Content-Range for HEAD
-    const total = result.total
+    const total = rows.length
     set.headers['content-range'] = `*/${total}`
 
     // Return empty body (Elysia will send no content)
@@ -111,7 +106,7 @@ export function mountPostgrestRoutes(app: Elysia, db: IDatabase): void {
   // -----------------------------------------------------------------------
   // POST — Insert rows
   // -----------------------------------------------------------------------
-  app.post('/rest/v1/:table', (ctx) => {
+  app.post('/rest/v1/:table', async (ctx) => {
     const { params, headers, body, set } = ctx
     const table = params.table as string
     const prefer = parsePreferHeader(headers['prefer'] ?? headers['Prefer'] ?? '')
@@ -122,12 +117,13 @@ export function mountPostgrestRoutes(app: Elysia, db: IDatabase): void {
       typeof r === 'object' && r !== null ? (r as Record<string, unknown>) : {},
     )
 
-    let inserted: Record<string, unknown>[]
-
-    if (prefer.resolution === 'merge-duplicates') {
-      inserted = db.upsert(table, sanitized)
-    } else {
-      inserted = db.insert(table, sanitized)
+    const inserted: Record<string, unknown>[] = []
+    for (const row of sanitized) {
+      if (prefer.resolution === 'merge-duplicates') {
+        inserted.push(await db.upsert(table, row))
+      } else {
+        inserted.push(await db.insert(table, row))
+      }
     }
 
     set.status = 201

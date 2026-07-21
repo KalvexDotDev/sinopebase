@@ -10,7 +10,7 @@ export type Route = {
 
 export const ROUTES: Route[] = [
   { path: '#/', label: 'Dashboard', icon: '📊' },
-  { path: '#/collections', label: 'Collections', icon: '🗂️' },
+  { path: '#/collections', label: 'Database', icon: '🗄️' },
   { path: '#/functions', label: 'Edge Functions', icon: '⚡' },
   { path: '#/ai', label: 'AI', icon: '🤖' },
   { path: '#/settings', label: 'Settings', icon: '⚙️' },
