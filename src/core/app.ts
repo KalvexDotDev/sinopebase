@@ -513,6 +513,13 @@ export interface AppConfig {
  * Mirrors PocketBase's PocketBase struct (pocketbase.go)
  * which embeds core.App (~175 methods).
  */
+const ADMIN_PLACEHOLDER = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Sinopebase Admin</title>
+<style>body{margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;color:#333;display:flex;justify-content:center;align-items:center;min-height:80vh}.placeholder{text-align:center;padding:40px;background:white;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1)}h1{margin:0 0 8px;font-size:24px}p{margin:0;color:#666}code{background:#eee;padding:2px 6px;border-radius:3px}</style>
+</head><body><div class="placeholder"><h1>Sinopebase Admin</h1><p>Admin UI not built. Run <code>cd ui &amp;&amp; bun install &amp;&amp; bun run build</code> to enable.</p></div></body></html>`
+
 export class Sinopebase {
   private config: AppConfig
   private server: Elysia | null = null
@@ -624,6 +631,9 @@ export class Sinopebase {
     // ── Storage — /storage/v1/* ──
     this.server.use(createStoragePlugin(this.fileStore))
 
+    // ── Admin UI — serve built Svelte SPA from /_/ ──
+    this.mountAdminUI()
+
     // ── Stub routes — return 501 until ported ──
 
     // Catch-all for any unmatched /rest/v1/* paths
@@ -667,6 +677,90 @@ export class Sinopebase {
   /** Expose the config. */
   getConfig(): AppConfig {
     return { ...this.config }
+  }
+
+  /**
+   * Mount the admin UI static files at /_/.
+   * Serves the built Svelte SPA from ui/dist/ with client-side routing fallback.
+   */
+  private mountAdminUI(): void {
+    if (!this.server) return
+    const distPath = './ui/dist'
+
+    // Try to initialize the admin UI
+    try {
+      const indexFile = Bun.file(`${distPath}/index.html`)
+      // We can't check existence synchronously, so we mount a handler that
+      // tries to serve files and falls back to a placeholder.
+    } catch { /* dist doesn't exist yet */ }
+
+    // Serve admin UI static files under /_/
+    this.server.get('/_/', async ({ set }) => {
+      try {
+        const file = Bun.file(`${distPath}/index.html`)
+        const exists = await file.exists()
+        if (exists) {
+          set.headers['Content-Type'] = 'text/html'
+          return new Response(await file.arrayBuffer(), {
+            headers: { 'Content-Type': 'text/html' },
+          })
+        }
+      } catch { /* fall through */ }
+      set.headers['Content-Type'] = 'text/html'
+      return ADMIN_PLACEHOLDER
+    })
+
+    // Serve specific assets under /_/assets/* etc.
+    this.server.get('/_/*', async ({ request, set, path }) => {
+      try {
+        // Extract the path after /_/
+        const url = new URL(request.url)
+        const filePath = url.pathname.replace(/^\/_/, '')
+
+        // Prevent directory traversal
+        if (filePath.includes('..')) {
+          set.status = 403
+          return 'Forbidden'
+        }
+
+        const fullPath = `${distPath}${filePath}`
+        const file = Bun.file(fullPath)
+        const exists = await file.exists()
+        if (exists) {
+          const ext = filePath.split('.').pop() || ''
+          const mimeTypes: Record<string, string> = {
+            html: 'text/html',
+            css: 'text/css',
+            js: 'application/javascript',
+            mjs: 'application/javascript',
+            json: 'application/json',
+            png: 'image/png',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            svg: 'image/svg+xml',
+            ico: 'image/x-icon',
+            woff: 'font/woff',
+            woff2: 'font/woff2',
+          }
+          set.headers['Content-Type'] = mimeTypes[ext] || 'application/octet-stream'
+          return new Response(await file.arrayBuffer(), {
+            headers: { 'Content-Type': set.headers['Content-Type'] },
+          })
+        }
+
+        // SPA fallback: serve index.html for any unmatched route
+        const indexFile = Bun.file(`${distPath}/index.html`)
+        if (await indexFile.exists()) {
+          set.headers['Content-Type'] = 'text/html'
+          return new Response(await indexFile.arrayBuffer(), {
+            headers: { 'Content-Type': 'text/html' },
+          })
+        }
+      } catch { /* fall through */ }
+
+      set.headers['Content-Type'] = 'text/html'
+      return ADMIN_PLACEHOLDER
+    })
   }
 
   /** Expose the better-auth instance (null if in-memory mode). */
