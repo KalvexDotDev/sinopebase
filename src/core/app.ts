@@ -687,6 +687,13 @@ export class Sinopebase {
     // ── Admin UI — serve built Svelte SPA from /_/ ──
     this.mountAdminUI()
 
+    // ── Plugins ──
+    const { MastraPlugin } = await import('../plugins/mastra/plugin')
+    const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env.OPENAI_API_KEY, requireAuth: false })
+    await mastraPlugin.register(this.server, this.auth ?? undefined, this.db ?? undefined, this.fileStore ?? undefined)
+    const { MetricsPlugin } = await import('../plugins/metrics/plugin')
+    await new MetricsPlugin().register(this.server)
+
     // ── Stub routes — return 501 until ported ──
 
     // Catch-all for any unmatched /rest/v1/* paths
