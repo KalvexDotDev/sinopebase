@@ -14,6 +14,7 @@ import {
   ACCESS_TOKEN_EXPIRES_IN,
 } from './auth-jwt'
 import { bridgeSignInResponse, bridgeGetUserResponse, bridgeErrorResponse } from '~/tools/auth-better/supabase-bridge'
+import { lookupSessionByToken } from '~/tools/auth-better'
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -268,27 +269,26 @@ export function createAuthPlugin(auth: any) {
           return errorResponse('Invalid refresh token', 400)
         }
         try {
-          // Validate the session token via direct DB query
-          const db = (auth as any).__db
-          const sessions = await db
-            .selectFrom('session')
-            .innerJoin('user', 'session.userId', 'user.id')
-            .select(['session.id as sessionId', 'user.id', 'user.email', 'user.emailVerified', 'user.name', 'user.image', 'user.role', 'user.createdAt', 'user.updatedAt'])
-            .where('session.token', '=', refresh_token)
-            .where('session.expiresAt', '>', new Date())
-            .execute()
-          if (sessions.length === 0) {
+          const row = await lookupSessionByToken(auth, refresh_token)
+          if (!row) {
             set.status = 400
             return errorResponse('Invalid refresh token', 400)
           }
-          const row = sessions[0] as any
           // Rotate the session token — invalidate old token, issue new one
+          const db = (auth as any).__db
           const newToken = crypto.randomUUID().replace(/-/g, '')
-          await db
-            .updateTable('session')
-            .set({ token: newToken, updatedAt: new Date() })
-            .where('session.id', '=', row.sessionId)
-            .execute()
+          const sessionId = (await db
+            .selectFrom('session')
+            .select('session.id')
+            .where('session.token', '=', refresh_token)
+            .execute())[0]?.id
+          if (sessionId) {
+            await db
+              .updateTable('session')
+              .set({ token: newToken, updatedAt: new Date() })
+              .where('session.id', '=', sessionId)
+              .execute()
+          }
           return bridgeSignInResponse({ token: newToken, user: row })
         } catch {
           set.status = 400
@@ -318,21 +318,12 @@ export function createAuthPlugin(auth: any) {
         return { message: 'Invalid authorization header' }
       }
       // better-auth's getSession is cookie-based, so we query the DB directly
-      // for Bearer token validation.
       try {
-        const db = (auth as any).__db
-        const sessions = await db
-          .selectFrom('session')
-          .innerJoin('user', 'session.userId', 'user.id')
-          .select(['user.id', 'user.email', 'user.emailVerified', 'user.name', 'user.image', 'user.role', 'user.createdAt', 'user.updatedAt'])
-          .where('session.token', '=', token)
-          .where('session.expiresAt', '>', new Date())
-          .execute()
-        if (sessions.length === 0) {
+        const row = await lookupSessionByToken(auth, token)
+        if (!row) {
           set.status = 401
           return { message: 'Invalid token' }
         }
-        const row = sessions[0]!
         const response = bridgeGetUserResponse({ user: row })
         if (response.error) {
           set.status = response.error.status

@@ -159,3 +159,58 @@ export async function signOutSession(
     return false
   }
 }
+
+// ---------------------------------------------------------------------------
+// Shared DB session lookup — used by auth middleware, DropFunctions, Mastra
+// ---------------------------------------------------------------------------
+
+/** Result of a session token lookup. */
+export interface SessionLookup {
+  id: string
+  email: string
+  emailVerified: boolean
+  name: string | null
+  image: string | null
+  role: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * Look up a session by Bearer token via direct DB query.
+ *
+ * better-auth's getSession is cookie-based, so Bearer token validation
+ * requires a direct Kysely query. This shared helper replaces 5
+ * duplicated implementations across the codebase.
+ *
+ * Returns the joined user row, or null if the token is invalid or expired.
+ */
+export async function lookupSessionByToken(
+  auth: SinopebaseAuth,
+  token: string | null,
+): Promise<SessionLookup | null> {
+  if (!token) return null
+  try {
+    const db = (auth as any).__db as import('kysely').Kysely<import('./adapter').BetterAuthDatabase> | undefined
+    if (!db) return null
+    const rows = await db
+      .selectFrom('session')
+      .innerJoin('user', 'session.userId', 'user.id')
+      .select([
+        'user.id',
+        'user.email',
+        'user.emailVerified',
+        'user.name',
+        'user.image',
+        'user.role',
+        'user.createdAt',
+        'user.updatedAt',
+      ])
+      .where('session.token', '=', token)
+      .where('session.expiresAt', '>', new Date())
+      .execute()
+    return rows[0] ?? null
+  } catch {
+    return null
+  }
+}

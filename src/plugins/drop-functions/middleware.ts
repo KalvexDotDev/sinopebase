@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import type { FunctionAuth } from './types'
+import { lookupSessionByToken } from '~/tools/auth-better'
 
 /**
  * Extract and validate a Bearer token via direct DB lookup.
@@ -21,18 +22,8 @@ export async function validateFunctionAuth(
   if (!auth) return null
 
   try {
-    const db = (auth as any).__db
-    if (!db) return null
-    const sessions = await db
-      .selectFrom('session')
-      .innerJoin('user', 'session.userId', 'user.id')
-      .select(['user.id', 'user.email', 'user.role'])
-      .where('session.token', '=', token)
-      .where('session.expiresAt', '>', new Date())
-      .execute()
-
-    if (sessions.length === 0) return null
-    const row = sessions[0]!
+    const row = await lookupSessionByToken(auth, token)
+    if (!row) return null
     return {
       userId: row.id,
       email: row.email,
@@ -76,6 +67,7 @@ export function checkRateLimit(
   maxRequests: number,
   windowMs: number,
 ): boolean {
+  ensureCleanupTimer()
   const key = `${ip}:${functionName}`
   const now = Date.now()
   const entry = rateLimitStore.get(key)
@@ -110,12 +102,17 @@ export function parseWindow(window: string): number {
   }
 }
 
-// Periodically clean up stale entries (every 5 minutes)
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimitStore) {
-    if (now > entry.resetAt) {
-      rateLimitStore.delete(key)
+// Lazily-init'd cleanup timer for stale rate-limit entries
+let cleanupTimer: ReturnType<typeof setInterval> | null = null
+
+function ensureCleanupTimer(): void {
+  if (cleanupTimer) return
+  cleanupTimer = setInterval(() => {
+    const now = Date.now()
+    for (const [key, entry] of rateLimitStore) {
+      if (now > entry.resetAt) {
+        rateLimitStore.delete(key)
+      }
     }
-  }
-}, 300_000).unref()
+  }, 300_000).unref()
+}

@@ -47,15 +47,16 @@ export function createExecuteRoutes(
         return { error: 'Too many requests', status: 429 }
       }
 
+      // Skip disabled functions (prefixed with _)
+      if (functionName.startsWith('_')) {
+        set.status = 404
+        return { error: `Function "${functionName}" not found`, status: 404 }
+      }
+
       // Load the function file
       const exts = ['.ts', '.js']
       let filePath = ''
       for (const ext of exts) {
-        // Skip disabled functions (prefixed with _)
-        if (functionName.startsWith('_')) {
-          set.status = 404
-          return { error: `Function "${functionName}" not found`, status: 404 }
-        }
         const candidate = resolve(functionsDir, functionName + ext)
         if (existsSync(candidate) && !statSync(candidate).isDirectory()) {
           filePath = candidate

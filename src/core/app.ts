@@ -482,7 +482,7 @@ import { Elysia } from 'elysia'
 import { createRealtimeWebSocketHandler } from '../apis/realtime'
 import { authPlugin, createAuthPlugin } from '../apis/auth'
 import { verifyAccessToken } from '../apis/auth-jwt'
-import { createAuth } from '../tools/auth-better'
+import { createAuth, lookupSessionByToken } from '../tools/auth-better'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { MemoryDatabase } from './db-memory'
 import { PostgresDatabase } from './db-postgres'
@@ -654,18 +654,10 @@ export class Sinopebase {
           // Validate the token
           try {
             if (this.auth) {
-              // better-auth: lookup session directly
-              const db = (this.auth as any).__db
-              if (db) {
-                const sessions = await db
-                  .selectFrom('session')
-                  .where('session.token', '=', token)
-                  .where('session.expiresAt', '>', new Date())
-                  .execute()
-                if (sessions.length === 0) {
-                  set.status = 401
-                  return { message: 'Invalid authorization token', code: '401' }
-                }
+              const row = await lookupSessionByToken(this.auth, token)
+              if (!row) {
+                set.status = 401
+                return { message: 'Invalid authorization token', code: '401' }
               }
             } else {
               // In-memory: verify JWT signature
@@ -739,13 +731,6 @@ export class Sinopebase {
   private mountAdminUI(): void {
     if (!this.server) return
     const distPath = './ui/dist'
-
-    // Try to initialize the admin UI
-    try {
-      const indexFile = Bun.file(`${distPath}/index.html`)
-      // We can't check existence synchronously, so we mount a handler that
-      // tries to serve files and falls back to a placeholder.
-    } catch { /* dist doesn't exist yet */ }
 
     // Serve admin UI static files under /_/
     this.server.get('/_/', async ({ set }) => {
