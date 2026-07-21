@@ -506,6 +506,10 @@ export interface AppConfig {
   dataDir?: string
   /** JWT secret for signing tokens */
   jwtSecret?: string
+  /** OAuth/OIDC providers for social login + enterprise SSO */
+  oauthProviders?: import('../tools/auth-better').OAuthProviderConfig[]
+  /** Additional trusted origins for CORS/OAuth callbacks */
+  extraOrigins?: string[]
 }
 
 /**
@@ -563,7 +567,11 @@ export class Sinopebase {
       // Initialize better-auth with PostgreSQL
       try {
         const pool = pg.getPool()
-        this.auth = await createAuth(pool, { jwtSecret: this.config.jwtSecret })
+        this.auth = await createAuth(pool, {
+        jwtSecret: this.config.jwtSecret,
+        oauthProviders: this.config.oauthProviders,
+        extraOrigins: this.config.extraOrigins,
+      })
         console.log('Auth: better-auth initialized (PostgreSQL)')
       } catch (err) {
         console.warn('Auth: better-auth init failed, falling back to in-memory:', (err as Error).message)

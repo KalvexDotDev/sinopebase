@@ -7,11 +7,12 @@
 // ---------------------------------------------------------------------------
 
 import { betterAuth } from 'better-auth'
+import { genericOAuth } from 'better-auth/plugins/generic-oauth'
 import pg from 'pg'
+import { Kysely } from 'kysely'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
 let tablesEnsured = false
-import { Kysely } from 'kysely'
 
 import {
   createBetterAuthDB,
@@ -20,22 +21,46 @@ import {
 } from './adapter'
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface OAuthProviderConfig {
+  providerId: string
+  clientId: string
+  clientSecret: string
+  /** Required for Entra ID / OIDC providers */
+  tenantId?: string
+  /** Required for Keycloak / OIDC providers */
+  issuer?: string
+}
+
+export interface CreateAuthOptions {
+  jwtSecret?: string
+  /** OAuth/OIDC providers for social login + enterprise SSO */
+  oauthProviders?: OAuthProviderConfig[]
+  /** Additional trusted origins (e.g. production domain) */
+  extraOrigins?: string[]
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
 /**
  * Create and configure a better-auth instance.
  *
- * The returned `SinopebaseAuth` value is the main entry-point for all
- * server-side auth operations (sign-up, sign-in, session check, etc.)
- * performed through `auth.api.*`.
+ * Supports email/password + optional OAuth/OIDC providers:
+ *   Google, GitHub, Microsoft Entra ID, Keycloak, Okta, Auth0, Slack, etc.
+ *
+ * Enterprise SSO via Keycloak as SAML broker:
+ *   Azure AD SAML → Keycloak → OIDC → Sinopebase (better-auth)
  *
  * @param pool    - A live `pg.Pool` connected to the backing database.
- * @param options - Optional overrides (e.g. `jwtSecret`).
+ * @param options - Optional overrides (jwtSecret, oauthProviders, extraOrigins).
  */
 export async function createAuth(
   pool: pg.Pool,
-  options?: { jwtSecret?: string },
+  options?: CreateAuthOptions,
 ): Promise<ReturnType<typeof betterAuth>> {
   // Create a typed Kysely for table creation and direct queries.
   const db = createBetterAuthDB(pool)
@@ -49,13 +74,43 @@ export async function createAuth(
     process.env.JWT_SECRET ||
     'sinopebase-dev-secret-min-32-chars!!'
 
+  const trustedOrigins = [
+    'http://localhost:8090',
+    'http://127.0.0.1:8090',
+    ...(options?.extraOrigins || []),
+  ]
+
+  // Build plugins array
+  const plugins: any[] = []
+  if (options?.oauthProviders?.length) {
+    plugins.push(
+      genericOAuth({
+        config: options.oauthProviders.map((p) => ({
+          providerId: p.providerId,
+          clientId: p.clientId,
+          clientSecret: p.clientSecret,
+          tenantId: p.tenantId,
+          issuer: p.issuer,
+        })),
+      }),
+    )
+  }
+
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
   const auth = betterAuth({
     database: pool,
     emailAndPassword: { enabled: true },
     secret,
-    trustedOrigins: ['http://localhost:8090', 'http://127.0.0.1:8090'],
+    trustedOrigins,
+    plugins,
+    // Social login links accounts by email by default
+    account: {
+      accountLinking: {
+        enabled: true,
+        trustedProviders: options?.oauthProviders?.map((p) => p.providerId) || [],
+      },
+    },
   })
 
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
