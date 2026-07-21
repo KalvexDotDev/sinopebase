@@ -106,4 +106,19 @@ export class S3FileStore {
     }
     return objects
   }
+
+  // -----------------------------------------------------------------------
+  // Signed URL
+  // -----------------------------------------------------------------------
+
+  /**
+   * Generate a presigned GET URL for a file.
+   *
+   * @param bucket   The bucket name.
+   * @param path     The object path.
+   * @param ttlSec   Time-to-live in seconds (default 3600).
+   */
+  async presignedGetUrl(bucket: string, path: string, ttlSec: number = 3600): Promise<string> {
+    return this.client.presignedGetObject(bucket, path, ttlSec)
+  }
 }
