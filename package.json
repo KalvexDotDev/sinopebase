@@ -1,13 +1,13 @@
 {
   "name": "sinopebase",
   "version": "0.2.1",
-  "module": "src/index.ts",
+  "module": "cmd/serve.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
-    "compile": "bun build src/index.ts --compile --outfile sinopebase",
+    "dev": "bun run --watch cmd/serve.ts",
+    "build": "bun build cmd/serve.ts --outdir dist --target bun",
+    "compile": "bun build cmd/serve.ts --compile --outfile sinopebase",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "lint": "biome check src/ tests/",
@@ -15,7 +15,7 @@
     "typecheck": "bun run tsc --noEmit"
   },
   "exports": {
-    ".": "./src/index.ts",
+    ".": "./cmd/serve.ts",
     "./sdk": "./src/sdk/client.ts"
   },
   "devDependencies": {

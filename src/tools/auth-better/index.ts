@@ -103,6 +103,7 @@ export async function createAuth(
     emailAndPassword: { enabled: true },
     secret,
     trustedOrigins,
+    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
     plugins,
     // Social login links accounts by email by default
     account: {
