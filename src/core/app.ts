@@ -501,8 +501,11 @@ import { createStoragePlugin } from '../apis/file'
 import { type ValidatedConfig, detectMode } from './config'
 import { rateLimit, resetRateLimiters } from '../apis/middlewares_rate_limit'
 import { ApiError } from '../apis/api_error_aliases'
-import { resolve } from 'node:path'
+import { resolve, join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { logger, generateRequestId } from './logger'
+import { Cron } from '~/tools/cron/cron'
 
 export interface AppConfig {
   /** PostgreSQL connection URL (empty string = use in-memory db) */
@@ -543,6 +546,8 @@ export interface AppConfig {
   rateLimitMax?: number
   /** Rate limit: window duration in seconds (default 60) */
   rateLimitWindow?: number
+  /** Backup directory for pg_dump files (default ./backups). */
+  backupDir?: string
 }
 
 /**
@@ -579,6 +584,12 @@ export class Sinopebase {
    */
   private pendingPlugins: Array<(server: Elysia, auth: any) => Promise<void>> = []
 
+  /** Cron scheduler for periodic backups. */
+  private backupCron: Cron | null = null
+
+  /** Resolved backup directory path. */
+  private resolvedBackupDir = ''
+
   constructor(config: AppConfig) {
     this.config = {
       port: 8090,
@@ -589,8 +600,10 @@ export class Sinopebase {
       minioSecretKey: '',
       host: '0.0.0.0',
       mastraRequireAuth: true,
+      backupDir: './backups',
       ...config,
     }
+    this.resolvedBackupDir = resolve(this.dataDir(), this.config.backupDir!)
   }
 
   /**
@@ -1036,6 +1049,71 @@ export class Sinopebase {
     // ── Admin UI — serve built Svelte SPA from /_/ ──
     this.mountAdminUI(server)
 
+    // ── Backup / restore endpoints — service-role only ──
+    // Ensure backup directory exists
+    if (!existsSync(this.resolvedBackupDir)) {
+      await mkdir(this.resolvedBackupDir, { recursive: true })
+    }
+
+    server
+      // GET /api/admin/backups — list available backups
+      .get('/api/admin/backups', async ({ set, request }) => {
+        const ctx = postgrestContexts.get(request)
+        if (!ctx || ctx.role !== 'service_role') {
+          set.status = 403
+          return { code: 403, message: 'Only service_role can list backups.' }
+        }
+        try {
+          const { listBackups } = await import('./backup')
+          const backups = await listBackups(this.resolvedBackupDir)
+          return backups.map((b) => ({ name: b.name, size: b.size, modified: b.modified }))
+        } catch (err) {
+          set.status = 500
+          return { code: 500, message: `Failed to list backups: ${err instanceof Error ? err.message : String(err)}` }
+        }
+      })
+
+      // POST /api/admin/backup — create a backup
+      .post('/api/admin/backup', async ({ body, set, request }) => {
+        const ctx = postgrestContexts.get(request)
+        if (!ctx || ctx.role !== 'service_role') {
+          set.status = 403
+          return { code: 403, message: 'Only service_role can create backups.' }
+        }
+        try {
+          const data = (body ?? {}) as { name?: string }
+          const name = data.name ?? `backup-${Date.now()}`
+          await this.createBackup(name)
+          set.status = 201
+          return { message: `Backup "${name}" created.`, name }
+        } catch (err) {
+          set.status = 500
+          return { code: 500, message: `Failed to create backup: ${err instanceof Error ? err.message : String(err)}` }
+        }
+      })
+
+      // POST /api/admin/restore — restore a backup
+      .post('/api/admin/restore', async ({ body, set, request }) => {
+        const ctx = postgrestContexts.get(request)
+        if (!ctx || ctx.role !== 'service_role') {
+          set.status = 403
+          return { code: 403, message: 'Only service_role can restore backups.' }
+        }
+        try {
+          const data = (body ?? {}) as { name: string }
+          if (!data.name) {
+            set.status = 400
+            return { code: 400, message: 'Backup name is required.' }
+          }
+          await this.restoreBackup(data.name)
+          set.status = 200
+          return { message: `Backup "${data.name}" restored.` }
+        } catch (err) {
+          set.status = 500
+          return { code: 500, message: `Failed to restore backup: ${err instanceof Error ? err.message : String(err)}` }
+        }
+      })
+
     // ── Plugins ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
     const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env['OPENAI_API_KEY'], requireAuth: this.config.mastraRequireAuth ?? true })
@@ -1089,6 +1167,90 @@ export class Sinopebase {
     logger.info('Sinopebase server started', { protocol, port, host })
   }
 
+  /** Create a backup of PostgreSQL and the file store. */
+  async createBackup(name: string): Promise<void> {
+    const { mkdir } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const backupName = name + '_' + timestamp
+    const destDir = join(this.resolvedBackupDir, backupName)
+    if (!existsSync(destDir)) { await mkdir(destDir, { recursive: true }) }
+
+    if (this.database instanceof PostgresDatabase) {
+      const pgPath = join(destDir, 'postgres.sql')
+      const { pgDump: d } = await import('./backup')
+      const pgUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
+      if (pgUrl) { await d(pgUrl, pgPath) }
+    }
+
+    if (this.fileStore) {
+      const fsDir = join(destDir, 'filestore')
+      const { backupFileStore: b } = await import('./backup-files')
+      await b(this.fileStore, fsDir)
+    }
+
+    const m = { name: backupName, createdAt: new Date().toISOString(), hasPostgres: this.database instanceof PostgresDatabase, hasFileStore: !!this.fileStore }
+    await Bun.write(join(destDir, 'backup.json'), JSON.stringify(m, null, 2))
+    logger.info('Backup created', { name: backupName })
+  }
+
+  /** Restore a backup by name. */
+  async restoreBackup(name: string): Promise<void> {
+    const { join } = await import('node:path')
+
+    const destDir = join(this.resolvedBackupDir, name)
+    if (!existsSync(destDir)) { throw new Error('Backup not found: ' + name) }
+
+    const mp = join(destDir, 'backup.json')
+    if (!existsSync(mp)) { throw new Error('Invalid backup: missing backup.json') }
+    const manifest = JSON.parse(await Bun.file(mp).text())
+
+    if (manifest.hasPostgres && this.database instanceof PostgresDatabase) {
+      const pgPath = join(destDir, 'postgres.sql')
+      if (existsSync(pgPath)) {
+        const { pgRestore: r, verifyBackup: v } = await import('./backup')
+        if (!(await v(pgPath))) { throw new Error('Invalid PostgreSQL backup file') }
+        const pgUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
+        if (pgUrl) { await r(pgUrl, pgPath) }
+      }
+    }
+
+    if (manifest.hasFileStore && this.fileStore) {
+      const fsDir = join(destDir, 'filestore')
+      if (existsSync(fsDir)) {
+        const { restoreFileStore: r } = await import('./backup-files')
+        await r(this.fileStore, fsDir)
+      }
+    }
+
+    logger.info('Backup restored', { name })
+  }
+
+  /** Schedule a recurring backup using a cron expression. */
+  scheduleBackup(cronExpression: string): void {
+    this.cancelScheduledBackup()
+    const cron = new Cron()
+    cron.add('backup', cronExpression, () => {
+      const backupName = 'scheduled-' + new Date().toISOString().replace(/[:.]/g, '-')
+      this.createBackup(backupName).catch((err) => {
+        logger.error('Scheduled backup failed', { error: (err as Error).message })
+      })
+    })
+    cron.start()
+    this.backupCron = cron
+    logger.info('Scheduled backup', { cron: cronExpression })
+  }
+
+  /** Cancel any scheduled backup. */
+  cancelScheduledBackup(): void {
+    if (this.backupCron) {
+      this.backupCron.stop()
+      this.backupCron = null
+      logger.info('Scheduled backup cancelled')
+    }
+  }
+
   /**
    * Stop the server gracefully.
    */
@@ -1097,6 +1259,9 @@ export class Sinopebase {
   }
 
   private async stopServer(): Promise<void> {
+    // Cancel scheduled backup before stopping
+    this.cancelScheduledBackup()
+
     // Release rate limiter state and stop the cleanup timer
     resetRateLimiters()
 
@@ -1123,6 +1288,16 @@ export class Sinopebase {
     const result = this.lifecycle.then(operation)
     this.lifecycle = result.catch(() => undefined)
     return result
+  }
+
+  /** Returns the app data directory path. */
+  dataDir(): string {
+    return resolve(this.config.dataDir ?? './pb_data')
+  }
+
+  /** Returns the resolved backup directory path. */
+  getBackupDir(): string {
+    return this.resolvedBackupDir
   }
 
   /** Expose the database for base class usage. */

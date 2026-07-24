@@ -1,0 +1,20 @@
+# Sinopebase — Lefthook pre-commit hooks
+# Install: bun add -d lefthook && bun run lefthook install
+
+pre-commit:
+  parallel: false
+  commands:
+    lint:
+      glob: "*.{ts,tsx,js,jsx,json}"
+      run: bunx biome check --staged --no-errors-on-unmatched
+      stage_fixed: true
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: bun run typecheck
+      skip:
+        - merge
+        - rebase
+    format:
+      glob: "*.{ts,tsx,js,jsx,json,css,md}"
+      run: bunx biome format --staged --no-errors-on-unmatched
+      stage_fixed: true

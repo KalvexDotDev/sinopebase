@@ -1,5 +1,8 @@
 # ⚡ Sinopebase
 
+[![CI](https://github.com/sinopebase/sinopebase/actions/workflows/ci.yml/badge.svg)](https://github.com/sinopebase/sinopebase/actions/workflows/ci.yml)
+[![Supply Chain Security](https://github.com/sinopebase/sinopebase/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/sinopebase/sinopebase/actions/workflows/supply-chain.yml)
+
 **PocketBase-shaped, Supabase-compatible. TypeScript. Bun. PostgreSQL.**
 
 Drop-in replacement for supabase-js. Swap the URL and keep your frontend code. Backed by PocketBase v0.25.x architecture, ported 1:1 from Go to TypeScript.

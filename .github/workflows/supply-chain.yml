@@ -1,0 +1,60 @@
+name: Supply Chain Security
+on:
+  schedule:
+    # Run daily at 06:00 UTC to catch newly published vulnerabilities
+    - cron: '0 6 * * *'
+  push:
+    branches: [master, main]
+    paths:
+      - package.json
+      - bun.lock
+  pull_request:
+    branches: [master, main]
+    paths:
+      - package.json
+      - bun.lock
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Run bun audit
+        run: bun audit
+      - name: Verify lockfile integrity
+        run: bun install --frozen-lockfile
+
+  check-known-vulnerabilities:
+    runs-on: ubuntu-latest
+    needs: audit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Check for known vulnerabilities
+        run: |
+          # Run npm audit using bun's built-in audit
+          bun audit --reporter=json 2>/dev/null || true
+          echo "::notice title=audit-complete::Dependency audit completed."
+      - name: Validate package.json
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const deps = {...pkg.dependencies, ...pkg.devDependencies};
+            const warnings = [];
+            for (const [name, version] of Object.entries(deps)) {
+              if (version.startsWith('link:') || version.startsWith('file:')) {
+                warnings.push('Local dependency: ' + name + '@' + version);
+              }
+            }
+            if (warnings.length > 0) {
+              console.log('::warning title=local-deps::Found ' + warnings.length + ' local dependency reference(s)');
+              warnings.forEach(w => console.log('::warning:: ' + w));
+            }
+          "
