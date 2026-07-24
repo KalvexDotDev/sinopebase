@@ -11,7 +11,7 @@
 import { Elysia } from 'elysia'
 import type { IDatabase } from '~/core/db-interface'
 import { Collection } from '~/core/collection_model'
-import { Record } from '~/core/record_model'
+import { Record as RecordModel } from '~/core/record_model'
 import { newAuthTokenForRecord, newVerificationToken, newPasswordResetToken, newEmailChangeToken } from '~/core/record_tokens'
 import type { RequestAuthInfo } from './record_helpers'
 
@@ -73,7 +73,7 @@ async function findAuthRecordByEmail(
   db: IDatabase,
   collectionName: string,
   email: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   const rows = await selectRows(db, collectionName, {
     filters: [{ column: 'email', operator: 'eq', value: email }],
     limit: 1,
@@ -83,9 +83,9 @@ async function findAuthRecordByEmail(
   const collection = await findCollectionByIdOrName(db, collectionName)
   if (!collection) return null
 
-  const record = new Record(collection)
+  const record = new RecordModel(collection)
   record.load(rows[0]!)
-  if (rows[0]!.id) record.id = String(rows[0]!.id)
+  if (rows[0]!['id']) record.id = String(rows[0]!['id'])
   return record
 }
 
@@ -93,7 +93,7 @@ async function findRecordById(
   db: IDatabase,
   collectionName: string,
   recordId: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   const rows = await selectRows(db, collectionName, {
     filters: [{ column: 'id', operator: 'eq', value: recordId }],
     limit: 1,
@@ -101,13 +101,13 @@ async function findRecordById(
   if (rows.length === 0) return null
   const collection = await findCollectionByIdOrName(db, collectionName)
   if (!collection) return null
-  const record = new Record(collection)
+  const record = new RecordModel(collection)
   record.load(rows[0]!)
-  if (rows[0]!.id) record.id = String(rows[0]!.id)
+  if (rows[0]!['id']) record.id = String(rows[0]!['id'])
   return record
 }
 
-function authResponse(record: Record, token: string): AuthRecordResponse {
+function authResponse(record: RecordModel, token: string): AuthRecordResponse {
   return {
     token,
     record: record.toJSON(),
@@ -138,7 +138,7 @@ async function resolveAuthCollection(
 export function createRecordAuthPlugin(
   db: IDatabase,
   authResolver: () => Promise<RequestAuthInfo>,
-  getTokenSecret: () => string,
+  _getTokenSecret?: () => string,
 ) {
   const app = new Elysia()
 
@@ -182,7 +182,7 @@ export function createRecordAuthPlugin(
       }
 
       const pw = record.getRaw('password')
-      const isValid = pw && typeof pw === 'object' && typeof (pw as Record<string, unknown>).validate === 'function'
+      const isValid = pw && typeof pw === 'object' && typeof (pw as Record<string, unknown>)['validate'] === 'function'
         ? (pw as { validate: (pwd: string) => boolean }).validate(password)
         : password === String(pw ?? '')
 

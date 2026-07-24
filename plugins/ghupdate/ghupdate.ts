@@ -80,7 +80,7 @@ export class GhUpdatePlugin {
    *
    * @param app - The App instance (unused but follows plugin convention).
    */
-  async register(app: App): Promise<void> {
+  async register(_app: App): Promise<void> {
     // Check on startup if configured
     if (this.options.checkOnStartup) {
       await this.checkForUpdate()
@@ -105,8 +105,8 @@ export class GhUpdatePlugin {
   async checkForUpdate(): Promise<string | null> {
     try {
       const release = await fetchLatestRelease(
-        this.options.owner,
-        this.options.repo,
+        this.options.owner!,
+        this.options.repo!,
       )
 
       if (!release || !release.semver) {

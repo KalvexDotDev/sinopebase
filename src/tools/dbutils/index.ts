@@ -44,7 +44,7 @@ const INDEX_COLUMN_REGEX =
  * Character set used to trim index name/column tokens.
  * Matches Go's `\x60'\"[]\\r\\n\\t\\f\\v ` escaped set.
  */
-const TRIM_CHARS = "`'\"[]\r\n\t\f\v ";
+
 
 /**
  * Checks if the index contains the minimum required fields to be considered valid.

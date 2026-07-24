@@ -36,12 +36,20 @@ export class QueryRouter {
    * @param concurrentDB - The concurrent/read pool database.
    * @param nonconcurrentDB - The non-concurrent/write pool database.
    */
+  /** The concurrent database pool (used for SELECT queries). */
+  concurrentDB: IDatabase
+  /** The non-concurrent database pool (used for write queries). */
+  nonconcurrentDB: IDatabase
+
   constructor(
     /** The concurrent database pool (used for SELECT queries). */
-    public concurrentDB: IDatabase,
+    concurrentDB: IDatabase,
     /** The non-concurrent database pool (used for write queries). */
-    public nonconcurrentDB: IDatabase,
-  ) {}
+    nonconcurrentDB: IDatabase,
+  ) {
+    this.concurrentDB = concurrentDB
+    this.nonconcurrentDB = nonconcurrentDB
+  }
 
   /**
    * Routes a query to the appropriate database pool based on query type.

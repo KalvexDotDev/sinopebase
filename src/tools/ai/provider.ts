@@ -9,7 +9,6 @@ import type {
   ChatChunk,
   EmbeddingOptions,
   EmbeddingResponse,
-  AITool,
 } from './types'
 
 /**

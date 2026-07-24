@@ -7,6 +7,7 @@
 import * as fs from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, dirname, resolve as resolvePath, sep } from 'path'
+import type { IFileStore } from './store-interface'
 
 export interface LocalFileInfo {
   name: string
@@ -26,8 +27,12 @@ export interface LocalBucketInfo {
   updated_at: string
 }
 
-export class LocalFileStore {
-  constructor(private basePath: string) {}
+export class LocalFileStore implements IFileStore {
+  private basePath: string
+
+  constructor(basePath: string) {
+    this.basePath = basePath
+  }
 
   private storagePath(): string {
     return join(this.basePath, 'storage')
@@ -59,14 +64,12 @@ export class LocalFileStore {
 
   /**
    * Save a file to the store.
-   * Returns the path that was saved.
    */
-  async save(bucket: string, path: string, data: ArrayBuffer): Promise<string> {
+  async save(bucket: string, path: string, data: ArrayBuffer): Promise<void> {
     await this.ensureBucket(bucket)
     const fp = this.resolveObjectPath(bucket, path)
     await fs.mkdir(dirname(fp), { recursive: true })
     await fs.writeFile(fp, Buffer.from(data))
-    return path
   }
 
   /**

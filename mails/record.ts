@@ -6,17 +6,17 @@
  * Layer 5 -- imports from ~/core/*, ~/mails/*, ~/tools/mailer.
  */
 
-import type { Mailer, Message } from '~/tools/mailer/mailer.ts'
+import type { Mailer } from '~/tools/mailer/mailer.ts'
 import type { App } from '~/core/app.ts'
-import { send } from '~/mails/base.ts'
-import { renderEmailLayout } from '~/mails/templates/layout.ts'
+import { send } from './base.ts'
+import { renderEmailLayout } from './templates/layout.ts'
 import {
   verificationBody,
   passwordResetBody,
   confirmEmailChangeBody,
   otpBody,
   authAlertBody,
-} from '~/mails/templates/html_content.ts'
+} from './templates/html_content.ts'
 
 // ---------------------------------------------------------------------------
 // App settings accessors (minimal helpers until full settings are ported)
@@ -33,10 +33,10 @@ interface AppSettingsAccessors {
  * Default settings accessors — reads from process.env with sensible defaults.
  */
 const defaultSettings: AppSettingsAccessors = {
-  appName: () => process.env.APP_NAME ?? 'Sinopebase',
-  appUrl: () => process.env.APP_URL ?? 'http://127.0.0.1:8090',
-  senderAddress: () => process.env.SENDER_ADDRESS ?? 'noreply@sinopebase.dev',
-  senderName: () => process.env.SENDER_NAME ?? 'Sinopebase',
+  appName: () => process.env['APP_NAME'] ?? 'Sinopebase',
+  appUrl: () => process.env['APP_URL'] ?? 'http://127.0.0.1:8090',
+  senderAddress: () => process.env['SENDER_ADDRESS'] ?? 'noreply@sinopebase.dev',
+  senderName: () => process.env['SENDER_NAME'] ?? 'Sinopebase',
 }
 
 // ---------------------------------------------------------------------------

@@ -51,7 +51,7 @@ export class URLField implements Field {
     }
 
     if (this.required) {
-      schema.minLength = 1
+      schema['minLength'] = 1
     }
 
     return schema

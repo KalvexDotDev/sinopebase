@@ -21,8 +21,8 @@ export class OpenAIProvider extends BaseAIProvider {
 
   constructor(apiKey: string, baseUrl?: string, defaultModel?: string, embeddingModel?: string) {
     super(
-      apiKey || process.env.OPENAI_API_KEY || '',
-      baseUrl || process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL,
+      apiKey || process.env['OPENAI_API_KEY'] || '',
+      baseUrl || process.env['OPENAI_BASE_URL'] || DEFAULT_BASE_URL,
       defaultModel || DEFAULT_MODEL,
     )
     this.embeddingModel = embeddingModel || DEFAULT_EMBEDDING_MODEL
@@ -39,10 +39,10 @@ export class OpenAIProvider extends BaseAIProvider {
       messages,
       stream: false,
     }
-    if (options?.maxTokens) body.max_tokens = options.maxTokens
-    if (options?.temperature !== undefined) body.temperature = options.temperature
-    if (options?.topP !== undefined) body.top_p = options.topP
-    if (options?.stop) body.stop = options.stop
+    if (options?.maxTokens) body['max_tokens'] = options.maxTokens
+    if (options?.temperature !== undefined) body['temperature'] = options.temperature
+    if (options?.topP !== undefined) body['top_p'] = options.topP
+    if (options?.stop) body['stop'] = options.stop
 
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -81,8 +81,8 @@ export class OpenAIProvider extends BaseAIProvider {
       messages,
       stream: true,
     }
-    if (options?.maxTokens) body.max_tokens = options.maxTokens
-    if (options?.temperature !== undefined) body.temperature = options.temperature
+    if (options?.maxTokens) body['max_tokens'] = options.maxTokens
+    if (options?.temperature !== undefined) body['temperature'] = options.temperature
 
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',

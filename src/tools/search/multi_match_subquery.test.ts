@@ -54,6 +54,6 @@ describe("MultiMatchSubQuery", () => {
     const externalParams: Record<string, unknown> = {};
     sq.build(externalParams);
 
-    expect(externalParams.p1).toBe("v1");
+    expect(externalParams['p1']).toBe("v1");
   });
 });

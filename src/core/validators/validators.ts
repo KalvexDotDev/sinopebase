@@ -9,13 +9,18 @@
  * ValidationError represents a named validation error with optional params.
  */
 export class ValidationError extends Error {
+  readonly code: string
+  readonly params?: Record<string, unknown>
+
   constructor(
-    public readonly code: string,
+    code: string,
     message: string,
-    public readonly params?: Record<string, unknown>,
+    params?: Record<string, unknown>,
   ) {
     super(message)
     this.name = 'ValidationError'
+    this.code = code
+    this.params = params
   }
 
   /**
@@ -30,11 +35,14 @@ export class ValidationError extends Error {
  * ValidationErrors is a map of field name -> error, used for structured validation failures.
  */
 export class ValidationErrors extends Error {
+  readonly errors: Record<string, ValidationError>
+
   constructor(
-    public readonly errors: Record<string, ValidationError>,
+    errors: Record<string, ValidationError>,
   ) {
     super('Validation failed')
     this.name = 'ValidationErrors'
+    this.errors = errors
   }
 }
 

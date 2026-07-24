@@ -201,9 +201,9 @@ describe('jwt.ts', () => {
   it('ParseJWT verifies and returns claims', async () => {
     const token = await NewJWT(payload, signingKey, 3600000);
     const claims = await ParseJWT(token, signingKey);
-    expect(claims.sub).toBe('user123');
-    expect(claims.role).toBe('admin');
-    expect(claims.exp).toBeGreaterThan(0);
+    expect(claims['sub']).toBe('user123');
+    expect(claims['role']).toBe('admin');
+    expect(claims['exp']).toBeGreaterThan(0);
   });
 
   it('ParseJWT rejects wrong key', async () => {
@@ -220,7 +220,7 @@ describe('jwt.ts', () => {
     const token = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0.dummy';
     try {
       const claims = ParseUnverifiedJWT(token);
-      expect(claims.sub).toBe('user123');
+      expect(claims['sub']).toBe('user123');
     } catch {
       // If signature verification isn't needed, this may fail on malformed token
     }
@@ -236,7 +236,7 @@ describe('jwt.ts', () => {
     const token = await NewJWT({ ...payload, exp: customExp }, signingKey, 3600000);
     const claims = await ParseJWT(token, signingKey);
     // Payload's exp should override auto-generated exp
-    expect(claims.exp).toBe(customExp);
+    expect(claims['exp']).toBe(customExp);
   });
 });
 

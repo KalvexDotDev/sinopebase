@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { Record, FieldNameId, FieldNameEmail } from '~/core/record_model.ts'
+import { Record, FieldNameId } from '~/core/record_model.ts'
 import { Collection } from '~/core/collection_model.ts'
 
 describe('Record', () => {
@@ -108,7 +108,7 @@ describe('Record', () => {
     expect(record.expandData()).toEqual({})
 
     record.setExpand({ author: { id: 'u1', name: 'John' } })
-    expect(record.expandData().author).toBeTruthy()
+    expect(record.expandData()['author']).toBeTruthy()
   })
 
   it('expandedOne returns null when no expand', () => {
@@ -134,11 +134,11 @@ describe('Record', () => {
     record.hide('secret')
 
     const exported = record.publicExport()
-    expect(exported.secret).toBeUndefined()
+    expect(exported['secret']).toBeUndefined()
 
     record.unhide('secret')
     const exported2 = record.publicExport()
-    expect(exported2.secret).toBe('hidden-value')
+    expect(exported2['secret']).toBe('hidden-value')
   })
 
   it('publicExport includes collection references', () => {
@@ -148,8 +148,8 @@ describe('Record', () => {
     record.id = 'rec1'
 
     const exported = record.publicExport()
-    expect(exported.collectionId).toBe('col1')
-    expect(exported.collectionName).toBe('test')
+    expect(exported['collectionId']).toBe('col1')
+    expect(exported['collectionName']).toBe('test')
   })
 
   it('publicExport hides password and tokenKey for auth', () => {
@@ -198,9 +198,9 @@ describe('Record', () => {
     record.setRaw('emailVisibility', true)
 
     const exported = record.publicExport()
-    expect(exported.password).toBeUndefined()
-    expect(exported.tokenKey).toBeUndefined()
-    expect(exported.email).toBe('test@example.com')
+    expect(exported['password']).toBeUndefined()
+    expect(exported['tokenKey']).toBeUndefined()
+    expect(exported['email']).toBe('test@example.com')
   })
 
   it('clone creates a deep copy', () => {

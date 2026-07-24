@@ -35,7 +35,7 @@ export interface BackupOptions {
  * @param options - Backup options.
  */
 export async function createBackup(
-  db: IDatabase,
+  _db: IDatabase,
   options: BackupOptions,
 ): Promise<void> {
   const { name } = options

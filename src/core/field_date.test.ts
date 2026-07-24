@@ -20,8 +20,8 @@ describe('DateField', () => {
 
   it('settings schema is string with date-time format', () => {
     const f = new DateField()
-    expect(f.settingsSchema.type).toBe('string')
-    expect(f.settingsSchema.format).toBe('date-time')
+    expect(f.settingsSchema['type']).toBe('string')
+    expect(f.settingsSchema['format']).toBe('date-time')
   })
 
   describe('validateValue', () => {

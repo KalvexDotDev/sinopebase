@@ -88,14 +88,16 @@ function ipv4ToNum(ip: string): number | null {
 // ---------------------------------------------------------------------------
 
 class RateClient {
+  maxAllowed: number
   available: number
   start: number
   interval: number
 
   constructor(
-    public maxAllowed: number,
+    maxAllowed: number,
     intervalInSec: number,
   ) {
+    this.maxAllowed = maxAllowed
     this.available = maxAllowed
     this.start = Math.floor(Date.now() / 1000)
     this.interval = intervalInSec
@@ -138,14 +140,21 @@ class RateClient {
 // ---------------------------------------------------------------------------
 
 class RateLimiter {
+  maxAllowed: number
+  interval: number
+  minDeleteInterval: number
   private clients = new Map<string, RateClient>()
   private totalDeleted = 0
 
   constructor(
-    public maxAllowed: number,
-    public interval: number,
-    public minDeleteInterval: number = DEFAULT_CLEANUP_INTERVAL_SEC,
-  ) {}
+    maxAllowed: number,
+    interval: number,
+    minDeleteInterval: number = DEFAULT_CLEANUP_INTERVAL_SEC,
+  ) {
+    this.maxAllowed = maxAllowed
+    this.interval = interval
+    this.minDeleteInterval = minDeleteInterval
+  }
 
   /**
    * Check if `key` (usually an IP address) is allowed through.

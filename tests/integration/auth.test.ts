@@ -6,24 +6,27 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { createTestClient, uniqueEmail } from './setup'
-import type { SinopebaseClient } from '../../src/sdk/client'
+import { uniqueEmail } from './setup'
+import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import { Sinopebase } from '../../src/core/app'
+import { reserveLoopbackPort, requirePostgres, requireAnonKey } from '../harness'
 
 let client: SinopebaseClient
 let server: Sinopebase
 
 beforeAll(async () => {
-  // Start the Sinopebase server for integration testing
+  const portReservation = await reserveLoopbackPort()
+  // Start the Sinopebase server for integration testing with validated credentials
   server = new Sinopebase({
-    postgresUrl: '',
-    minioEndpoint: '',
-    minioAccessKey: '',
-    minioSecretKey: '',
-    port: 8090,
+    postgresUrl: requirePostgres(),
+    port: portReservation.port,
   })
+  await portReservation.release()
   await server.start()
-  client = createTestClient()
+  client = createClient(
+    portReservation.origin,
+    requireAnonKey(),
+  )
 })
 
 afterAll(async () => {

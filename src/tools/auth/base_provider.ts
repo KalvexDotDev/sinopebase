@@ -168,9 +168,9 @@ export class BaseProvider implements Provider {
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data.access_token as string) ?? '',
-      RefreshToken: (data.refresh_token as string) ?? '',
-      ExpiresIn: (data.expires_in as number) ?? 0,
+      AccessToken: (data['access_token'] as string) ?? '',
+      RefreshToken: (data['refresh_token'] as string) ?? '',
+      ExpiresIn: (data['expires_in'] as number) ?? 0,
       Raw: data,
     }
   }
@@ -201,9 +201,9 @@ export class BaseProvider implements Provider {
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data.access_token as string) ?? '',
-      RefreshToken: (data.refresh_token as string) ?? '',
-      ExpiresIn: (data.expires_in as number) ?? 0,
+      AccessToken: (data['access_token'] as string) ?? '',
+      RefreshToken: (data['refresh_token'] as string) ?? '',
+      ExpiresIn: (data['expires_in'] as number) ?? 0,
       Raw: data,
     }
   }

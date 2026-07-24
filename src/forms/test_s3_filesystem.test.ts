@@ -25,14 +25,14 @@ describe('TestS3Filesystem', () => {
   it('validates filesystem is required', () => {
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.filesystem).toContain('required');
+    expect(errors!['filesystem']).toContain('required');
   });
 
   it('validates filesystem must be storage or backups', () => {
     form.filesystem = 'invalid';
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.filesystem).toContain('storage');
+    expect(errors!['filesystem']).toContain('storage');
   });
 
   it('accepts "storage" as valid filesystem', () => {

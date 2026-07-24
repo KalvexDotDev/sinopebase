@@ -33,7 +33,11 @@ export class Sendmail implements Mailer, SendInterceptor {
    *   - `/usr/bin/sendmail`
    *   - `sendmail` (via PATH lookup)
    */
-  constructor(private sendmailPath?: string) {}
+  private sendmailPath: string | undefined
+
+  constructor(sendmailPath?: string) {
+    this.sendmailPath = sendmailPath
+  }
 
   // -----------------------------------------------------------------------
   // SendInterceptor
@@ -156,7 +160,7 @@ async function findSendmailPath(): Promise<string> {
         try {
           await new Promise<void>((resolve, reject) => {
             const proc = execFile(
-              process.env.ComSpec ? "where" : "which",
+              process.env['ComSpec'] ? "where" : "which",
               [option],
               { timeout: 1000 },
               (err) => {

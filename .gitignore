@@ -35,3 +35,5 @@ pb_data/
 
 # Finder (MacOS) folder config
 .DS_Store
+
+.memento-staging/

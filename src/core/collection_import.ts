@@ -7,8 +7,6 @@
 
 import type { IDatabase } from '~/core/db-interface.ts'
 import { Collection } from '~/core/collection_model.ts'
-import { FieldsListFromJSON } from '~/core/collection_model.ts'
-import { CollectionAuthOptions } from '~/core/collection_model_auth_options.ts'
 
 // ---------------------------------------------------------------------------
 // ImportCollections
@@ -44,7 +42,7 @@ export async function importCollections(
 
   for (const data of toImport) {
     // Resolve the collection identifier
-    const idOrName = String(data.id ?? data.name ?? '')
+    const idOrName = String(data['id'] ?? data['name'] ?? '')
 
     // Check if this collection already exists
     const { findCollectionByNameOrId } = await import('~/core/collection_query.ts')
@@ -76,7 +74,6 @@ export async function importCollections(
 
     // Save the collection
     try {
-      const { saveCollection } = await import('~/core/collection_import.ts')
       // We save via a helper that persists to DB
       await saveCollectionToDb(db, collection)
     } catch (err) {
@@ -130,7 +127,7 @@ export async function importCollectionsByMarshaledJSON(
  * Saves a collection to the database.
  */
 async function saveCollectionToDb(
-  db: IDatabase,
+  _db: IDatabase,
   _collection: Collection,
 ): Promise<void> {
   // TODO: Implement actual persistence with validation

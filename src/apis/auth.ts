@@ -13,7 +13,7 @@ import {
   generateRefreshToken,
   ACCESS_TOKEN_EXPIRES_IN,
 } from './auth-jwt'
-import { bridgeSignInResponse, bridgeGetUserResponse, bridgeErrorResponse } from '~/tools/auth-better/supabase-bridge'
+import { bridgeSignInResponse, bridgeGetUserResponse } from '~/tools/auth-better/supabase-bridge'
 import { lookupSessionByToken } from '~/tools/auth-better'
 
 // ---------------------------------------------------------------------------
@@ -27,33 +27,21 @@ function sessionResponse(
 ) {
   const now = Math.floor(Date.now() / 1000)
   return {
-    data: {
-      user,
-      session: {
-        access_token: accessToken,
-        token_type: 'bearer' as const,
-        expires_in: ACCESS_TOKEN_EXPIRES_IN,
-        expires_at: now + ACCESS_TOKEN_EXPIRES_IN,
-        refresh_token: refreshToken,
-        user,
-      },
-    },
-    error: null,
+    access_token: accessToken,
+    token_type: 'bearer' as const,
+    expires_in: ACCESS_TOKEN_EXPIRES_IN,
+    expires_at: now + ACCESS_TOKEN_EXPIRES_IN,
+    refresh_token: refreshToken,
+    user,
   }
 }
 
 function errorResponse(message: string, status: number) {
-  return {
-    data: { user: null, session: null },
-    error: { message, status },
-  }
+  return { message, status }
 }
 
 function userResponse(user: ReturnType<typeof authStore.toUser>) {
-  return {
-    data: { user },
-    error: null,
-  }
+  return user
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +84,7 @@ export const authPlugin = new Elysia()
   .post(
     '/auth/v1/token',
     async ({ body, query, set }) => {
-      const grantType = query.grant_type as string | undefined
+      const grantType = query['grant_type'] as string | undefined
 
       if (grantType === 'password') {
         // Sign in with email + password
@@ -176,7 +164,7 @@ export const authPlugin = new Elysia()
     '/auth/v1/logout',
     async ({ headers }) => {
       // Invalidate the user's refresh tokens if a Bearer token is provided
-      const authHeader = headers.authorization
+      const authHeader = headers['authorization']
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7).trim()
         if (token) {
@@ -188,14 +176,14 @@ export const authPlugin = new Elysia()
           }
         }
       }
-      return { error: null }
+      return {}
     },
   )
 
   .get(
     '/auth/v1/user',
     async ({ headers, set }) => {
-      const authHeader = headers.authorization
+      const authHeader = headers['authorization']
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         set.status = 401
         return { message: 'Invalid authorization header' }
@@ -299,15 +287,15 @@ export function createAuthPlugin(auth: any) {
       return errorResponse('Invalid grant type', 400)
     })
     .post('/auth/v1/logout', async ({ headers }) => {
-      const authHeader = headers.authorization
+      const authHeader = headers['authorization']
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7).trim()
         await auth.api.signOut({ headers: new Headers({ Authorization: 'Bearer ' + token }) }).catch(() => {})
       }
-      return { error: null }
+      return {}
     })
     .get('/auth/v1/user', async ({ headers, set }) => {
-      const authHeader = headers.authorization
+      const authHeader = headers['authorization']
       if (!authHeader?.startsWith('Bearer ')) {
         set.status = 401
         return { message: 'Invalid authorization header' }
@@ -324,11 +312,7 @@ export function createAuthPlugin(auth: any) {
           set.status = 401
           return { message: 'Invalid token' }
         }
-        const response = bridgeGetUserResponse({ user: row })
-        if (response.error) {
-          set.status = response.error.status
-        }
-        return response
+        return bridgeGetUserResponse({ user: row })
       } catch {
         set.status = 401
         return { message: 'Invalid authorization header' }

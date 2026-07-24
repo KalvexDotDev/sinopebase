@@ -40,7 +40,6 @@ import {
   securityHeaders,
   loadAuthToken,
   wwwRedirect,
-  skipSuccessActivityLog,
 } from './middlewares'
 import { bodyLimit, DEFAULT_MAX_BODY_SIZE } from './middlewares_body_limit'
 import { cors, type CORSConfig } from './middlewares_cors'
@@ -105,9 +104,11 @@ export async function NewRouter(
   elysia.state('store', new Store<string, unknown>())
 
   // ── CORS ──
-  elysia.onRequest(
-    cors(options.corsConfig ?? { allowOrigins: ['*'] }),
-  )
+  const applyCors = cors(options.corsConfig ?? { allowOrigins: ['*'] })
+  elysia.onRequest((ctx) => applyCors({
+    request: ctx.request,
+    set: ctx.set as Parameters<typeof applyCors>[0]['set'],
+  }))
 
   // ── Gzip compression ──
   // Elysia v1.4+ provides built-in compression.
@@ -201,8 +202,8 @@ export async function NewRouter(
  * ```
  */
 export function staticHandler(
-  fsys: BunFile | FileSystem,
-  indexFallback: boolean,
+  _fsys: unknown,
+  _indexFallback: boolean,
 ) {
   return async (ctx: {
     params: Record<string, string>

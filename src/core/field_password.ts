@@ -74,13 +74,13 @@ export class PasswordField implements Field {
       writeOnly: true,
     }
 
-    schema.minLength = this.min > 0 ? this.min : DefaultPasswordMinLength
+    schema['minLength'] = this.min > 0 ? this.min : DefaultPasswordMinLength
 
     const max = this.max > 0 ? this.max : DefaultPasswordMaxLength
-    schema.maxLength = max
+    schema['maxLength'] = max
 
     if (this.pattern) {
-      schema.pattern = this.pattern
+      schema['pattern'] = this.pattern
     }
 
     return schema
@@ -137,7 +137,6 @@ export class PasswordField implements Field {
       errors.push('min: must be >= 0')
     }
 
-    const max = this.max > 0 ? this.max : DefaultPasswordMaxLength
     if (this.max > 0 && this.max > DefaultPasswordMaxLength) {
       errors.push(`max: must be <= ${DefaultPasswordMaxLength}`)
     }

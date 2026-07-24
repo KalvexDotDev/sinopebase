@@ -8,8 +8,13 @@
  * PostgreSQL-compatible approach using the IDatabase interface.
  */
 
-import type { IDatabase } from '~/core/db-interface.ts'
+import {
+  hasDatabaseSchemaCapability,
+  type IDatabase,
+  type SchemaDatabase,
+} from '~/core/db-interface.ts'
 import type { Collection } from '~/core/collection_model.ts'
+import type { FieldsList } from '~/core/fields_list.ts'
 import { PseudorandomString } from '~/tools/security/random.ts'
 
 // ---------------------------------------------------------------------------
@@ -37,11 +42,20 @@ export async function syncRecordTableSchema(
     return
   }
 
+  if (!hasDatabaseSchemaCapability(db)) {
+    throw new Error('Database does not support record-table schema mutations')
+  }
+  const schemaDb = db
+
+  if (newCollection.indexes.length > 0 || (oldCollection?.indexes.length ?? 0) > 0) {
+    throw new Error('Database does not support record-table index synchronization')
+  }
+
   // -----------------------------------------------------------------------
   // CREATE - new collection
   // -----------------------------------------------------------------------
   if (!oldCollection) {
-    await createRecordTable(db, newCollection)
+    await createRecordTable(schemaDb, newCollection)
     return
   }
 
@@ -68,24 +82,23 @@ export async function syncRecordTableSchema(
 
   // Rename table if needed
   if (oldTableName.toLowerCase() !== newTableName.toLowerCase()) {
-    // TODO: Implement table rename
-    // await db.execute(`ALTER TABLE "${oldTableName}" RENAME TO "${newTableName}"`)
+    throw new Error('Database does not support record-table renames')
   }
 
   // Check for deleted columns
-  const allOldFields = oldFields.toArray()
+  const allOldFields = oldFields.all()
   for (const oldField of allOldFields) {
     const exists = newFields.getById(oldField.id)
     if (exists) continue
 
     // Drop column
-    await db.dropColumn(newTableName, oldField.name)
+    await schemaDb.dropColumn(newTableName, oldField.name)
   }
 
   // Check for new or renamed columns
   const toRename: Array<{ temp: string; actual: string }> = []
 
-  for (const field of newFields) {
+  for (const field of newFields.all()) {
     const oldField = oldFields.getById(field.id)
 
     if (!oldField) {
@@ -93,27 +106,27 @@ export async function syncRecordTableSchema(
       const tempName = field.name + PseudorandomString(5)
       toRename.push({ temp: tempName, actual: field.name })
 
-      await db.addColumn(newTableName, tempName, field.columnType)
+      await schemaDb.addColumn(newTableName, tempName, field.columnType)
     } else if (oldField.name !== field.name) {
       // Renamed column - use temp name first
       const tempName = field.name + PseudorandomString(5)
       toRename.push({ temp: tempName, actual: field.name })
 
-      await db.renameColumn(newTableName, oldField.name, tempName)
+      await schemaDb.renameColumn(newTableName, oldField.name, tempName)
     }
   }
 
   // Rename temp columns to actual names
   for (const { temp, actual } of toRename) {
-    await db.renameColumn(newTableName, temp, actual)
+    await schemaDb.renameColumn(newTableName, temp, actual)
   }
 
   // Handle single/multiple field type changes
-  await normalizeSingleVsMultipleFieldChanges(db, newCollection, oldCollection)
+  await normalizeSingleVsMultipleFieldChanges(schemaDb, newCollection, oldCollection)
 
   // Create new indexes
   if (needsIndexUpdate) {
-    await createCollectionIndexes(db, newCollection)
+    await createCollectionIndexes(schemaDb, newCollection)
   }
 }
 
@@ -125,13 +138,13 @@ export async function syncRecordTableSchema(
  * Creates a record table for a new collection.
  */
 async function createRecordTable(
-  db: IDatabase,
+  db: SchemaDatabase,
   collection: Collection,
 ): Promise<void> {
   await db.createTable(collection.name)
 
   // Add columns for each field
-  for (const field of collection.fields) {
+  for (const field of collection.fields.all()) {
     await db.addColumn(collection.name, field.name, field.columnType)
   }
 
@@ -149,28 +162,10 @@ async function createRecordTable(
  * Equivalent to PocketBase's `createCollectionIndexes()`.
  */
 async function createCollectionIndexes(
-  _db: IDatabase,
+  _db: SchemaDatabase,
   _collection: Collection,
 ): Promise<void> {
-  // TODO: Implement index creation SQL
-  // The actual implementation would parse each index expression
-  // from collection.indexes and execute CREATE INDEX statements.
-  // Example:
-  //   CREATE UNIQUE INDEX IF NOT EXISTS idx_name ON table (column)
-  // For now this is a stub since the IDatabase interface doesn't
-  // have a generic query execution method.
-}
-
-/**
- * Drops all indexes for a collection.
- *
- * Equivalent to PocketBase's `dropCollectionIndexes()`.
- */
-async function dropCollectionIndexes(
-  _db: IDatabase,
-  _collection: Collection,
-): Promise<void> {
-  // TODO: Implement index dropping
+  // Non-empty index definitions are rejected before any schema mutation.
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +178,7 @@ async function dropCollectionIndexes(
  * Equivalent to PocketBase's `normalizeSingleVsMultipleFieldChanges()`.
  */
 async function normalizeSingleVsMultipleFieldChanges(
-  _db: IDatabase,
+  _db: SchemaDatabase,
   _newCollection: Collection,
   _oldCollection: Collection,
 ): Promise<void> {
@@ -207,55 +202,15 @@ export function normalizeTableName(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Extended IDatabase interface for schema operations
-// ---------------------------------------------------------------------------
-
-/**
- * Extended database operations needed for schema syncing.
- *
- * These are not part of the base IDatabase interface but are needed
- * for DDL operations.
- */
-declare module '~/core/db-interface.ts' {
-  interface IDatabase {
-    /**
-     * Adds a column to an existing table.
-     */
-    addColumn(table: string, column: string, columnType: string): Promise<void>
-
-    /**
-     * Drops a column from an existing table.
-     */
-    dropColumn(table: string, column: string): Promise<void>
-
-    /**
-     * Renames a column in an existing table.
-     */
-    renameColumn(table: string, oldName: string, newName: string): Promise<void>
-  }
-}
-
-// ======================================================================
-// NOTE: The DDL methods (addColumn, dropColumn, renameColumn) need to be
-// implemented on the actual database classes. For now, they are declared
-// here to support the type system. The concrete implementations would
-// use ALTER TABLE statements:
-//
-//   ALTER TABLE table ADD COLUMN column type
-//   ALTER TABLE table DROP COLUMN column
-//   ALTER TABLE table RENAME COLUMN old TO new
-// ======================================================================
-
-// ---------------------------------------------------------------------------
 // Comparison helpers
 // ---------------------------------------------------------------------------
 
 function areFieldsEqual(
-  a: { toArray(): { id: string; name: string; type: string; columnType: string }[] },
-  b: { toArray(): { id: string; name: string; type: string; columnType: string }[] },
+  a: FieldsList,
+  b: FieldsList,
 ): boolean {
-  const aArr = a.toArray()
-  const bArr = b.toArray()
+  const aArr = a.all()
+  const bArr = b.all()
 
   if (aArr.length !== bArr.length) return false
 

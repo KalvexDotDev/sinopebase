@@ -121,14 +121,21 @@ export class RequestEvent extends Event {
    * @param auth - Authentication information (record or admin).
    * @param requestInfo - Parsed request data.
    */
+  /** The application instance. */
+  app: unknown
+  /** Authentication information. */
+  auth: unknown
+
   constructor(
     /** The application instance. */
-    public app: unknown,
+    app: unknown,
     /** Authentication information. */
-    public auth: unknown,
+    auth: unknown,
     requestInfo?: RequestInfo | Partial<RequestInfoInit>,
   ) {
     super()
+    this.app = app
+    this.auth = auth
 
     if (requestInfo instanceof RequestInfo) {
       this.requestInfo = requestInfo

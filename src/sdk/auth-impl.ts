@@ -20,11 +20,11 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
       headers,
       body: body ? JSON.stringify(body) : undefined,
     })
-    const json = await res.json().catch(() => null)
+    const json: Record<string, unknown> | null = await res.json().catch(() => null)
     if (!res.ok) {
       return {
         data: { user: null, session: null },
-        error: { message: json?.message ?? res.statusText, status: res.status },
+        error: { message: (json?.['message'] as string) ?? res.statusText, status: res.status },
       } as T
     }
     return json as T
@@ -32,23 +32,30 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
 
   let currentSession: Session | null = null
 
+  function authResponse(session: Session): AuthResponse {
+    return { data: { user: session.user, session }, error: null }
+  }
+
   return {
     async signUp(credentials): Promise<AuthResponse> {
-      const res = await request<AuthResponse>('POST', '/auth/v1/signup', credentials)
-      if (!res.error && res.data.session) currentSession = res.data.session
-      return res
+      const res = await request<Session | AuthResponse>('POST', '/auth/v1/signup', credentials)
+      if ('error' in res) return res
+      currentSession = res
+      return authResponse(res)
     },
 
     async signInWithPassword(credentials): Promise<AuthResponse> {
-      const res = await request<AuthResponse>('POST', '/auth/v1/token?grant_type=password', credentials)
-      if (!res.error && res.data.session) currentSession = res.data.session
-      return res
+      const res = await request<Session | AuthResponse>('POST', '/auth/v1/token?grant_type=password', credentials)
+      if ('error' in res) return res
+      currentSession = res
+      return authResponse(res)
     },
 
     async signOut(_options?): Promise<{ error: AuthError | null }> {
-      const res = await request<{ error: AuthError | null }>('POST', '/auth/v1/logout')
-      if (!res.error) currentSession = null
-      return res
+      const res = await request<{ error?: AuthError | null }>('POST', '/auth/v1/logout')
+      if (res.error) return { error: res.error }
+      currentSession = null
+      return { error: null }
     },
 
     async getUser(): Promise<{ data: { user: User | null }; error: AuthError | null }> {
@@ -57,19 +64,20 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
         ? { ...headers, Authorization: `Bearer ${token}` }
         : headers
       const res = await fetch(`${baseUrl}/auth/v1/user`, { headers: authHeaders })
-      const json = await res.json().catch(() => null)
+      const json: Record<string, unknown> | null = await res.json().catch(() => null)
       if (!res.ok) {
-        return { data: { user: null }, error: { message: json?.message ?? res.statusText, status: res.status } }
+        return { data: { user: null }, error: { message: (json?.['message'] as string) ?? res.statusText, status: res.status } }
       }
-      return json as { data: { user: User | null }; error: AuthError | null }
+      return { data: { user: json as User }, error: null }
     },
 
     async refreshSession(): Promise<AuthResponse> {
-      const res = await request<AuthResponse>('POST', '/auth/v1/token?grant_type=refresh_token', {
+      const res = await request<Session | AuthResponse>('POST', '/auth/v1/token?grant_type=refresh_token', {
         refresh_token: currentSession?.refresh_token,
       })
-      if (!res.error && res.data.session) currentSession = res.data.session
-      return res
+      if ('error' in res) return res
+      currentSession = res
+      return authResponse(res)
     },
 
     onAuthStateChange(

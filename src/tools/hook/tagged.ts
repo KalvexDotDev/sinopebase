@@ -24,7 +24,8 @@
  * ```
  */
 
-import type { Handler, Resolver } from "./hook.ts";
+import type { Handler } from "./hook.ts";
+import type { Resolver } from "./event.ts";
 import { Hook } from "./hook.ts";
 
 /**

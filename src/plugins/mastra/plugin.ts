@@ -38,7 +38,7 @@ export class MastraPlugin {
    */
   async register(app: Elysia, auth?: any, db?: any, fileStore?: any): Promise<void> {
     // Initialise the AI provider
-    const apiKey = this.options.openaiApiKey || process.env.OPENAI_API_KEY || ''
+    const apiKey = this.options.openaiApiKey || process.env['OPENAI_API_KEY'] || ''
     if (apiKey) {
       this.provider = new OpenAIProvider(
         apiKey,

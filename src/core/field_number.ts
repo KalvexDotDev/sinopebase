@@ -53,15 +53,15 @@ export class NumberField implements Field {
     }
 
     if (this.onlyInt) {
-      schema.multipleOf = 1
+      schema['multipleOf'] = 1
     }
 
     if (this.min !== null) {
-      schema.minimum = this.min
+      schema['minimum'] = this.min
     }
 
     if (this.max !== null) {
-      schema.maximum = this.max
+      schema['maximum'] = this.max
     }
 
     return schema

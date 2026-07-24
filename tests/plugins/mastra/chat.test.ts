@@ -5,22 +5,30 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { Sinopebase } from '~/core/app'
 import { MastraPlugin } from '~/plugins/mastra/plugin'
+import { reserveLoopbackPort, requirePostgres } from '../../harness'
 
 describe('Mastra AI Plugin', () => {
   let app: Sinopebase
   let baseUrl: string
 
   beforeAll(async () => {
+    const portReservation = await reserveLoopbackPort()
     app = new Sinopebase({
-      port: 8095,
-      postgresUrl: process.env.TEST_POSTGRES_URL || '',
+      port: portReservation.port,
+      postgresUrl: requirePostgres(),
     })
+    await portReservation.release()
+
+    // MastraPlugin is already registered internally by initializeServer(),
+    // but we register it explicitly via app.use() for test isolation.
+    const plugin = new MastraPlugin({ requireAuth: false })
+    app.use(async (server, _auth) => {
+      await plugin.register(server)
+    })
+
     await app.start()
 
-    const plugin = new MastraPlugin({ requireAuth: false })
-    await plugin.register(app['server'] as any)
-
-    baseUrl = 'http://127.0.0.1:8095'
+    baseUrl = portReservation.origin
   })
 
   afterAll(async () => {

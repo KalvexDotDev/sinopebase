@@ -10,9 +10,22 @@
     "compile": "bun build cmd/serve.ts --compile --outfile sinopebase",
     "test": "bun test",
     "test:watch": "bun test --watch",
+    "test:harness": "bun test tests/harness/harness.test.ts",
+    "test:taxonomy": "bun tests/harness/audit.ts",
+    "test:component": "bun test tests/integration/app-lifecycle.test.ts tests/integration/pb-api-",
+    "test:contract:auth": "bun test tests/integration/auth.test.ts tests/integration/auth-better.test.ts",
+    "test:contract:postgrest": "bun test tests/integration/postgrest.test.ts",
+    "test:contract:storage": "bun test tests/integration/storage.test.ts",
+    "test:contract:realtime": "bun test tests/integration/realtime.test.ts",
+    "test:contract:postgres-rls": "bun test src/core/db-postgres-contract.test.ts src/core/db-postgres-rls.test.ts",
+    "test:integration:plugins": "bun test tests/plugins/",
+    "test:compatibility": "bun test src/apis/postgrest.test.ts src/apis/postgrest-head-count.test.ts src/apis/postgrest-in-filter.test.ts src/apis/realtime-postgres-changes.test.ts src/apis/file.test.ts src/core/postgres-role-bootstrap.test.ts src/core/db-postgres-rls.test.ts tests/tools/auth-better/supabase-bridge.test.ts tests/integration/auth-better.test.ts",
+    "test:release": "bun tests/harness/require-release-infra.ts && bun run test:component && bun run test:contract:auth && bun run test:contract:postgrest && bun run test:contract:storage && bun run test:contract:realtime && bun run test:contract:postgres-rls && bun run test:integration:plugins && bun test",
     "lint": "biome check src/ tests/",
     "format": "biome format --write src/ tests/",
-    "typecheck": "bun run tsc --noEmit"
+    "format:check": "biome format src/ tests/",
+    "typecheck": "bun run tsc --noEmit",
+    "typecheck:harness": "bun run tsc --noEmit --project wave0-test-tsconfig.json"
   },
   "exports": {
     ".": "./cmd/serve.ts",
@@ -21,6 +34,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/nodemailer": "^8.0.1",
+    "@types/pg": "^8.20.0",
     "@types/ws": "^8.18.1",
     "biome": "^0.3.3",
     "bun-types": "^1.3.14"

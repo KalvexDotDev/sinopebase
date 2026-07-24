@@ -74,8 +74,11 @@ export interface SendInterceptor {
  * not calling `next()`.
  */
 export class SendEvent extends Event {
-  constructor(public message: Message) {
+  message: Message
+
+  constructor(message: Message) {
     super();
+    this.message = message
   }
 }
 

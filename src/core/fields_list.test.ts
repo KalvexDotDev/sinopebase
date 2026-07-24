@@ -199,8 +199,8 @@ describe('FieldsList', () => {
 
     const json = list.toJSON()
     expect(json).toHaveLength(1)
-    expect(json[0]!.type).toBe('text')
-    expect(json[0]!.name).toBe('title')
+    expect(json[0]!['type']).toBe('text')
+    expect(json[0]!['name']).toBe('title')
   })
 
   it('toString returns JSON string', () => {

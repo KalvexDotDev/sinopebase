@@ -16,7 +16,7 @@ function createMockDB(): IDatabase {
     dropTable: mock(async () => {}),
     insert: mock(async (table: string, record: Record<string, unknown>) => {
       if (table === '_migrations') {
-        applied.set(String(record.name), String(record.applied_at))
+        applied.set(String(record['name']), String(record['applied_at']))
       }
       return { id: 'mock-id', ...record }
     }),

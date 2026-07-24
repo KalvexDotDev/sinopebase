@@ -68,8 +68,8 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
 
       // Apply pagination from query
       const q = query as Record<string, string>
-      const page = Math.max(1, parseInt(q.page ?? '1', 10) || 1)
-      const perPage = Math.min(1000, Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30))
+      const page = Math.max(1, parseInt(q['page'] ?? '1', 10) || 1)
+      const perPage = Math.min(1000, Math.max(1, parseInt(q['perPage'] ?? q['per_page'] ?? '30', 10) || 30))
 
       const totalItems = allCollections.length
       const totalPages = Math.ceil(totalItems / perPage)
@@ -99,7 +99,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
     try {
       const data = (body ?? {}) as Record<string, unknown>
 
-      const name = String(data.name ?? '')
+      const name = String(data['name'] ?? '')
       if (!name) {
         set.status = 400
         return { code: 400, message: 'Collection name is required.' }
@@ -115,7 +115,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
 
       // Save to DB
       const serialized = collection.dbExport()
-      serialized.id = collection.id
+      serialized['id'] = collection.id
 
       try {
         await db.insert('_collections', serialized)
@@ -179,7 +179,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
 
       // Save to DB
       const serialized = collection.dbExport()
-      serialized.id = collection.id
+      serialized['id'] = collection.id
 
       try {
         await db.update('_collections', [{ column: 'id', operator: 'eq', value: collection.id }], serialized)

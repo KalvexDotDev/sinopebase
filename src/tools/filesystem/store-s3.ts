@@ -6,6 +6,7 @@
  */
 
 import { Client as MinioClient } from 'minio'
+import type { IFileStore } from './store-interface'
 
 export interface S3Config {
   endpoint: string
@@ -24,7 +25,7 @@ export interface FileObject {
   metadata: Record<string, unknown> | null
 }
 
-export class S3FileStore {
+export class S3FileStore implements IFileStore {
   private client: MinioClient
 
   constructor(config: S3Config) {

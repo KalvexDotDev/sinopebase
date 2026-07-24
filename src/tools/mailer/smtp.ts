@@ -59,7 +59,11 @@ export interface SMTPConfig {
 export class SMTPClient implements Mailer, SendInterceptor {
   private onSendHook: Hook<SendEvent> | null = null;
 
-  constructor(private config: SMTPConfig) {}
+  private config: SMTPConfig
+
+  constructor(config: SMTPConfig) {
+    this.config = config
+  }
 
   // -----------------------------------------------------------------------
   // SendInterceptor
@@ -127,13 +131,13 @@ export class SMTPClient implements Mailer, SendInterceptor {
     };
 
     if (auth) {
-      transporterOptions.auth = {
+      transporterOptions['auth'] = {
         user: auth.user,
         pass: auth.pass,
       };
       // For LOGIN auth, nodemailer uses a custom auth mechanism
       if (this.config.authMethod === SMTPAuthLogin) {
-        transporterOptions.authMethod = "LOGIN";
+        transporterOptions['authMethod'] = "LOGIN";
       }
     }
 

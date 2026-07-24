@@ -44,12 +44,19 @@ export class GeoPoint {
    * @param lon - Longitude (-180 to 180). Throws if out of range or not finite.
    * @param lat - Latitude  (-90 to 90).   Throws if out of range or not finite.
    */
+  /** Longitude in degrees (range: -180 to 180). */
+  lon: number
+  /** Latitude in degrees (range: -90 to 90). */
+  lat: number
+
   constructor(
     /** Longitude in degrees (range: -180 to 180). */
-    public lon: number,
+    lon: number,
     /** Latitude in degrees (range: -90 to 90). */
-    public lat: number,
+    lat: number,
   ) {
+    this.lon = lon
+    this.lat = lat
     if (!isFinite(lon) || Math.abs(lon) > 180) {
       throw new RangeError(`[GeoPoint] invalid longitude: ${lon}`)
     }
@@ -155,9 +162,9 @@ export class GeoPoint {
     // Plain object with lon/lat properties
     if (typeof value === 'object') {
       const obj = value as Record<string, unknown>
-      if (typeof obj.lon === 'number' && typeof obj.lat === 'number') {
-        this.lon = obj.lon
-        this.lat = obj.lat
+      if (typeof obj['lon'] === 'number' && typeof obj['lat'] === 'number') {
+        this.lon = obj['lon']
+        this.lat = obj['lat']
         this.validate()
         return true
       }

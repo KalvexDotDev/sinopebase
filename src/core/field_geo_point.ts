@@ -64,8 +64,8 @@ export class GeoPointField implements Field {
       return 'Must be a valid geo point object with lon and lat properties'
     }
 
-    const lon = (value as Record<string, unknown>).lon
-    const lat = (value as Record<string, unknown>).lat
+    const lon = (value as Record<string, unknown>)['lon']
+    const lat = (value as Record<string, unknown>)['lat']
 
     if (typeof lon !== 'number' || !isFinite(lon) || Math.abs(lon) > 180) {
       return 'Longitude must be a finite number between -180 and 180'

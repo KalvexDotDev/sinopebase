@@ -3,10 +3,17 @@ import { Hook, Event } from "./hook.ts";
 import { TaggedHook } from "./tagged.ts";
 
 class TaggedEvent extends Event {
+  readonly message: string
+  private readonly _tags: string[]
+
   constructor(
-    public readonly message: string,
-    private readonly _tags: string[],
-  ) { super(); }
+    message: string,
+    _tags: string[],
+  ) {
+    super()
+    this.message = message
+    this._tags = _tags
+  }
 
   tags(): string[] {
     return this._tags;

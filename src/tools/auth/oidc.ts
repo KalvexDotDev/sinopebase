@@ -172,11 +172,11 @@ export class OIDCProvider extends BaseProvider {
   override MapUser(rawUser: unknown): AuthUser {
     const data = rawUser as Record<string, unknown>
     return {
-      Id: (data.sub as string) ?? '',
-      Name: (data.name as string) ?? '',
-      Username: (data.preferred_username as string) ?? (data.email as string) ?? '',
-      Email: (data.email as string) ?? '',
-      AvatarUrl: (data.picture as string) ?? '',
+      Id: (data['sub'] as string) ?? '',
+      Name: (data['name'] as string) ?? '',
+      Username: (data['preferred_username'] as string) ?? (data['email'] as string) ?? '',
+      Email: (data['email'] as string) ?? '',
+      AvatarUrl: (data['picture'] as string) ?? '',
       RawUser: rawUser,
     }
   }

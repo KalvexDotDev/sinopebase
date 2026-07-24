@@ -11,7 +11,7 @@
  *   - Go's json.Marshaler  -> toJSON()
  */
 
-import { DefaultDateLayout } from './types'
+
 
 // ---------------------------------------------------------------------------
 // Internal helpers

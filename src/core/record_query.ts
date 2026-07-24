@@ -7,7 +7,7 @@
 
 import type { IDatabase, Filter } from '~/core/db-interface.ts'
 import type { Collection } from '~/core/collection_model.ts'
-import { Record } from '~/core/record_model.ts'
+import { Record as RecordModel } from '~/core/record_model.ts'
 import { ParseJWT } from '~/tools/security/jwt.ts'
 
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ export async function findRecordById(
   db: IDatabase,
   collection: Collection | string,
   recordId: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   const tableName = typeof collection === 'string' ? collection : collection.name
 
   const rows = await db.select(tableName, {
@@ -49,7 +49,7 @@ export async function findRecordsByIds(
   db: IDatabase,
   collection: Collection | string,
   recordIds: string[],
-): Promise<Record[]> {
+): Promise<RecordModel[]> {
   if (recordIds.length === 0) return []
   const tableName = typeof collection === 'string' ? collection : collection.name
 
@@ -73,7 +73,7 @@ export async function findAllRecords(
   db: IDatabase,
   collection: Collection | string,
   ...filters: Filter[]
-): Promise<Record[]> {
+): Promise<RecordModel[]> {
   const tableName = typeof collection === 'string' ? collection : collection.name
 
   const rows = await db.select(tableName, { filters })
@@ -95,7 +95,7 @@ export async function findFirstRecordByData(
   collection: Collection | string,
   key: string,
   value: unknown,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   const tableName = typeof collection === 'string' ? collection : collection.name
 
   const rows = await db.select(tableName, {
@@ -121,10 +121,10 @@ export async function findRecordsByFilter(
   db: IDatabase,
   collection: Collection | string,
   filter: string,
-  sort?: string,
+  _sort?: string,
   limit?: number,
   offset?: number,
-): Promise<Record[]> {
+): Promise<RecordModel[]> {
   const tableName = typeof collection === 'string' ? collection : collection.name
   const col = typeof collection === 'string'
     ? { name: collection, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection
@@ -152,7 +152,7 @@ export async function findFirstRecordByFilter(
   collection: Collection | string,
   filter: string,
   sort?: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   const results = await findRecordsByFilter(db, collection, filter, sort, 1, 0)
   return results[0] ?? null
 }
@@ -180,12 +180,12 @@ export async function findAuthRecordByToken(
   db: IDatabase,
   token: string,
   tokenSecret: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   try {
     const claims = await ParseJWT(token, tokenSecret)
 
-    const id = claims.id as string | undefined
-    const collectionId = claims.collectionId as string | undefined
+    const id = claims['id'] as string | undefined
+    const collectionId = claims['collectionId'] as string | undefined
 
     if (!id || !collectionId) return null
 
@@ -209,7 +209,7 @@ export async function findAuthRecordByEmail(
   db: IDatabase,
   collection: Collection | string,
   email: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   return findFirstRecordByData(db, collection, 'email', email)
 }
 
@@ -220,7 +220,7 @@ export async function findAuthRecordByEmail(
  */
 export async function canAccessRecord(
   _db: IDatabase,
-  _record: Record,
+  _record: RecordModel,
   _rule: string | null,
 ): Promise<boolean> {
   // null rule = no access
@@ -241,11 +241,11 @@ export async function canAccessRecord(
 /**
  * Converts a database row to a Record instance.
  */
-function rowToRecord(collection: Collection, row: Record<string, unknown>): Record {
-  const record = new Record(collection)
+function rowToRecord(collection: Collection, row: Record<string, unknown>): RecordModel {
+  const record = new RecordModel(collection)
 
   // Set the id
-  record.id = String(row.id ?? '')
+  record.id = String(row['id'] ?? '')
 
   // Set data from row
   for (const [key, value] of Object.entries(row)) {

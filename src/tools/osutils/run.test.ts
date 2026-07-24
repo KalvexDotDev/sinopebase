@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import { stderrFixtureCommand } from "../../../tests/harness/portable-process";
 import { RunCommand } from "./run";
 
 describe("RunCommand", () => {
@@ -14,11 +15,8 @@ describe("RunCommand", () => {
   });
 
   it("captures stderr output", async () => {
-    // Use a command that writes to stderr
-    const result = await RunCommand("bash", [
-      "-c",
-      'echo "error message" >&2 && exit 1',
-    ]);
+    const fixture = stderrFixtureCommand("error message");
+    const result = await RunCommand(fixture.command, [...fixture.args]);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("error message");

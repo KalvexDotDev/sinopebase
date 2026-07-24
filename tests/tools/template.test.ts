@@ -47,13 +47,13 @@ describe("Render", () => {
 describe("Registry", () => {
   it("registers and renders a template function", () => {
     const reg = new Registry();
-    reg.Register("greet", (data) => `Hello ${data.name ?? "World"}!`);
+    reg.Register("greet", (data) => `Hello ${data['name'] ?? "World"}!`);
     expect(reg.Render("greet", { name: "Jane" })).toBe("Hello Jane!");
   });
 
   it("renders with default values", () => {
     const reg = new Registry();
-    reg.Register("greet", (data) => `Hello ${data.name ?? "World"}!`);
+    reg.Register("greet", (data) => `Hello ${data['name'] ?? "World"}!`);
     expect(reg.Render("greet", {})).toBe("Hello World!");
   });
 

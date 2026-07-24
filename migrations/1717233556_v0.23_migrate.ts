@@ -29,7 +29,7 @@ export async function up(db: MigrationDB): Promise<void> {
 /**
  * Rolls back v0.23 schema changes.
  */
-export async function down(db: MigrationDB): Promise<void> {
+export async function down(_db: MigrationDB): Promise<void> {
   // SQLite does not support DROP COLUMN in older versions.
   // These columns will remain but be unused after rollback.
   // For PostgreSQL: ALTER TABLE _params DROP COLUMN type;

@@ -6,17 +6,42 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { createTestClient, TEST_BUCKET, uniqueId } from './setup'
-import type { SinopebaseClient } from '../../src/sdk/client'
+import { uniqueId } from './setup'
+import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import { Sinopebase } from '../../src/core/app'
+import { reserveLoopbackPort, requirePostgres, requireRustFS, requireAnonKey, requireServiceRoleKey, createTestNamespace } from '../harness'
 
 let client: SinopebaseClient
 let server: Sinopebase
+let testBucket: string
+const namespace = createTestNamespace({ suiteId: 'storage' })
 
 beforeAll(async () => {
-  server = new Sinopebase({ postgresUrl: '', minioEndpoint: '', minioAccessKey: '', minioSecretKey: '', port: 8090 })
+  testBucket = namespace.storageBucket('test')
+  const portReservation = await reserveLoopbackPort()
+  const { endpoint, accessKey, secretKey } = requireRustFS()
+  server = new Sinopebase({
+    postgresUrl: requirePostgres(),
+    minioEndpoint: endpoint,
+    minioAccessKey: accessKey,
+    minioSecretKey: secretKey,
+    port: portReservation.port,
+  })
+  await portReservation.release()
   await server.start()
-  client = createTestClient()
+  client = createClient(
+    portReservation.origin,
+    requireAnonKey(),
+  )
+
+  // Provision the test bucket via the service-role client so the bucket
+  // exists in both the storage metadata schema (storage.buckets) and the
+  // RustFS/S3 backend. The anon-key client cannot CREATE buckets (RLS).
+  const admin = createClient(portReservation.origin, requireServiceRoleKey())
+  const { error: createError } = await admin.storage.createBucket(testBucket, { public: true })
+  if (createError) {
+    throw new Error(`Failed to create test bucket: ${createError.message}`)
+  }
 })
 
 afterAll(async () => {
@@ -32,7 +57,7 @@ describe('Storage', () => {
     // Upload
     const { data: uploadData, error: uploadError } = await client
       .storage
-      .from(TEST_BUCKET)
+      .from(testBucket)
       .upload(testPath, file, { upsert: true })
 
     expect(uploadError).toBeNull()
@@ -42,7 +67,7 @@ describe('Storage', () => {
     // List
     const { data: listData, error: listError } = await client
       .storage
-      .from(TEST_BUCKET)
+      .from(testBucket)
       .list()
 
     expect(listError).toBeNull()
@@ -53,7 +78,7 @@ describe('Storage', () => {
     // Download
     const { data: downloadData, error: downloadError } = await client
       .storage
-      .from(TEST_BUCKET)
+      .from(testBucket)
       .download(testPath)
 
     expect(downloadError).toBeNull()
@@ -64,7 +89,7 @@ describe('Storage', () => {
     // Remove
     const { data: removeData, error: removeError } = await client
       .storage
-      .from(TEST_BUCKET)
+      .from(testBucket)
       .remove([testPath])
 
     expect(removeError).toBeNull()
@@ -74,7 +99,7 @@ describe('Storage', () => {
     // Verify gone
     const { data: afterRemove } = await client
       .storage
-      .from(TEST_BUCKET)
+      .from(testBucket)
       .list()
 
     const stillThere = afterRemove!.find((f) => f.name === testPath)
@@ -84,10 +109,10 @@ describe('Storage', () => {
   it('getPublicUrl() — returns accessible URL', async () => {
     const { data } = client
       .storage
-      .from(TEST_BUCKET)
+      .from(testBucket)
       .getPublicUrl('test-file.txt')
 
-    expect(data.publicUrl).toContain(TEST_BUCKET)
+    expect(data.publicUrl).toContain(testBucket)
     expect(data.publicUrl).toContain('test-file.txt')
   })
 

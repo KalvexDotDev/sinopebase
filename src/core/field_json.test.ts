@@ -21,8 +21,8 @@ describe('JSONField', () => {
   it('settings schema accepts multiple types', () => {
     const f = new JSONField()
     const schema = f.settingsSchema
-    expect(Array.isArray(schema.type)).toBe(true)
-    expect(schema.default).toBeNull()
+    expect(Array.isArray(schema['type'])).toBe(true)
+    expect(schema['default']).toBeNull()
   })
 
   it('effectiveMaxSize defaults to 1MB', () => {

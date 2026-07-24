@@ -120,28 +120,28 @@ export class TestEmailSend {
 
     // Email
     if (!this.email) {
-      errors.email = 'Email is required';
+      errors['email'] = 'Email is required';
     } else if (this.email.length > 255) {
-      errors.email = 'Email must be at most 255 characters';
+      errors['email'] = 'Email must be at most 255 characters';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email)) {
-      errors.email = 'Invalid email format';
+      errors['email'] = 'Invalid email format';
     }
 
     // Template
     if (!this.template) {
-      errors.template = 'Template is required';
+      errors['template'] = 'Template is required';
     } else if (!(ValidTestTemplates as readonly string[]).includes(this.template)) {
-      errors.template = `Template must be one of: ${ValidTestTemplates.join(', ')}`;
+      errors['template'] = `Template must be one of: ${ValidTestTemplates.join(', ')}`;
     }
 
     // Collection (optional)
     if (this.collection) {
       if (this.collection.length > 255) {
-        errors.collection = 'Collection must be at most 255 characters';
+        errors['collection'] = 'Collection must be at most 255 characters';
       } else {
         const c = this.collectionResolver(this.collection);
         if (!c || !c.isAuth()) {
-          errors.collection =
+          errors['collection'] =
             'Must be a valid auth collection id or name';
         }
       }

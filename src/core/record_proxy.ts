@@ -5,7 +5,7 @@
  * Layer 2 — imports from ~/core/record_model.
  */
 
-import type { Record } from '~/core/record_model.ts'
+import type { Record as RecordModel } from '~/core/record_model.ts'
 
 // ---------------------------------------------------------------------------
 // RecordProxy
@@ -40,7 +40,7 @@ import type { Record } from '~/core/record_model.ts'
  */
 export interface RecordProxy {
   /** The underlying Record instance. */
-  getRecord(): Record
+  getRecord(): RecordModel
 
   /** The collection this proxy belongs to. */
   getCollection(): import('~/core/collection_model.ts').Collection
@@ -70,13 +70,13 @@ export interface RecordProxy {
  * RecordProxy directly.
  */
 export class BaseRecordProxy implements RecordProxy {
-  protected record: Record
+  protected record: RecordModel
 
-  constructor(record: Record) {
+  constructor(record: RecordModel) {
     this.record = record
   }
 
-  getRecord(): Record {
+  getRecord(): RecordModel {
     return this.record
   }
 

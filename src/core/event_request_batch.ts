@@ -56,15 +56,25 @@ export class BatchRequestEvent extends Event {
    * @param requests - The individual requests in the batch.
    * @param responses - The individual responses for the batch (populated after processing).
    */
+  /** The HTTP context for the batch request. */
+  httpContext: unknown
+  /** The individual requests in the batch. */
+  requests: BatchRequest[] = []
+  /** The individual responses for the batch. */
+  responses: BatchResponse[] = []
+
   constructor(
     /** The HTTP context for the batch request. */
-    public httpContext: unknown,
+    httpContext: unknown,
     /** The individual requests in the batch. */
-    public requests: BatchRequest[] = [],
+    requests: BatchRequest[] = [],
     /** The individual responses for the batch. */
-    public responses: BatchResponse[] = [],
+    responses: BatchResponse[] = [],
   ) {
     super()
+    this.httpContext = httpContext
+    this.requests = requests
+    this.responses = responses
   }
 
   /**

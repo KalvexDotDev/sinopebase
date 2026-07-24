@@ -69,8 +69,8 @@ export class TokenConfig {
 
   static fromJSON(data: Record<string, unknown>): TokenConfig {
     const cfg = new TokenConfig()
-    if (typeof data.secret === 'string') cfg.secret = data.secret
-    if (typeof data.duration === 'number') cfg.duration = data.duration
+    if (typeof data['secret'] === 'string') cfg.secret = data['secret']
+    if (typeof data['duration'] === 'number') cfg.duration = data['duration']
     return cfg
   }
 
@@ -133,8 +133,8 @@ export class EmailTemplate {
 
   static fromJSON(data: Record<string, unknown>): EmailTemplate {
     const t = new EmailTemplate()
-    if (typeof data.subject === 'string') t.subject = data.subject
-    if (typeof data.body === 'string') t.body = data.body
+    if (typeof data['subject'] === 'string') t.subject = data['subject']
+    if (typeof data['body'] === 'string') t.body = data['body']
     return t
   }
 }
@@ -178,9 +178,9 @@ export class PasswordAuthConfig {
 
   static fromJSON(data: Record<string, unknown>): PasswordAuthConfig {
     const cfg = new PasswordAuthConfig()
-    if (typeof data.enabled === 'boolean') cfg.enabled = data.enabled
-    if (Array.isArray(data.identityFields)) {
-      cfg.identityFields = data.identityFields.map(String)
+    if (typeof data['enabled'] === 'boolean') cfg.enabled = data['enabled']
+    if (Array.isArray(data['identityFields'])) {
+      cfg.identityFields = data['identityFields'].map(String)
     }
     return cfg
   }
@@ -225,9 +225,9 @@ export class MFAConfig {
 
   static fromJSON(data: Record<string, unknown>): MFAConfig {
     const cfg = new MFAConfig()
-    if (typeof data.enabled === 'boolean') cfg.enabled = data.enabled
-    if (typeof data.duration === 'number') cfg.duration = data.duration
-    if (typeof data.rule === 'string') cfg.rule = data.rule
+    if (typeof data['enabled'] === 'boolean') cfg.enabled = data['enabled']
+    if (typeof data['duration'] === 'number') cfg.duration = data['duration']
+    if (typeof data['rule'] === 'string') cfg.rule = data['rule']
     return cfg
   }
 }
@@ -278,11 +278,11 @@ export class OTPConfig {
 
   static fromJSON(data: Record<string, unknown>): OTPConfig {
     const cfg = new OTPConfig()
-    if (typeof data.enabled === 'boolean') cfg.enabled = data.enabled
-    if (typeof data.duration === 'number') cfg.duration = data.duration
-    if (typeof data.length === 'number') cfg.length = data.length
-    if (data.template && typeof data.template === 'object') {
-      cfg.template = EmailTemplate.fromJSON(data.template as Record<string, unknown>)
+    if (typeof data['enabled'] === 'boolean') cfg.enabled = data['enabled']
+    if (typeof data['duration'] === 'number') cfg.duration = data['duration']
+    if (typeof data['length'] === 'number') cfg.length = data['length']
+    if (data['template'] && typeof data['template'] === 'object') {
+      cfg.template = EmailTemplate.fromJSON(data['template'] as Record<string, unknown>)
     }
     return cfg
   }
@@ -351,16 +351,16 @@ export class OAuth2ProviderConfig {
 
   static fromJSON(data: Record<string, unknown>): OAuth2ProviderConfig {
     const cfg = new OAuth2ProviderConfig()
-    if (typeof data.name === 'string') cfg.name = data.name
-    if (typeof data.clientId === 'string') cfg.clientId = data.clientId
-    if (typeof data.clientSecret === 'string') cfg.clientSecret = data.clientSecret
-    if (typeof data.authUrl === 'string') cfg.authUrl = data.authUrl
-    if (typeof data.tokenUrl === 'string') cfg.tokenUrl = data.tokenUrl
-    if (typeof data.userInfoUrl === 'string') cfg.userInfoUrl = data.userInfoUrl
-    if (typeof data.displayName === 'string') cfg.displayName = data.displayName
-    if (data.pkce === true || data.pkce === false) cfg.pkce = data.pkce
-    if (data.extra && typeof data.extra === 'object') {
-      cfg.extra = { ...data.extra } as Record<string, string>
+    if (typeof data['name'] === 'string') cfg.name = data['name']
+    if (typeof data['clientId'] === 'string') cfg.clientId = data['clientId']
+    if (typeof data['clientSecret'] === 'string') cfg.clientSecret = data['clientSecret']
+    if (typeof data['authUrl'] === 'string') cfg.authUrl = data['authUrl']
+    if (typeof data['tokenUrl'] === 'string') cfg.tokenUrl = data['tokenUrl']
+    if (typeof data['userInfoUrl'] === 'string') cfg.userInfoUrl = data['userInfoUrl']
+    if (typeof data['displayName'] === 'string') cfg.displayName = data['displayName']
+    if (data['pkce'] === true || data['pkce'] === false) cfg.pkce = data['pkce']
+    if (data['extra'] && typeof data['extra'] === 'object') {
+      cfg.extra = { ...data['extra'] } as Record<string, string>
     }
     return cfg
   }
@@ -408,14 +408,14 @@ export class OAuth2Config {
 
   static fromJSON(data: Record<string, unknown>): OAuth2Config {
     const cfg = new OAuth2Config()
-    if (typeof data.enabled === 'boolean') cfg.enabled = data.enabled
-    if (Array.isArray(data.providers)) {
-      cfg.providers = data.providers.map((p: unknown) =>
+    if (typeof data['enabled'] === 'boolean') cfg.enabled = data['enabled']
+    if (Array.isArray(data['providers'])) {
+      cfg.providers = data['providers'].map((p: unknown) =>
         OAuth2ProviderConfig.fromJSON(p as Record<string, unknown>),
       )
     }
-    if (data.mappedFields && typeof data.mappedFields === 'object') {
-      cfg.mappedFields = OAuth2KnownFields.fromJSON(data.mappedFields as Record<string, unknown>)
+    if (data['mappedFields'] && typeof data['mappedFields'] === 'object') {
+      cfg.mappedFields = OAuth2KnownFields.fromJSON(data['mappedFields'] as Record<string, unknown>)
     }
     return cfg
   }
@@ -452,10 +452,10 @@ export class OAuth2KnownFields {
 
   static fromJSON(data: Record<string, unknown>): OAuth2KnownFields {
     const f = new OAuth2KnownFields()
-    if (typeof data.id === 'string') f.id = data.id
-    if (typeof data.name === 'string') f.name = data.name
-    if (typeof data.username === 'string') f.username = data.username
-    if (typeof data.avatarUrl === 'string') f.avatarUrl = data.avatarUrl
+    if (typeof data['id'] === 'string') f.id = data['id']
+    if (typeof data['name'] === 'string') f.name = data['name']
+    if (typeof data['username'] === 'string') f.username = data['username']
+    if (typeof data['avatarUrl'] === 'string') f.avatarUrl = data['avatarUrl']
     return f
   }
 }
@@ -491,9 +491,9 @@ export class AuthAlertConfig {
 
   static fromJSON(data: Record<string, unknown>): AuthAlertConfig {
     const cfg = new AuthAlertConfig()
-    if (typeof data.enabled === 'boolean') cfg.enabled = data.enabled
-    if (data.template && typeof data.template === 'object') {
-      cfg.template = EmailTemplate.fromJSON(data.template as Record<string, unknown>)
+    if (typeof data['enabled'] === 'boolean') cfg.enabled = data['enabled']
+    if (data['template'] && typeof data['template'] === 'object') {
+      cfg.template = EmailTemplate.fromJSON(data['template'] as Record<string, unknown>)
     }
     return cfg
   }
@@ -610,49 +610,49 @@ export class CollectionAuthOptions {
   static fromJSON(data: Record<string, unknown>): CollectionAuthOptions {
     const opts = new CollectionAuthOptions()
 
-    if (typeof data.authRule === 'string') opts.authRule = data.authRule
-    if (typeof data.manageRule === 'string') opts.manageRule = data.manageRule
-    if (typeof data.verificationRequired === 'boolean') opts.verificationRequired = data.verificationRequired
+    if (typeof data['authRule'] === 'string') opts.authRule = data['authRule']
+    if (typeof data['manageRule'] === 'string') opts.manageRule = data['manageRule']
+    if (typeof data['verificationRequired'] === 'boolean') opts.verificationRequired = data['verificationRequired']
 
-    if (data.authToken && typeof data.authToken === 'object') {
-      opts.authToken = TokenConfig.fromJSON(data.authToken as Record<string, unknown>)
+    if (data['authToken'] && typeof data['authToken'] === 'object') {
+      opts.authToken = TokenConfig.fromJSON(data['authToken'] as Record<string, unknown>)
     }
-    if (data.passwordResetToken && typeof data.passwordResetToken === 'object') {
-      opts.passwordResetToken = TokenConfig.fromJSON(data.passwordResetToken as Record<string, unknown>)
+    if (data['passwordResetToken'] && typeof data['passwordResetToken'] === 'object') {
+      opts.passwordResetToken = TokenConfig.fromJSON(data['passwordResetToken'] as Record<string, unknown>)
     }
-    if (data.emailChangeToken && typeof data.emailChangeToken === 'object') {
-      opts.emailChangeToken = TokenConfig.fromJSON(data.emailChangeToken as Record<string, unknown>)
+    if (data['emailChangeToken'] && typeof data['emailChangeToken'] === 'object') {
+      opts.emailChangeToken = TokenConfig.fromJSON(data['emailChangeToken'] as Record<string, unknown>)
     }
-    if (data.verificationToken && typeof data.verificationToken === 'object') {
-      opts.verificationToken = TokenConfig.fromJSON(data.verificationToken as Record<string, unknown>)
+    if (data['verificationToken'] && typeof data['verificationToken'] === 'object') {
+      opts.verificationToken = TokenConfig.fromJSON(data['verificationToken'] as Record<string, unknown>)
     }
-    if (data.fileToken && typeof data.fileToken === 'object') {
-      opts.fileToken = TokenConfig.fromJSON(data.fileToken as Record<string, unknown>)
+    if (data['fileToken'] && typeof data['fileToken'] === 'object') {
+      opts.fileToken = TokenConfig.fromJSON(data['fileToken'] as Record<string, unknown>)
     }
 
-    if (data.verificationTemplate && typeof data.verificationTemplate === 'object') {
-      opts.verificationTemplate = EmailTemplate.fromJSON(data.verificationTemplate as Record<string, unknown>)
+    if (data['verificationTemplate'] && typeof data['verificationTemplate'] === 'object') {
+      opts.verificationTemplate = EmailTemplate.fromJSON(data['verificationTemplate'] as Record<string, unknown>)
     }
-    if (data.resetPasswordTemplate && typeof data.resetPasswordTemplate === 'object') {
-      opts.resetPasswordTemplate = EmailTemplate.fromJSON(data.resetPasswordTemplate as Record<string, unknown>)
+    if (data['resetPasswordTemplate'] && typeof data['resetPasswordTemplate'] === 'object') {
+      opts.resetPasswordTemplate = EmailTemplate.fromJSON(data['resetPasswordTemplate'] as Record<string, unknown>)
     }
-    if (data.confirmEmailChangeTemplate && typeof data.confirmEmailChangeTemplate === 'object') {
-      opts.confirmEmailChangeTemplate = EmailTemplate.fromJSON(data.confirmEmailChangeTemplate as Record<string, unknown>)
+    if (data['confirmEmailChangeTemplate'] && typeof data['confirmEmailChangeTemplate'] === 'object') {
+      opts.confirmEmailChangeTemplate = EmailTemplate.fromJSON(data['confirmEmailChangeTemplate'] as Record<string, unknown>)
     }
-    if (data.passwordAuth && typeof data.passwordAuth === 'object') {
-      opts.passwordAuth = PasswordAuthConfig.fromJSON(data.passwordAuth as Record<string, unknown>)
+    if (data['passwordAuth'] && typeof data['passwordAuth'] === 'object') {
+      opts.passwordAuth = PasswordAuthConfig.fromJSON(data['passwordAuth'] as Record<string, unknown>)
     }
-    if (data.oauth2 && typeof data.oauth2 === 'object') {
-      opts.oauth2 = OAuth2Config.fromJSON(data.oauth2 as Record<string, unknown>)
+    if (data['oauth2'] && typeof data['oauth2'] === 'object') {
+      opts.oauth2 = OAuth2Config.fromJSON(data['oauth2'] as Record<string, unknown>)
     }
-    if (data.mfa && typeof data.mfa === 'object') {
-      opts.mfa = MFAConfig.fromJSON(data.mfa as Record<string, unknown>)
+    if (data['mfa'] && typeof data['mfa'] === 'object') {
+      opts.mfa = MFAConfig.fromJSON(data['mfa'] as Record<string, unknown>)
     }
-    if (data.otp && typeof data.otp === 'object') {
-      opts.otp = OTPConfig.fromJSON(data.otp as Record<string, unknown>)
+    if (data['otp'] && typeof data['otp'] === 'object') {
+      opts.otp = OTPConfig.fromJSON(data['otp'] as Record<string, unknown>)
     }
-    if (data.authAlert && typeof data.authAlert === 'object') {
-      opts.authAlert = AuthAlertConfig.fromJSON(data.authAlert as Record<string, unknown>)
+    if (data['authAlert'] && typeof data['authAlert'] === 'object') {
+      opts.authAlert = AuthAlertConfig.fromJSON(data['authAlert'] as Record<string, unknown>)
     }
 
     return opts

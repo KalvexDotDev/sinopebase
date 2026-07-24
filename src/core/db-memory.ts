@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto'
 export interface ParsedFilter {
   column: string
   operator: string
-  value: string
+  value: unknown
 }
 
 export interface SelectOptions {
@@ -79,7 +79,7 @@ export class MemoryDatabase {
     const store = this.getTable(table)
     const inserted: Record<string, unknown>[] = []
     for (const row of rows) {
-      const id = (row.id as string) ?? randomUUID()
+      const id = (row['id'] as string) ?? randomUUID()
       const newRow = { ...row, id }
       store.set(id, newRow)
       inserted.push(newRow)
@@ -94,7 +94,7 @@ export class MemoryDatabase {
     const store = this.getTable(table)
     const results: Record<string, unknown>[] = []
     for (const row of rows) {
-      const id = (row.id as string) ?? randomUUID()
+      const id = (row['id'] as string) ?? randomUUID()
       const existing = store.get(id)
       if (existing) {
         const merged = { ...existing, ...row, id }
@@ -115,7 +115,7 @@ export class MemoryDatabase {
    */
   select(
     table: string,
-    options: SelectOptions,
+    options: SelectOptions = {},
   ): { rows: Record<string, unknown>[]; total: number } {
     const store = this.getTable(table)
     let rows = Array.from(store.values())
@@ -201,7 +201,7 @@ export class MemoryDatabase {
   /**
    * Count rows matching filters (no pagination).
    */
-  count(table: string, filters: ParsedFilter[]): number {
+  count(table: string, filters: ParsedFilter[] = []): number {
     const store = this.getTable(table)
     let rows = Array.from(store.values())
 
@@ -248,34 +248,32 @@ export class MemoryDatabase {
       case 'ilike':
         return this.matchLike(rowValue, value, true)
       case 'is': {
-        if (value === 'null') return rowValue === null || rowValue === undefined
-        if (value === 'true') return rowValue === true
-        if (value === 'false') return rowValue === false
-        return String(rowValue) === value
+        if (value === null || value === 'null') return rowValue === null || rowValue === undefined
+        if (value === true || value === 'true') return rowValue === true
+        if (value === false || value === 'false') return rowValue === false
+        return String(rowValue) === String(value)
       }
       case 'in': {
         // Parse (val1,val2,...) format
-        const trimmed = value.startsWith('(') && value.endsWith(')')
-          ? value.slice(1, -1)
-          : value
-        const values = trimmed.split(',').map((v) => v.trim()).filter(Boolean)
+        const values = Array.isArray(value)
+          ? value
+          : String(value).replace(/^\(|\)$/g, '').split(',').map((v) => v.trim()).filter(Boolean)
         return values.some((v) => this.compareEq(rowValue, v))
       }
       case 'not': {
-        // not.operator.value — negate the matched operator
-        return true // Complex case; handled differently
+        throw new Error(`Unsupported filter operator: ${operator}`)
       }
       default:
-        return true
+        throw new Error(`Unsupported filter operator: ${operator}`)
     }
   }
 
-  private compareEq(rowValue: unknown, value: string): boolean {
+  private compareEq(rowValue: unknown, value: unknown): boolean {
     if (rowValue === null || rowValue === undefined) return false
-    return String(rowValue) === value
+    return String(rowValue) === String(value)
   }
 
-  private compareOrdered(rowValue: unknown, value: string): number {
+  private compareOrdered(rowValue: unknown, value: unknown): number {
     if (rowValue === null || rowValue === undefined) {
       // null is always "less than" any actual value
       return -1
@@ -283,23 +281,24 @@ export class MemoryDatabase {
     const strVal = String(rowValue)
     // Try numeric comparison if both are numbers
     const numRow = Number(strVal)
-    const numVal = Number(value)
-    if (!isNaN(numRow) && !isNaN(numVal) && value !== '') {
+    const valueString = String(value)
+    const numVal = Number(valueString)
+    if (!isNaN(numRow) && !isNaN(numVal) && valueString !== '') {
       return numRow - numVal
     }
     // String comparison
-    return strVal.localeCompare(value)
+    return strVal.localeCompare(valueString)
   }
 
   private matchLike(
     rowValue: unknown,
-    pattern: string,
+    pattern: unknown,
     caseInsensitive: boolean,
   ): boolean {
     if (rowValue === null || rowValue === undefined) return false
     const strVal = String(rowValue)
     // Convert SQL LIKE pattern to regex
-    const regexStr = pattern
+    const regexStr = String(pattern)
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
       .replace(/%/g, '.*')
       .replace(/_/g, '.')

@@ -8,8 +8,7 @@
  * Reference: https://developer.apple.com/documentation/sign_in_with_apple/generate_and_validate_tokens
  */
 
-import { Type, type TSchema } from '@sinclair/typebox';
-import type { ValidationError } from '~/core/validators/validators';
+import { Type } from '@sinclair/typebox';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,6 +20,14 @@ const privateKeyRegex =
 
 /** Maximum allowed duration in seconds (~6 months). */
 const maxDuration = 15777000;
+
+type AppleClientSecretCreateErrors = {
+  clientId?: string;
+  teamId?: string;
+  keyId?: string;
+  privateKey?: string;
+  duration?: string;
+};
 
 // ---------------------------------------------------------------------------
 // AppleClientSecretCreate form
@@ -61,8 +68,8 @@ export class AppleClientSecretCreate {
    *
    * Returns null if valid, or a map of field → error message.
    */
-  validate(): Record<string, string> | null {
-    const errors: Record<string, string> = {};
+  validate(): AppleClientSecretCreateErrors | null {
+    const errors: AppleClientSecretCreateErrors = {};
 
     if (!this.clientId) {
       errors.clientId = 'Client ID is required';
@@ -101,7 +108,7 @@ export class AppleClientSecretCreate {
    *
    * @returns The signed JWT string, or a ValidationError list.
    */
-  async submit(): Promise<{ token: string } | Record<string, string>> {
+  async submit(): Promise<{ token: string } | AppleClientSecretCreateErrors> {
     const errors = this.validate();
     if (errors) return errors;
 
@@ -138,7 +145,7 @@ export class AppleClientSecretCreate {
 
     const cryptoKey = await crypto.subtle.importKey(
       'pkcs8',
-      rawKey.buffer as ArrayBuffer,
+      rawKey,
       { name: 'ECDSA', namedCurve: 'P-256' },
       false,
       ['sign'],
@@ -191,7 +198,7 @@ export class AppleClientSecretCreate {
   protected base64urlEncode(data: Uint8Array): string {
     let binary = '';
     for (let i = 0; i < data.length; i++) {
-      binary += String.fromCharCode(data[i]);
+      binary += String.fromCharCode(data[i]!);
     }
     return btoa(binary)
       .replace(/\+/g, '-')

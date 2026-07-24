@@ -16,18 +16,23 @@
 // ---------------------------------------------------------------------------
 
 export class ApiError extends Error {
+  status: number
+  data?: unknown
+
   /**
    * @param status   HTTP status code (401, 403, 404, 500, …)
    * @param message  Human-readable message shown to the caller.
    * @param data     Optional structured details (validation errors, etc.).
    */
   constructor(
-    public status: number,
+    status: number,
     message: string,
-    public data?: unknown,
+    data?: unknown,
   ) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
+    this.data = data
   }
 
   /** Serialise to the PocketBase wire format. */

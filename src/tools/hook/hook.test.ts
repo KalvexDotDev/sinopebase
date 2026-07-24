@@ -2,7 +2,12 @@ import { describe, it, expect } from "bun:test";
 import { Hook, Event } from "./hook.ts";
 
 class TestEvent extends Event {
-  constructor(public readonly id: string) { super(); }
+  readonly id: string
+
+  constructor(id: string) {
+    super()
+    this.id = id
+  }
 }
 
 describe("Hook", () => {

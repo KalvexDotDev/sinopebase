@@ -33,13 +33,15 @@ export class DropFunctionsPlugin {
   async register(app: Elysia, auth?: any): Promise<void> {
     this.auth = auth ?? null
 
+    // Mount manage routes BEFORE execute routes so specific method handlers
+    // (DELETE, PATCH) take priority over execute's catch-all .all() handler.
     // Mount under Sinopebase path
-    app.use(createExecuteRoutes(this.options, this.auth, '/api/functions/v1'))
     app.use(createManageRoutes(this.options.functionsDir, this.auth, '/api/functions/v1'))
+    app.use(createExecuteRoutes(this.options, this.auth, '/api/functions/v1'))
 
     // Mount under Supabase-compatible path
-    app.use(createExecuteRoutes(this.options, this.auth, '/functions/v1'))
     app.use(createManageRoutes(this.options.functionsDir, this.auth, '/functions/v1'))
+    app.use(createExecuteRoutes(this.options, this.auth, '/functions/v1'))
 
     console.log(`DropFunctions: watching "${this.options.functionsDir}"`)
   }

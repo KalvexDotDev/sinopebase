@@ -72,10 +72,16 @@ const INLINE_TAGS = [
 // ---------------------------------------------------------------------------
 
 class ExcerptModifier implements Modifier {
+  private max: number
+  private withEllipsis: boolean
+
   constructor(
-    private max: number,
-    private withEllipsis: boolean,
-  ) {}
+    max: number,
+    withEllipsis: boolean,
+  ) {
+    this.max = max
+    this.withEllipsis = withEllipsis
+  }
 
   modify(value: unknown): unknown {
     if (typeof value !== "string") {

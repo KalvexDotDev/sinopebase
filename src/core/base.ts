@@ -38,6 +38,7 @@ import {
   MailerRecordEvent,
   // Realtime events
   RealtimeConnectEvent,
+  RealtimeDisconnectEvent,
   RealtimeMessageEvent,
   RealtimeSubscribeEvent,
   // Settings events
@@ -425,15 +426,15 @@ export class BaseApp extends Sinopebase implements App {
     return database.hasTable(tableName)
   }
 
-  async tableColumns(tableName: string): Promise<string[]> {
+  async tableColumns(_tableName: string): Promise<string[]> {
     return []
   }
 
-  async tableInfo(tableName: string): Promise<unknown[]> {
+  async tableInfo(_tableName: string): Promise<unknown[]> {
     return []
   }
 
-  async tableIndexes(tableName: string): Promise<Record<string, string>> {
+  async tableIndexes(_tableName: string): Promise<Record<string, string>> {
     return {}
   }
 
@@ -449,7 +450,7 @@ export class BaseApp extends Sinopebase implements App {
   // Model CRUD
   // ---------------------------------------------------------------
 
-  modelQuery(model: Model): unknown {
+  modelQuery(_model: Model): unknown {
     return null
   }
 
@@ -553,11 +554,11 @@ export class BaseApp extends Sinopebase implements App {
     return null
   }
 
-  async findLogById(id: string): Promise<unknown> {
+  async findLogById(_id: string): Promise<unknown> {
     return null
   }
 
-  async deleteOldLogs(createdBefore: Date): Promise<void> {
+  async deleteOldLogs(_createdBefore: Date): Promise<void> {
     // Placeholder
   }
 
@@ -569,31 +570,31 @@ export class BaseApp extends Sinopebase implements App {
     return null
   }
 
-  async findAllCollections(...collectionTypes: string[]): Promise<unknown[]> {
+  async findAllCollections(..._collectionTypes: string[]): Promise<unknown[]> {
     return []
   }
 
-  async findCollectionByNameOrId(nameOrId: string): Promise<unknown> {
+  async findCollectionByNameOrId(_nameOrId: string): Promise<unknown> {
     return null
   }
 
   async isCollectionNameUnique(
-    name: string,
-    ...excludeIds: string[]
+    _name: string,
+    ..._excludeIds: string[]
   ): Promise<boolean> {
     return true
   }
 
   async importCollections(
-    toImport: Record<string, unknown>[],
-    deleteMissing: boolean,
+    _toImport: Record<string, unknown>[],
+    _deleteMissing: boolean,
   ): Promise<void> {
     // Placeholder
   }
 
   async syncRecordTableSchema(
-    newCollection: unknown,
-    oldCollection: unknown,
+    _newCollection: unknown,
+    _oldCollection: unknown,
   ): Promise<void> {
     // Placeholder
   }
@@ -602,101 +603,101 @@ export class BaseApp extends Sinopebase implements App {
   // Record queries
   // ---------------------------------------------------------------
 
-  recordQuery(collectionModelOrIdentifier: unknown): unknown {
+  recordQuery(_collectionModelOrIdentifier: unknown): unknown {
     return null
   }
 
   async findRecordById(
-    collectionModelOrIdentifier: unknown,
-    recordId: string,
-    ...optFilters: Array<(q: unknown) => Promise<void>>
+    _collectionModelOrIdentifier: unknown,
+    _recordId: string,
+    ..._optFilters: Array<(q: unknown) => Promise<void>>
   ): Promise<unknown> {
     return null
   }
 
   async findRecordsByIds(
-    collectionModelOrIdentifier: unknown,
-    recordIds: string[],
-    ...optFilters: Array<(q: unknown) => Promise<void>>
+    _collectionModelOrIdentifier: unknown,
+    _recordIds: string[],
+    ..._optFilters: Array<(q: unknown) => Promise<void>>
   ): Promise<unknown[]> {
     return []
   }
 
   async findAllRecords(
-    collectionModelOrIdentifier: unknown,
-    ...exprs: unknown[]
+    _collectionModelOrIdentifier: unknown,
+    ..._exprs: unknown[]
   ): Promise<unknown[]> {
     return []
   }
 
   async findFirstRecordByData(
-    collectionModelOrIdentifier: unknown,
-    key: string,
-    value: unknown,
+    _collectionModelOrIdentifier: unknown,
+    _key: string,
+    _value: unknown,
   ): Promise<unknown> {
     return null
   }
 
   async findRecordsByFilter(
-    collectionModelOrIdentifier: unknown,
-    filter: string,
-    sort: string,
-    limit: number,
-    offset: number,
-    ...params: Record<string, unknown>[]
+    _collectionModelOrIdentifier: unknown,
+    _filter: string,
+    _sort: string,
+    _limit: number,
+    _offset: number,
+    ..._params: Record<string, unknown>[]
   ): Promise<unknown[]> {
     return []
   }
 
   async findFirstRecordByFilter(
-    collectionModelOrIdentifier: unknown,
-    filter: string,
-    ...params: Record<string, unknown>[]
+    _collectionModelOrIdentifier: unknown,
+    _filter: string,
+    ..._params: Record<string, unknown>[]
   ): Promise<unknown> {
     return null
   }
 
   async countRecords(
-    collectionModelOrIdentifier: unknown,
-    ...exprs: unknown[]
+    _collectionModelOrIdentifier: unknown,
+    ..._exprs: unknown[]
   ): Promise<number> {
     return 0
   }
 
   async findAuthRecordByToken(
-    token: string,
-    ...validTypes: string[]
+    _token: string,
+    ..._validTypes: string[]
   ): Promise<unknown> {
     return null
   }
 
   async findAuthRecordByEmail(
-    collectionModelOrIdentifier: unknown,
-    email: string,
+    _collectionModelOrIdentifier: unknown,
+    _email: string,
   ): Promise<unknown> {
     return null
   }
 
   async canAccessRecord(
-    record: unknown,
-    requestInfo: unknown,
-    accessRule: string | null,
+    _record: unknown,
+    _requestInfo: unknown,
+    _accessRule: string | null,
   ): Promise<boolean> {
     return true
   }
 
   async expandRecord(
-    record: unknown,
-    expands: string[],
-    optFetchFunc?: unknown,
+    _record: unknown,
+    _expands: string[],
+    _optFetchFunc?: unknown,
   ): Promise<Record<string, Error>> {
     return {}
   }
 
   async expandRecords(
-    records: unknown[],
-    expands: string[],
-    optFetchFunc?: unknown,
+    _records: unknown[],
+    _expands: string[],
+    _optFetchFunc?: unknown,
   ): Promise<Record<string, Error>> {
     return {}
   }

@@ -5,9 +5,21 @@
  * Used when POSTGRES_URL is configured.
  */
 
-import { Kysely, PostgresDialect, sql } from 'kysely'
+import { Kysely, PostgresDialect, sql, type RawBuilder } from 'kysely'
+// @ts-expect-error The pg package currently ships without declarations here.
 import pg from 'pg'
+import { parseInValue } from '~/tools/search/filter'
 import type { DatabaseSchema } from './db'
+import type {
+  Filter,
+  ForeignKeyRelationship,
+  IDatabase,
+  OrderBy,
+  SelectOptions,
+} from './db-interface'
+import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
+
+export type { Filter, OrderBy } from './db-interface'
 
 export interface PostgresConfig {
   postgresUrl: string
@@ -16,18 +28,24 @@ export interface PostgresConfig {
   maxPoolSize?: number
 }
 
+export interface PostgresRequestContext {
+  role: 'anon' | 'authenticated' | 'service_role'
+  userId?: string
+}
+
 /**
  * PostgreSQL database wrapper with optional read replica support.
  * When a readReplicaUrl is configured, SELECT and COUNT queries are routed
  * to the replica pool while writes go to the primary.
  */
-export class PostgresDatabase {
+export class PostgresDatabase implements IDatabase {
   private writer: Kysely<DatabaseSchema>
   private reader: Kysely<DatabaseSchema>
   private writerPool: pg.Pool
   private readerPool: pg.Pool | null = null
+  private closePromise: Promise<void> | null = null
 
-  constructor(private config: PostgresConfig) {
+  constructor(config: PostgresConfig) {
     this.writerPool = new pg.Pool({
       connectionString: config.postgresUrl,
       max: config.maxPoolSize ?? 10,
@@ -55,18 +73,19 @@ export class PostgresDatabase {
 
   async connect(): Promise<void> {
     await sql`SELECT 1`.execute(this.writer)
+    await bootstrapPostgresRequestRoles(this.writerPool)
     if (this.readerPool) {
       await sql`SELECT 1`.execute(this.reader)
     }
   }
 
   async close(): Promise<void> {
-    await this.writer.destroy()
-    await this.writerPool.end()
-    if (this.readerPool) {
-      await this.reader.destroy()
-      await this.readerPool.end()
-    }
+    this.closePromise ??= (async () => {
+      const destroys = [this.writer.destroy()]
+      if (this.reader !== this.writer) destroys.push(this.reader.destroy())
+      await Promise.all(destroys)
+    })()
+    await this.closePromise
   }
 
   /** Expose the writer pg.Pool for direct use (e.g. by better-auth). */
@@ -77,6 +96,40 @@ export class PostgresDatabase {
 
   /** Expose the writer Kysely. */
   getWriter(): Kysely<DatabaseSchema> { return this.writer }
+
+  /**
+   * Run one HTTP request on a single connection with transaction-local
+   * PostgREST role and JWT claims. The transaction boundary guarantees that
+   * neither the role nor user identity can leak when the connection returns
+   * to the pool.
+   */
+  async withRequestContext<T>(
+    context: PostgresRequestContext,
+    operation: (db: PostgresDatabase) => Promise<T>,
+  ): Promise<T> {
+    return this.writer.transaction().execute(async (transaction) => {
+      if (context.role !== 'service_role') {
+        const userId = context.userId ?? ''
+        const claims = JSON.stringify({
+          sub: userId || undefined,
+          role: context.role,
+        })
+
+        await sql`
+          SELECT
+            set_config('request.jwt.claim.sub', ${userId}, true),
+            set_config('request.jwt.claim.role', ${context.role}, true),
+            set_config('request.jwt.claims', ${claims}, true)
+        `.execute(transaction)
+        await sql`SELECT set_config('role', ${context.role}, true)`.execute(transaction)
+      }
+
+      const scoped = Object.create(this) as PostgresDatabase
+      scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
+      scoped.reader = transaction as unknown as Kysely<DatabaseSchema>
+      return operation(scoped)
+    })
+  }
 
   // -----------------------------------------------------------------------
   // Table management
@@ -91,6 +144,13 @@ export class PostgresDatabase {
         user_id TEXT
       )
     `.execute(this.writer)
+
+    // Grant role access so anon/authenticated can reach the table.
+    // Schema USAGE is idempotent (the public schema already has it via
+    // PUBLIC, but we ensure it for environments that tighten defaults).
+    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`.execute(this.writer).catch(() => undefined)
+    await sql`GRANT SELECT ON ${sql.table(table)} TO anon`.execute(this.writer)
+    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ${sql.table(table)} TO authenticated`.execute(this.writer)
   }
 
   async hasTable(table: string): Promise<boolean> {
@@ -127,32 +187,57 @@ export class PostgresDatabase {
     await this.writer
       .insertInto(table as never)
       .values(data as never)
-      .onConflict((oc) => oc.column('id').doUpdateSet(data as never))
+      .onConflict((oc) => oc.column('id' as never).doUpdateSet(data as never))
       .execute()
     return data
   }
 
+  async select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]>
+  /** @deprecated Use the options-object overload. */
   async select(
     table: string,
-    filters: Filter[] = [],
+    filters?: Filter[],
     orderBy?: OrderBy[],
     limit?: number,
     offset?: number,
+  ): Promise<Record<string, unknown>[]>
+  async select(
+    table: string,
+    optionsOrFilters: SelectOptions | Filter[] = {},
+    positionalOrder?: OrderBy[],
+    positionalLimit?: number,
+    positionalOffset?: number,
   ): Promise<Record<string, unknown>[]> {
+    const options = Array.isArray(optionsOrFilters)
+      ? {
+          filters: optionsOrFilters,
+          order: positionalOrder,
+          limit: positionalLimit,
+          offset: positionalOffset,
+        }
+      : optionsOrFilters
     let query = this.reader.selectFrom(table as never).selectAll()
 
-    for (const filter of filters) {
+    for (const filter of options.filters ?? []) {
       query = this.applyFilter(query as never, filter) as never
     }
 
-    if (orderBy) {
-      for (const order of orderBy) {
+    const orGroups = (options.orFilters ?? []).filter((group) => group.length > 0)
+    if (orGroups.length > 0) {
+      const groups = orGroups.map((group) => sql<boolean>`(
+        ${sql.join(group.map((filter) => this.filterExpression(filter)), sql` AND `)}
+      )`)
+      query = query.where(sql<boolean>`(${sql.join(groups, sql` OR `)})`) as never
+    }
+
+    if (options.order) {
+      for (const order of options.order) {
         query = query.orderBy(order.column as never, order.direction ?? 'asc')
       }
     }
 
-    if (limit !== undefined) query = query.limit(limit)
-    if (offset !== undefined) query = query.offset(offset)
+    if (options.limit !== undefined) query = query.limit(options.limit)
+    if (options.offset !== undefined) query = query.offset(options.offset)
 
     const result = await query.execute()
     return result as unknown as Record<string, unknown>[]
@@ -203,6 +288,44 @@ export class PostgresDatabase {
     return Number((result[0] as { count: number })?.count ?? 0)
   }
 
+  /**
+   * Return the public-schema, single-column foreign keys touching a table.
+   * PostgREST uses this metadata to resolve both many-to-one and one-to-many
+   * embedded resource selections.
+   */
+  async getForeignKeyRelationships(table: string): Promise<ForeignKeyRelationship[]> {
+    const result = await sql<ForeignKeyRelationship>`
+      SELECT
+        constraint_info.conname AS "constraintName",
+        source_table.relname AS "sourceTable",
+        source_column.attname AS "sourceColumn",
+        target_table.relname AS "targetTable",
+        target_column.attname AS "targetColumn"
+      FROM pg_constraint AS constraint_info
+      JOIN pg_class AS source_table
+        ON source_table.oid = constraint_info.conrelid
+      JOIN pg_namespace AS source_schema
+        ON source_schema.oid = source_table.relnamespace
+      JOIN pg_class AS target_table
+        ON target_table.oid = constraint_info.confrelid
+      JOIN pg_namespace AS target_schema
+        ON target_schema.oid = target_table.relnamespace
+      JOIN pg_attribute AS source_column
+        ON source_column.attrelid = source_table.oid
+        AND source_column.attnum = constraint_info.conkey[1]
+      JOIN pg_attribute AS target_column
+        ON target_column.attrelid = target_table.oid
+        AND target_column.attnum = constraint_info.confkey[1]
+      WHERE constraint_info.contype = 'f'
+        AND array_length(constraint_info.conkey, 1) = 1
+        AND source_schema.nspname = 'public'
+        AND target_schema.nspname = 'public'
+        AND (source_table.relname = ${table} OR target_table.relname = ${table})
+    `.execute(this.reader)
+
+    return result.rows as unknown as ForeignKeyRelationship[]
+  }
+
   // -----------------------------------------------------------------------
   // Filter application
   // -----------------------------------------------------------------------
@@ -211,42 +334,40 @@ export class PostgresDatabase {
     query: ReturnType<typeof this.writer.selectFrom>,
     filter: Filter,
   ): ReturnType<typeof this.writer.selectFrom> {
-    const col = filter.column as never
+    const dynamicQuery = query as unknown as {
+      where(expression: RawBuilder<boolean>): typeof query
+    }
+    return dynamicQuery.where(this.filterExpression(filter))
+  }
+
+  private filterExpression(filter: Filter): RawBuilder<boolean> {
+    const column = sql.ref(filter.column)
 
     switch (filter.operator) {
-      case 'eq': return query.where(col, '=', filter.value)
-      case 'neq': return query.where(col, '<>', filter.value)
-      case 'gt': return query.where(col, '>', filter.value)
-      case 'gte': return query.where(col, '>=', filter.value)
-      case 'lt': return query.where(col, '<', filter.value)
-      case 'lte': return query.where(col, '<=', filter.value)
-      case 'like': return query.where(col, 'like', filter.value)
-      case 'ilike': return query.where(col, 'ilike', filter.value)
+      case 'eq': return sql<boolean>`${column} = ${filter.value}`
+      case 'neq': return sql<boolean>`${column} <> ${filter.value}`
+      case 'gt': return sql<boolean>`${column} > ${filter.value}`
+      case 'gte': return sql<boolean>`${column} >= ${filter.value}`
+      case 'lt': return sql<boolean>`${column} < ${filter.value}`
+      case 'lte': return sql<boolean>`${column} <= ${filter.value}`
+      case 'like': return sql<boolean>`${column} LIKE ${filter.value}`
+      case 'ilike': return sql<boolean>`${column} ILIKE ${filter.value}`
       case 'is': {
-        if (filter.value === null || filter.value === 'null') return query.where(col, 'is', null)
-        if (filter.value === true || filter.value === 'true') return query.where(col, 'is not', null)
-        return query.where(col, 'is not', null)
+        if (filter.value === null || filter.value === 'null') return sql<boolean>`${column} IS NULL`
+        if (filter.value === true || filter.value === 'true') return sql<boolean>`${column} IS TRUE`
+        if (filter.value === false || filter.value === 'false') return sql<boolean>`${column} IS FALSE`
+        throw new Error(`Unsupported is-filter value: ${String(filter.value)}`)
       }
       case 'in': {
-        const values = Array.isArray(filter.value) ? filter.value : [filter.value]
-        return query.where(col, 'in', values as never)
+        const values = Array.isArray(filter.value)
+          ? filter.value
+          : typeof filter.value === 'string'
+            ? parseInValue(filter.value)
+            : [filter.value]
+        if (values.length === 0) return sql<boolean>`FALSE`
+        return sql<boolean>`${column} IN (${sql.join(values)})`
       }
-      default: return query
+      default: throw new Error(`Unsupported filter operator: ${filter.operator}`)
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Types (shared with MemoryDatabase)
-// ---------------------------------------------------------------------------
-
-export interface Filter {
-  column: string
-  operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'is' | 'in'
-  value: unknown
-}
-
-export interface OrderBy {
-  column: string
-  direction?: 'asc' | 'desc'
 }

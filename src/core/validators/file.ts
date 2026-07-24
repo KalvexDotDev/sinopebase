@@ -93,5 +93,5 @@ function isUploadedFile(value: unknown): value is UploadedFile {
   if (value === null || value === undefined) return false
   if (typeof value !== 'object') return false
   const obj = value as Record<string, unknown>
-  return typeof obj.name === 'string' && typeof obj.size === 'number'
+  return typeof obj['name'] === 'string' && typeof obj['size'] === 'number'
 }

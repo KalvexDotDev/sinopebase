@@ -51,11 +51,11 @@ export class DateField implements Field {
     }
 
     if (this.min) {
-      schema.minDate = this.min
+      schema['minDate'] = this.min
     }
 
     if (this.max) {
-      schema.maxDate = this.max
+      schema['maxDate'] = this.max
     }
 
     return schema

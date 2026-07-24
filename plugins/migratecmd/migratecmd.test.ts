@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, afterEach } from 'bun:test'
+import { describe, it, expect, mock } from 'bun:test'
 import { MigrateCmdPlugin } from './migratecmd.ts'
 import type { IDatabase } from '~/core/db-interface.ts'
 
@@ -34,8 +34,8 @@ function createMockDB(): IDatabase {
     insert: mock(async (table: string, record: Record<string, unknown>) => {
       if (table === '_migrations') {
         migrations.push({
-          name: String(record.name ?? ''),
-          applied_at: String(record.applied_at ?? ''),
+          name: String(record['name'] ?? ''),
+          applied_at: String(record['applied_at'] ?? ''),
         })
       }
       return { id: 'mock-id', ...record }

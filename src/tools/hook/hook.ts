@@ -30,6 +30,7 @@
 
 import type { Resolver } from "./event.ts";
 import { Event } from "./event.ts";
+export type { Resolver };
 
 // ---------------------------------------------------------------------------
 // Handler

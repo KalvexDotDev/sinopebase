@@ -37,8 +37,8 @@ describe('SelectField', () => {
       const f = new SelectField()
       f.values = ['a', 'b', 'c']
       const schema = f.settingsSchema
-      expect(schema.type).toBe('string')
-      expect(schema.enum).toEqual(['a', 'b', 'c'])
+      expect(schema['type']).toBe('string')
+      expect(schema['enum']).toEqual(['a', 'b', 'c'])
     })
 
     it('returns array with enum for multi select', () => {
@@ -46,9 +46,9 @@ describe('SelectField', () => {
       f.values = ['a', 'b', 'c']
       f.maxSelect = 3
       const schema = f.settingsSchema
-      expect(schema.type).toBe('array')
-      expect((schema as Record<string, unknown>).items).toEqual({ type: 'string', enum: ['a', 'b', 'c'] })
-      expect(schema.maxItems).toBe(3)
+      expect(schema['type']).toBe('array')
+      expect((schema as Record<string, unknown>)['items']).toEqual({ type: 'string', enum: ['a', 'b', 'c'] })
+      expect(schema['maxItems']).toBe(3)
     })
   })
 

@@ -2,6 +2,12 @@
 // Admin UI — Hash-based SPA router
 // ---------------------------------------------------------------------------
 
+declare var window: {
+  location: { hash: string }
+  addEventListener: (type: string, handler: () => void) => void
+  removeEventListener: (type: string, handler: () => void) => void
+}
+
 export type Route = {
   path: string
   label: string

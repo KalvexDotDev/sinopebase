@@ -81,12 +81,12 @@ export class TestS3Filesystem {
     const errors: Record<string, string> = {};
 
     if (!this.filesystem) {
-      errors.filesystem = 'Filesystem type is required';
+      errors['filesystem'] = 'Filesystem type is required';
     } else if (
       this.filesystem !== S3FilesystemStorage &&
       this.filesystem !== S3FilesystemBackups
     ) {
-      errors.filesystem =
+      errors['filesystem'] =
         `Filesystem must be "${S3FilesystemStorage}" or "${S3FilesystemBackups}"`;
     }
 

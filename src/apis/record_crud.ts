@@ -9,11 +9,8 @@
 import { Elysia } from 'elysia'
 import type { IDatabase } from '~/core/db-interface'
 import { Collection } from '~/core/collection_model'
-import { Record } from '~/core/record_model'
-import { canAccessRecord } from '~/core/record_query'
-import { expandRecord } from '~/core/record_query_expand'
+import { Record as RecordModel } from '~/core/record_model'
 import {
-  resolveRecordRequest,
   checkRecordAccess,
   enrichRecord,
   parsePagination,
@@ -68,7 +65,7 @@ async function findRecord(
   db: IDatabase,
   collection: Collection,
   recordId: string,
-): Promise<Record | null> {
+): Promise<RecordModel | null> {
   const rows = await selectRows(db, collection.name, {
     filters: [{ column: 'id', operator: 'eq', value: recordId }],
     limit: 1,
@@ -76,18 +73,18 @@ async function findRecord(
 
   if (rows.length === 0) return null
 
-  const record = new Record(collection)
+  const record = new RecordModel(collection)
   record.load(rows[0]!)
-  if (rows[0]!.id) {
-    record.id = String(rows[0]!.id)
+  if (rows[0]!['id']) {
+    record.id = String(rows[0]!['id'])
   }
   return record
 }
 
-async function listAllRecords(db: IDatabase, collection: Collection): Promise<Record[]> {
+async function listAllRecords(db: IDatabase, collection: Collection): Promise<RecordModel[]> {
   const rows = await selectRows(db, collection.name, {})
   return rows.map((row) => {
-    const record = new Record(collection)
+    const record = new RecordModel(collection)
     record.load(row)
     if (row.id) {
       record.id = String(row.id)
@@ -160,7 +157,7 @@ export function createRecordCrudPlugin(
 
     const authInfo = await authResolver()
 
-    const hasAccess = await checkRecordAccess(db, null as unknown as Record, collection.listRule, authInfo)
+    const hasAccess = await checkRecordAccess(db, null as unknown as RecordModel, collection.listRule, authInfo)
     if (!hasAccess) {
       set.status = 403
       return { code: 403, message: 'You do not have permission to list records.' }
@@ -210,7 +207,7 @@ export function createRecordCrudPlugin(
 
     const authInfo = await authResolver()
 
-    const hasAccess = await checkRecordAccess(db, null as unknown as Record, collection.createRule, authInfo)
+    const hasAccess = await checkRecordAccess(db, null as unknown as RecordModel, collection.createRule, authInfo)
     if (!hasAccess) {
       set.status = 403
       return { code: 403, message: 'You do not have permission to create records.' }
@@ -219,7 +216,7 @@ export function createRecordCrudPlugin(
     try {
       const data = (body ?? {}) as Record<string, unknown>
 
-      const record = new Record(collection)
+      const record = new RecordModel(collection)
       record.load(data)
 
       if (!record.hasId()) {
@@ -227,7 +224,7 @@ export function createRecordCrudPlugin(
       }
 
       const serialized = record.dbExport()
-      serialized.id = record.id
+      serialized['id'] = record.id
 
       await insertRecord(db, collection, serialized)
 

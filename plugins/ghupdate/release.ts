@@ -175,16 +175,16 @@ export async function fetchLatestRelease(
 
   const data = (await response.json()) as Record<string, unknown>
 
-  const tagName = String(data.tag_name ?? '')
+  const tagName = String(data['tag_name'] ?? '')
   const parsed = parseSemver(tagName)
 
   return {
     tagName,
     semver: parsed,
-    name: String(data.name ?? ''),
-    prerelease: data.prerelease === true,
-    htmlUrl: String(data.html_url ?? ''),
-    body: String(data.body ?? ''),
-    publishedAt: String(data.published_at ?? ''),
+    name: String(data['name'] ?? ''),
+    prerelease: data['prerelease'] === true,
+    htmlUrl: String(data['html_url'] ?? ''),
+    body: String(data['body'] ?? ''),
+    publishedAt: String(data['published_at'] ?? ''),
   }
 }

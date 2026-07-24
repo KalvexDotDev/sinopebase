@@ -71,7 +71,7 @@ export async function createAuth(
 
   const secret =
     options?.jwtSecret ||
-    process.env.JWT_SECRET ||
+    process.env['JWT_SECRET'] ||
     'sinopebase-dev-secret-min-32-chars!!'
 
   const trustedOrigins = [
@@ -100,10 +100,15 @@ export async function createAuth(
   // pools via the `.connect()` method and auto-creates PostgresDialect.
   const auth = betterAuth({
     database: pool,
+    advanced: {
+      database: {
+        generateId: () => crypto.randomUUID(),
+      },
+    },
     emailAndPassword: { enabled: true },
     secret,
     trustedOrigins,
-    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
+    baseURL: process.env['BETTER_AUTH_URL'] || process.env['SINOPEBASE_URL'] || 'http://localhost:8090',
     plugins,
     // Social login links accounts by email by default
     account: {

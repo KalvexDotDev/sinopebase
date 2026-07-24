@@ -25,17 +25,6 @@ import type { SelectOptions } from './db-interface'
  */
 export type TransactionFn<T = void> = (txApp: TxWrapper) => Promise<T>
 
-/**
- * Transaction state tracking.
- */
-interface TransactionState {
-  /** Whether the transaction has been committed or rolled back. */
-  completed: boolean
-
-  /** Pending write operations. */
-  writes: Array<() => Promise<unknown>>
-}
-
 // ---------------------------------------------------------------------------
 // TxWrapper
 // ---------------------------------------------------------------------------
@@ -47,18 +36,16 @@ interface TransactionState {
  * transaction commits.
  */
 export class TxWrapper {
-  /** @internal Transaction state. */
-  private state: TransactionState = {
-    completed: false,
-    writes: [],
-  }
+  private db: IDatabase
 
   /**
    * Creates a new TxWrapper.
    *
    * @param db - The underlying database instance.
    */
-  constructor(private db: IDatabase) {}
+  constructor(db: IDatabase) {
+    this.db = db
+  }
 
   // --------------------------------------------------
   // Read operations (executed immediately)

@@ -40,7 +40,7 @@ describe('BaseRecordProxy', () => {
     const proxy = new BaseRecordProxy(record)
 
     const json = proxy.toJSON()
-    expect(json.collectionId).toBe(collection.id)
-    expect(json.collectionName).toBe(collection.name)
+    expect(json['collectionId']).toBe(collection.id)
+    expect(json['collectionName']).toBe(collection.name)
   })
 })

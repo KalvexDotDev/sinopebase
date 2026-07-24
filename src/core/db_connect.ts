@@ -9,7 +9,7 @@
  */
 
 import type { IDatabase } from './db-interface'
-import { MemoryDatabase } from './db-memory'
+import { MemoryDatabaseAdapter } from './db-memory-adapter'
 import { PostgresDatabase } from './db-postgres'
 
 /** Connection factory configuration. */
@@ -38,7 +38,7 @@ export async function createDatabase(
   config?: DbConnectConfig,
 ): Promise<IDatabase> {
   const postgresUrl =
-    config?.postgresUrl || process.env.POSTGRES_URL || ''
+    config?.postgresUrl || process.env['POSTGRES_URL'] || ''
 
   if (postgresUrl) {
     const db = new PostgresDatabase({
@@ -50,8 +50,7 @@ export async function createDatabase(
   }
 
   // Fallback to in-memory database
-  const db = new MemoryDatabase()
-  return db
+  return new MemoryDatabaseAdapter()
 }
 
 /**

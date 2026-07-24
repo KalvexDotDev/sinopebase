@@ -86,7 +86,7 @@ describe('AppleClientSecretCreate', () => {
     expect(typeof result).toBe('object');
     expect(result).not.toBeNull();
     if (typeof result === 'object' && !('token' in result)) {
-      expect((result as Record<string, string>).clientId).toBeDefined();
+      expect(result.clientId).toBeDefined();
     }
   });
 

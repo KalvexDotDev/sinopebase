@@ -11,15 +11,6 @@ import type { IDatabase } from './db-interface'
 import type { Migration } from './migrations_list'
 
 /**
- * Migration record stored in the database.
- */
-interface MigrationRecord {
-  id: string
-  name: string
-  appliedAt: string
-}
-
-/**
  * Migration runner that tracks and applies migrations.
  */
 export class MigrationRunner {
@@ -32,10 +23,16 @@ export class MigrationRunner {
    * @param db - The database instance.
    * @param tableName - The table name for tracking migrations.
    */
+  private db: IDatabase
+  private tableName: string
+
   constructor(
-    private db: IDatabase,
-    private tableName = '_migrations',
-  ) {}
+    db: IDatabase,
+    tableName = '_migrations',
+  ) {
+    this.db = db
+    this.tableName = tableName
+  }
 
   /**
    * Registers a migration.

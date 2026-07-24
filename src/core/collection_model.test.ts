@@ -133,25 +133,25 @@ describe('Collection', () => {
     const c = Collection.createBase('test')
     c.id = 'col1'
     const exported = c.dbExport()
-    expect(exported.id).toBe('col1')
-    expect(exported.name).toBe('test')
-    expect(exported.type).toBe(CollectionTypeBase)
-    expect(typeof exported.indexes).toBe('string')
-    expect(typeof exported.fields).toBe('string')
-    expect(typeof exported.options).toBe('string')
+    expect(exported['id']).toBe('col1')
+    expect(exported['name']).toBe('test')
+    expect(exported['type']).toBe(CollectionTypeBase)
+    expect(typeof exported['indexes']).toBe('string')
+    expect(typeof exported['fields']).toBe('string')
+    expect(typeof exported['options']).toBe('string')
   })
 
   it('toJSON redacts auth secrets', () => {
     const c = Collection.createAuth('users')
     c.id = 'col1'
     const json = c.toJSON()
-    expect(json.id).toBe('col1')
-    expect(json.name).toBe('users')
-    expect(json.type).toBe(CollectionTypeAuth)
-    expect(json.options).toBeTruthy()
-    if (json.options && typeof json.options === 'object') {
-      const opts = json.options as Record<string, unknown>
-      expect(opts.authToken).toBeTruthy()
+    expect(json['id']).toBe('col1')
+    expect(json['name']).toBe('users')
+    expect(json['type']).toBe(CollectionTypeAuth)
+    expect(json['options']).toBeTruthy()
+    if (json['options'] && typeof json['options'] === 'object') {
+      const opts = json['options'] as Record<string, unknown>
+      expect(opts['authToken']).toBeTruthy()
     }
   })
 

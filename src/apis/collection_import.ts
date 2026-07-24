@@ -51,8 +51,8 @@ export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => b
 
       for (const colData of data.collections) {
         try {
-          const name = String(colData.name ?? '')
-          const id = String(colData.id ?? '')
+          const name = String(colData['name'] ?? '')
+          const id = String(colData['id'] ?? '')
 
           if (!name && !id) {
             errors.push(`Skipped collection with no name or id`)
@@ -67,7 +67,7 @@ export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => b
           }
 
           const serialized = collection.dbExport()
-          serialized.id = collection.id
+          serialized['id'] = collection.id
 
           // Try to update existing, or insert new
           try {
@@ -99,7 +99,7 @@ export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => b
       // Handle deleteMissing
       if (data.deleteMissing && data.collections.length > 0) {
         try {
-          const importedNames = new Set(data.collections.map((c) => String(c.name ?? '')))
+          const importedNames = new Set(data.collections.map((c) => String(c['name'] ?? '')))
           const result = await db.select('_collections', {})
           const allRows = Array.isArray(result) ? result : ((result as any)?.rows ?? [])
           for (const row of allRows) {

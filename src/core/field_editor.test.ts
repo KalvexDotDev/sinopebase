@@ -20,8 +20,8 @@ describe('EditorField', () => {
 
   it('settings schema is string', () => {
     const f = new EditorField()
-    expect(f.settingsSchema.type).toBe('string')
-    expect(f.settingsSchema.default).toBe('')
+    expect(f.settingsSchema['type']).toBe('string')
+    expect(f.settingsSchema['default']).toBe('')
   })
 
   it('effectiveMaxSize defaults to 5MB', () => {

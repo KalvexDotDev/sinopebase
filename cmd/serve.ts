@@ -36,11 +36,11 @@ interface ServeFlags {
  */
 function parseArgs(args: string[]): ServeFlags {
   const flags: ServeFlags = {
-    port: parseInt(process.env.PORT ?? '8090', 10),
-    dataDir: process.env.DATA_DIR ?? './pb_data',
-    postgresUrl: process.env.POSTGRES_URL ?? '',
-    jwtSecret: process.env.JWT_SECRET ?? '',
-    dev: process.env.DEV === 'true',
+    port: parseInt(process.env['PORT'] ?? '8090', 10),
+    dataDir: process.env['DATA_DIR'] ?? './pb_data',
+    postgresUrl: process.env['POSTGRES_URL'] ?? '',
+    jwtSecret: process.env['JWT_SECRET'] ?? '',
+    dev: process.env['DEV'] === 'true',
     help: false,
   }
 

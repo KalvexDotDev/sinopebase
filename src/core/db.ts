@@ -7,7 +7,7 @@
 
 import { Kysely, PostgresDialect, sql } from 'kysely'
 import { Pool } from 'pg'
-import type { BunFile } from 'bun'
+
 
 // ---------------------------------------------------------------------------
 // Database interface (mirrors PocketBase's DB interface)

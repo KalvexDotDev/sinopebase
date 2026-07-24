@@ -2,10 +2,6 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import {
   TestEmailSend,
   TestTemplateVerification,
-  TestTemplatePasswordReset,
-  TestTemplateEmailChange,
-  TestTemplateOTP,
-  TestTemplateAuthAlert,
   ValidTestTemplates,
 } from './test_email_send';
 import type { EmailTestCollectionStub } from './test_email_send';
@@ -53,28 +49,28 @@ describe('TestEmailSend', () => {
   it('validates email is required', () => {
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.email).toContain('required');
+    expect(errors!['email']).toContain('required');
   });
 
   it('validates email format', () => {
     form.email = 'not-an-email';
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.email).toContain('email format');
+    expect(errors!['email']).toContain('email format');
   });
 
   it('validates email max length', () => {
     form.email = 'a'.repeat(256) + '@test.com';
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.email).toContain('255');
+    expect(errors!['email']).toContain('255');
   });
 
   it('validates template is required', () => {
     form.email = 'test@example.com';
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.template).toContain('required');
+    expect(errors!['template']).toContain('required');
   });
 
   it('validates template is one of valid options', () => {
@@ -82,7 +78,7 @@ describe('TestEmailSend', () => {
     form.template = 'invalid-template';
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.template).toContain('verification');
+    expect(errors!['template']).toContain('verification');
   });
 
   it('validates collection (optional) must be auth collection', () => {
@@ -91,7 +87,7 @@ describe('TestEmailSend', () => {
     form.collection = 'nonexistent';
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.collection).toContain('auth collection');
+    expect(errors!['collection']).toContain('auth collection');
   });
 
   it('passes validation with valid data', () => {
@@ -170,6 +166,6 @@ describe('TestEmailSend', () => {
     form.collection = 'c' + 'a'.repeat(256);
     const errors = form.validate();
     expect(errors).not.toBeNull();
-    expect(errors!.collection).toContain('255');
+    expect(errors!['collection']).toContain('255');
   });
 });

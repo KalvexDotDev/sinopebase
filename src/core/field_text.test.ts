@@ -32,15 +32,15 @@ describe('TextField', () => {
     f.required = true
 
     const schema = f.settingsSchema
-    expect(schema.type).toBe('string')
-    expect(schema.minLength).toBe(3)
-    expect(schema.maxLength).toBe(100)
-    expect(schema.pattern).toBe('^[a-z]+$')
+    expect(schema['type']).toBe('string')
+    expect(schema['minLength']).toBe(3)
+    expect(schema['maxLength']).toBe(100)
+    expect(schema['pattern']).toBe('^[a-z]+$')
   })
 
   it('defaults maxLength to 5000', () => {
     const f = new TextField()
-    expect(f.settingsSchema.maxLength).toBe(5000)
+    expect(f.settingsSchema['maxLength']).toBe(5000)
   })
 
   it('default settings schema', () => {

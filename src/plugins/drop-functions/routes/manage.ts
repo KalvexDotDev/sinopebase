@@ -35,10 +35,10 @@ export function createManageRoutes(functionsDir: string, auth: any, prefix = '/a
 
     // Get a specific function's source (separate path to avoid collision with execute)
     .get(prefix + '/:name/source', ({ params, set }) => {
-      const filePath = findFunctionFile(functionsDir, params.name)
+      const filePath = findFunctionFile(functionsDir, (params as { name: string }).name)
       if (!filePath) {
         set.status = 404
-        return { error: `Function "${params.name}" not found`, status: 404 }
+        return { error: `Function "${(params as { name: string }).name}" not found`, status: 404 }
       }
       const source = readFileSync(filePath, 'utf-8')
       return {
@@ -80,10 +80,10 @@ export function createManageRoutes(functionsDir: string, auth: any, prefix = '/a
 
     // Update a function
     .patch(prefix + '/:name', ({ params, body, set }) => {
-      const filePath = findFunctionFile(functionsDir, params.name)
+      const filePath = findFunctionFile(functionsDir, (params as { name: string }).name)
       if (!filePath) {
         set.status = 404
-        return { error: `Function "${params.name}" not found`, status: 404 }
+        return { error: `Function "${(params as { name: string }).name}" not found`, status: 404 }
       }
 
       const { source, rename } = body as { source?: string; rename?: string }
@@ -106,19 +106,19 @@ export function createManageRoutes(functionsDir: string, auth: any, prefix = '/a
         }
       }
 
-      return { message: `Function "${params.name}" updated` }
+      return { message: `Function "${(params as { name: string }).name}" updated` }
     })
 
     // Delete a function
     .delete(prefix + '/:name', ({ params, set }) => {
-      const filePath = findFunctionFile(functionsDir, params.name)
+      const filePath = findFunctionFile(functionsDir, (params as { name: string }).name)
       if (!filePath) {
         set.status = 404
-        return { error: `Function "${params.name}" not found`, status: 404 }
+        return { error: `Function "${(params as { name: string }).name}" not found`, status: 404 }
       }
 
       unlinkSync(filePath)
-      return { message: `Function "${params.name}" deleted` }
+      return { message: `Function "${(params as { name: string }).name}" deleted` }
     })
 }
 

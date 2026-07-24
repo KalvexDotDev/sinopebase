@@ -62,16 +62,16 @@ export class TextField implements Field {
     }
 
     if (this.required || this.primaryKey) {
-      schema.minLength = this.min > 0 ? this.min : 1
+      schema['minLength'] = this.min > 0 ? this.min : 1
     } else if (this.min > 0) {
-      schema.minLength = this.min
+      schema['minLength'] = this.min
     }
 
     const max = this.max > 0 ? this.max : 5000
-    schema.maxLength = max
+    schema['maxLength'] = max
 
     if (this.pattern) {
-      schema.pattern = this.pattern
+      schema['pattern'] = this.pattern
     }
 
     return schema

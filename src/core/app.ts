@@ -479,16 +479,24 @@ export interface App {
 }
 
 import { Elysia } from 'elysia'
-import { createRealtimeWebSocketHandler } from '../apis/realtime'
+import {
+  createRealtimeHub,
+  createRealtimeWebSocketHandler,
+} from '../apis/realtime'
 import { authPlugin, createAuthPlugin } from '../apis/auth'
 import { verifyAccessToken } from '../apis/auth-jwt'
 import { createAuth, lookupSessionByToken } from '../tools/auth-better'
 import type { IFileStore } from '../tools/filesystem/store-interface'
-import { MemoryDatabase } from './db-memory'
-import { PostgresDatabase } from './db-postgres'
+import { MemoryDatabaseAdapter } from './db-memory-adapter'
+import {
+  PostgresDatabase,
+  type Filter as PostgresFilter,
+  type PostgresRequestContext,
+} from './db-postgres'
 import { mountPostgrestRoutes } from '../apis/postgrest'
 import { LocalFileStore } from '../tools/filesystem/store'
 import { S3FileStore } from '../tools/filesystem/store-s3'
+import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
 import { createStoragePlugin } from '../apis/file'
 
 export interface AppConfig {
@@ -528,9 +536,18 @@ const ADMIN_PLACEHOLDER = `<!DOCTYPE html>
 export class Sinopebase {
   private config: AppConfig
   private server: Elysia | null = null
-  private db: IDatabase | null = null
+  private pendingServer: Elysia | null = null
+  private database: IDatabase | null = null
   private fileStore: IFileStore | null = null
   private auth: any = null
+  private lifecycle: Promise<void> = Promise.resolve()
+  /**
+   * Plugin registration callbacks queued via {@link use}.
+   * Executed during {@link initializeServer} after core routes are registered
+   * but BEFORE the server starts listening, so Elysia's route resolution
+   * includes plugin routes from the first request.
+   */
+  private pendingPlugins: Array<(server: Elysia, auth: any) => Promise<void>> = []
 
   constructor(config: AppConfig) {
     this.config = {
@@ -545,24 +562,99 @@ export class Sinopebase {
   }
 
   /**
+   * Queue a plugin for registration during server startup.
+   *
+   * Plugins registered via this method are wired into the Elysia router
+   * BEFORE the server starts listening, ensuring their routes are visible
+   * to Elysia's route resolution from the first request.
+   *
+   * Must be called **before** {@link start}.
+   *
+   * @example
+   * ```ts
+   * const app = new Sinopebase({ port: 8090 })
+   * const dropFunctions = new DropFunctionsPlugin({ functionsDir: './fns' })
+   * app.use(async (server, auth) => {
+   *   await dropFunctions.register(server, auth)
+   * })
+   * await app.start()
+   * ```
+   */
+  use(register: (server: Elysia, auth: any) => Promise<void>): this {
+    this.pendingPlugins.push(register)
+    return this
+  }
+
+  /**
    * Start the Sinopebase server.
    * Mirrors apis.Serve() in PocketBase.
    */
   async start(): Promise<void> {
+    return this.enqueueLifecycle(() => this.startServer())
+  }
+
+  private async startServer(): Promise<void> {
+    if (this.server) return
+
+    try {
+      await this.initializeServer()
+    } catch (error) {
+      const server = this.server ?? this.pendingServer
+      try {
+        if (server?.server) await server.stop(true)
+      } catch (cleanupError) {
+        this.server = server
+        this.pendingServer = null
+        throw new AggregateError(
+          [error, cleanupError],
+          'Sinopebase startup failed and its server could not be stopped',
+        )
+      }
+
+      this.server = null
+      this.pendingServer = null
+      this.database = null
+      this.fileStore = null
+      this.auth = null
+      throw error
+    }
+  }
+
+  private async initializeServer(): Promise<void> {
     // Set JWT secret from config if provided
     if (this.config.jwtSecret) {
-      process.env.JWT_SECRET = this.config.jwtSecret
+      process.env['JWT_SECRET'] = this.config.jwtSecret
     }
 
     // Initialize database: PostgreSQL or in-memory fallback
-    const postgresUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
+    const postgresUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
     if (postgresUrl) {
       const pg = new PostgresDatabase({
         postgresUrl,
       })
       await pg.connect()
-      this.db = pg
+      this.database = pg
       console.log('Database: PostgreSQL connected')
+
+      // Fail-closed in production: refuse to start with well-known test keys
+      // when PostgreSQL is configured. These keys bypass all authentication.
+      // In local dev (no POSTGRES_URL) the defaults are acceptable.
+      {
+        const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']
+        const anonKey = process.env['SINOPEBASE_ANON_KEY']
+        if (!serviceKey || serviceKey === 'test-service-role-key') {
+          throw new Error(
+            'SINOPEBASE_SERVICE_ROLE_KEY is unset or using the "test-service-role-key" default. ' +
+            'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
+          )
+        }
+        if (!anonKey || anonKey === 'test-anon-key') {
+          throw new Error(
+            'SINOPEBASE_ANON_KEY is unset or using the "test-anon-key" default. ' +
+            'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
+          )
+        }
+      }
 
       // Initialize better-auth with PostgreSQL
       try {
@@ -577,15 +669,22 @@ export class Sinopebase {
         console.warn('Auth: better-auth init failed, falling back to in-memory:', (err as Error).message)
         this.auth = null
       }
+
+      // Provision storage metadata schema for RLS-backed file access.
+      try {
+        await PostgresStorageAccessPolicy.ensureMetadata(pg)
+      } catch (err) {
+        console.warn('Storage metadata schema init failed:', (err as Error).message)
+      }
     } else {
-      this.db = new MemoryDatabase()
+      this.database = new MemoryDatabaseAdapter()
       console.log('Database: in-memory (no POSTGRES_URL set)')
     }
 
     // Initialize storage: RustFS/S3 or local fallback
-    const s3Endpoint = this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
-    const s3AccessKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
-    const s3SecretKey = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
+    const s3Endpoint = this.config.minioEndpoint || process.env['RUSTFS_ENDPOINT'] || ''
+    const s3AccessKey = this.config.minioAccessKey || process.env['RUSTFS_ACCESS_KEY'] || ''
+    const s3SecretKey = this.config.minioSecretKey || process.env['RUSTFS_SECRET_KEY'] || ''
     if (s3Endpoint && s3AccessKey && s3SecretKey) {
       // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
       // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
@@ -619,10 +718,56 @@ export class Sinopebase {
     // Create required tables
     await this.ensureTables()
 
-    this.server = new Elysia()
+    const postgrestContexts = new WeakMap<Request, PostgresRequestContext>()
+    const resolveRealtimeContext = async (
+      token: string | undefined,
+    ): Promise<PostgresRequestContext | undefined> => {
+      if (!token) return undefined
+      // Keys are validated at startup — guaranteed non-default in PostgreSQL mode.
+      const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']!
+      if (token === serviceKey) return { role: 'service_role' }
+      const anonKey = process.env['SINOPEBASE_ANON_KEY']!
+      if (token === anonKey) return { role: 'anon' }
+
+      try {
+        if (this.auth) {
+          const row = await lookupSessionByToken(this.auth, token)
+          return row ? { role: 'authenticated', userId: row.id } : undefined
+        }
+        const payload = await verifyAccessToken(token)
+        return { role: 'authenticated', userId: payload.sub }
+      } catch {
+        return undefined
+      }
+    }
+    const realtime = createRealtimeHub<PostgresRequestContext>({
+      authorize: resolveRealtimeContext,
+      canRead: async (context, change) => {
+        if (!context) return false
+        if (!(this.database instanceof PostgresDatabase) || context.role === 'service_role') {
+          return true
+        }
+
+        const row = change.event === 'DELETE' ? change.old : change.new
+        const filters = realtimeVisibilityFilters(row)
+        if (filters.length === 0) return false
+        return this.database.withRequestContext(
+          context,
+          async (scoped) => (await scoped.count(change.table, filters)) > 0,
+        )
+      },
+    })
+
+    const server = new Elysia()
+    this.pendingServer = server
+    server
       // ── Security middleware ──
-      .onError(({ error, set }) => {
-        console.error('[PANIC RECOVER]', error.message, (error.stack ?? '').slice(0, 2048))
+      .onError(({ error, set, code }) => {
+        // Let NOT_FOUND pass through — handled by the stub-route onError
+        // (or Elysia's default 404 handler for non-API paths).
+        if (code === 'NOT_FOUND') return
+        const reportedError = error as Error
+        console.error('[PANIC RECOVER]', reportedError.message, (reportedError.stack ?? '').slice(0, 2048))
         set.status = 500
         return { message: 'Internal server error', code: '500' }
       })
@@ -637,12 +782,12 @@ export class Sinopebase {
       .get('/api/health', () => ({
         code: 200,
         message: 'Sinopebase is running',
-        db: this.db instanceof PostgresDatabase ? 'postgresql' : 'memory',
+        db: this.database instanceof PostgresDatabase ? 'postgresql' : 'memory',
         storage: this.fileStore instanceof S3FileStore ? 's3' : 'local',
       }))
 
       // ── Realtime WebSocket ──
-      .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler())
+      .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
 
       // ── Auth — /auth/v1/* ──
       .use(this.auth ? createAuthPlugin(this.auth) : authPlugin)
@@ -653,14 +798,30 @@ export class Sinopebase {
         if (url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/storage/v1/')) {
           // Skip auth for OPTIONS preflight
           if (request.method === 'OPTIONS') return
+          // Public objects are authorized by the bucket's trusted metadata,
+          // not by caller-provided credentials.
+          if (url.pathname.startsWith('/storage/v1/object/public/')) return
           const authHeader = request.headers.get('authorization') ?? ''
           const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
-          // Allow service role key to bypass auth (full access)
-          const serviceKey = process.env.SINOPEBASE_SERVICE_ROLE_KEY || 'test-service-role-key'
-          if (token === serviceKey) return
-          // Allow anon key for read-only access
-          const anonKey = process.env.SINOPEBASE_ANON_KEY || 'test-anon-key'
-          if (token === anonKey && (request.method === 'GET' || request.method === 'HEAD')) return
+          // Allow service role key to bypass auth (full access).
+          // Keys are validated at startup — guaranteed non-default in PostgreSQL mode.
+          const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']!
+          if (token === serviceKey) {
+            postgrestContexts.set(request, { role: 'service_role' })
+            return
+          }
+          // Allow anon key for read-only REST access and for storage paths
+          // (where RLS policies at the DB layer enforce per-bucket permissions).
+          // Keys are validated at startup — guaranteed non-default in PostgreSQL mode.
+          const anonKey = process.env['SINOPEBASE_ANON_KEY']!
+          if (token === anonKey && (
+            url.pathname.startsWith('/storage/v1/')
+            || request.method === 'GET'
+            || request.method === 'HEAD'
+          )) {
+            postgrestContexts.set(request, { role: 'anon' })
+            return
+          }
           if (!token) {
             set.status = 401
             return { message: 'Authorization required', code: '401' }
@@ -673,9 +834,17 @@ export class Sinopebase {
                 set.status = 401
                 return { message: 'Invalid authorization token', code: '401' }
               }
+              postgrestContexts.set(request, {
+                role: 'authenticated',
+                userId: row.id,
+              })
             } else {
               // In-memory: verify JWT signature
-              await verifyAccessToken(token)
+              const payload = await verifyAccessToken(token)
+              postgrestContexts.set(request, {
+                role: 'authenticated',
+                userId: payload.sub,
+              })
             }
           } catch {
             set.status = 401
@@ -685,37 +854,61 @@ export class Sinopebase {
       })
 
       // ── PostgREST routes ──
-    mountPostgrestRoutes(this.server, this.db)
+    mountPostgrestRoutes(
+      server,
+      this.database,
+      (request) => postgrestContexts.get(request),
+      realtime,
+    )
 
     // ── Storage — /storage/v1/* ──
-    this.server.use(createStoragePlugin(this.fileStore))
+    server.use(createStoragePlugin(this.fileStore, {
+      resolveContext: (request) => postgrestContexts.get(request),
+      access: this.database instanceof PostgresDatabase
+        ? new PostgresStorageAccessPolicy(this.database)
+        : undefined,
+    }))
 
     // ── Admin UI — serve built Svelte SPA from /_/ ──
-    this.mountAdminUI()
+    this.mountAdminUI(server)
 
     // ── Plugins ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
-    const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env.OPENAI_API_KEY, requireAuth: false })
-    await mastraPlugin.register(this.server, this.auth ?? undefined, this.db ?? undefined, this.fileStore ?? undefined)
+    const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env['OPENAI_API_KEY'], requireAuth: false })
+    await mastraPlugin.register(server, this.auth ?? undefined, this.database ?? undefined, this.fileStore ?? undefined)
     const { MetricsPlugin } = await import('../plugins/metrics/plugin')
-    await new MetricsPlugin().register(this.server)
+    await new MetricsPlugin().register(server)
 
-    // ── Stub routes — return 501 until ported ──
+    // ── External plugins (registered via app.use before start) ──
+    for (const register of this.pendingPlugins) {
+      await register(server, this.auth ?? undefined)
+    }
+    this.pendingPlugins = []
 
-    // Catch-all for any unmatched /rest/v1/* paths
-    this.server.all('/rest/v1/*', ({ set }) => {
-      set.status = 501
-      return { message: 'REST API not yet implemented', code: '501' }
-    })
-
-    // /api/* — PocketBase-native API (for admin UI, Phase 5)
-    this.server.all('/api/*', ({ set }) => {
-      set.status = 501
-      return { message: 'API not yet implemented', code: '501' }
+    // ── Stub routes — return 501 for unimplemented API routes ──
+    // Uses onError (NOT_FOUND) instead of greedy .all() wildcards so that
+    // routes registered after listen() (e.g. DropFunctions plugin) are not
+    // shadowed.  Elysia resolves .all('*') routes by first-registered-wins on
+    // path conflicts, which would permanently hide post-listen plugin routes.
+    server.onError(({ code, set, request }) => {
+      if (code === 'NOT_FOUND') {
+        const url = new URL(request.url)
+        if (url.pathname.startsWith('/api/')) {
+          set.status = 501
+          return { message: 'API endpoint not yet implemented.', code: 501 }
+        }
+        if (url.pathname.startsWith('/rest/v1/')) {
+          set.status = 501
+          return { message: 'REST API not yet implemented', code: '501' }
+        }
+      }
+      // Let other errors fall through to the general error handler below.
     })
 
     const port = this.config.port ?? 8090
-    this.server.listen(port)
+    server.listen(port)
+    this.server = server
+    this.pendingServer = null
     console.log(`Sinopebase serving on http://127.0.0.1:${port}`)
   }
 
@@ -723,16 +916,38 @@ export class Sinopebase {
    * Stop the server gracefully.
    */
   async stop(): Promise<void> {
-    if (this.server) {
-      this.server.stop()
-      this.server = null
+    return this.enqueueLifecycle(() => this.stopServer())
+  }
+
+  private async stopServer(): Promise<void> {
+    const server = this.server
+    if (server) await server.stop(true)
+    if (this.server === server) this.server = null
+    this.pendingServer = null
+
+    // Close the database connection pool before clearing state.
+    if (this.database instanceof PostgresDatabase) {
+      try {
+        await this.database.close()
+      } catch (error) {
+        console.error('Failed to close PostgreSQL pool:', (error as Error).message)
+      }
     }
-    this.db = null
+
+    this.database = null
+    this.fileStore = null
+    this.auth = null
+  }
+
+  private enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
+    const result = this.lifecycle.then(operation)
+    this.lifecycle = result.catch(() => undefined)
+    return result
   }
 
   /** Expose the database for base class usage. */
   getDatabase(): IDatabase | null {
-    return this.db
+    return this.database
   }
 
   /** Expose the file store. */
@@ -749,12 +964,11 @@ export class Sinopebase {
    * Mount the admin UI static files at /_/.
    * Serves the built Svelte SPA from ui/dist/ with client-side routing fallback.
    */
-  private mountAdminUI(): void {
-    if (!this.server) return
+  private mountAdminUI(server: Elysia): void {
     const distPath = './ui/dist'
 
     // Single catch-all route for admin UI — serves files or falls back to index.html
-    this.server.get('/_/*', async ({ request, set }) => {
+    server.get('/_/*', async ({ request, set }) => {
       try {
         const url = new URL(request.url)
         let filePath = url.pathname.replace(/^\/_\/?/, '') || 'index.html'
@@ -789,7 +1003,21 @@ export class Sinopebase {
    * Create required tables in the in-memory database.
    */
   private async ensureTables(): Promise<void> {
-    if (!this.db) return
-    await this.db.createTable('todos')
+    if (!this.database) return
+    await this.database.createTable('todos')
   }
+}
+
+function realtimeVisibilityFilters(
+  row: Record<string, unknown>,
+): PostgresFilter[] {
+  if (row['id'] !== undefined && row['id'] !== null) {
+    return [{ column: 'id', operator: 'eq', value: row['id'] }]
+  }
+
+  return Object.entries(row)
+    .filter(([, value]) =>
+      value === null || ['string', 'number', 'boolean'].includes(typeof value)
+    )
+    .map(([column, value]) => ({ column, operator: 'eq', value }))
 }

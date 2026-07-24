@@ -14,11 +14,21 @@ export interface OrderBy {
 }
 
 export interface SelectOptions {
-  filters: Filter[]
-  orFilters?: string[]
+  filters?: Filter[]
+  /** OR-of-AND groups: each inner group is ANDed, then the groups are ORed. */
+  orFilters?: Filter[][]
   order?: OrderBy[]
   limit?: number
   offset?: number
+}
+
+/** A single-column PostgreSQL foreign-key relationship. */
+export interface ForeignKeyRelationship {
+  constraintName: string
+  sourceTable: string
+  sourceColumn: string
+  targetTable: string
+  targetColumn: string
 }
 
 export interface IDatabase {
@@ -33,4 +43,31 @@ export interface IDatabase {
   update(table: string, filters: Filter[], data: Record<string, unknown>): Promise<Record<string, unknown>[]>
   delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]>
   count(table: string, filters?: Filter[]): Promise<number>
+
+  /** Optional because the in-memory database has no schema metadata. */
+  getForeignKeyRelationships?(table: string): Promise<ForeignKeyRelationship[]>
+}
+
+/**
+ * Explicit opt-in for record-table schema mutations.
+ *
+ * CRUD databases do not automatically gain these methods. In particular,
+ * PostgreSQL must not interpolate caller-provided column type expressions
+ * into arbitrary ALTER TABLE statements.
+ */
+export interface DatabaseSchemaCapability {
+  addColumn(table: string, column: string, columnType: string): Promise<void>
+  dropColumn(table: string, column: string): Promise<void>
+  renameColumn(table: string, oldName: string, newName: string): Promise<void>
+}
+
+export type SchemaDatabase = IDatabase & DatabaseSchemaCapability
+
+export function hasDatabaseSchemaCapability(
+  database: IDatabase,
+): database is SchemaDatabase {
+  const candidate = database as IDatabase & Partial<DatabaseSchemaCapability>
+  return typeof candidate.addColumn === 'function'
+    && typeof candidate.dropColumn === 'function'
+    && typeof candidate.renameColumn === 'function'
 }

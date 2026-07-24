@@ -2,6 +2,9 @@
 // Admin UI — Sinopebase API client
 // ---------------------------------------------------------------------------
 
+declare var window: { location: { origin: string } }
+declare var localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+
 const BASE = window.location.origin
 
 function getToken(): string | null {
@@ -16,19 +19,26 @@ export function clearToken(): void {
   localStorage.removeItem('sb-access-token')
 }
 
+/**
+ * Backend HTTP request helper.
+ * PocketBase-compatible calls use `request(path, options?)`:
+ *   request('/api/collections')
+ *   request('/api/records/foo', { headers: {} })
+ * The `method` defaults to 'GET' when only `path` is given.
+ */
 async function request<T = any>(
-  method: string,
   path: string,
-  body?: unknown,
+  options?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<{ data: T; error: { message: string; status: number } | null }> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const method = options?.method ?? 'GET'
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options?.headers }
   const token = getToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(BASE + path, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: options?.body ? JSON.stringify(options.body) : undefined,
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,14 +58,14 @@ export async function signIn(email: string, password: string) {
   })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const json = (await res.json()) as any
-  if (json.error) return { error: json.error }
-  const token = json.data?.session?.access_token
+  if (!res.ok) return { error: { message: json.message, status: res.status } }
+  const token = json.access_token
   if (token) setToken(token)
-  return { data: json.data, error: null }
+  return { data: { user: json.user, session: json }, error: null }
 }
 
 export async function getUser() {
-  return request('/auth/v1/user', { headers: {} })
+  return request('/auth/v1/user')
 }
 
 export async function signOut() {

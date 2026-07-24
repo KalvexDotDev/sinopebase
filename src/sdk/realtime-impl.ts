@@ -2,7 +2,7 @@
  * Realtime Client Implementation
  *
  * Real WebSocket connection to Sinopebase /realtime/v1.
- * Backend has no WS handler until Phase 4 (Realtime) is ported.
+ * Implements the Supabase Realtime Phoenix Channels protocol.
  */
 
 import type { RealtimeClient, RealtimeChannel } from './realtime'
@@ -53,8 +53,30 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
               // phx_reply is subscription handshake — do not dispatch to
               // broadcast/presence/changes channel listeners.
               if (msg.event === 'phx_reply') return
-              for (const [, cbs] of listeners) {
-                for (const cb of cbs) cb(msg)
+              if (msg.event === 'heartbeat') return
+
+              // Dispatch to matching listeners based on event type.
+              // The key format is "<eventType>:<JSON-stringified filter>".
+              for (const [key, cbs] of listeners) {
+                const colonIdx = key.indexOf(':')
+                const eventType = key.slice(0, colonIdx)
+                let filter: Record<string, unknown> = {}
+                try { filter = JSON.parse(key.slice(colonIdx + 1)) } catch { /* empty filter */ }
+
+                if (eventType === 'broadcast' && msg.event === 'broadcast') {
+                  // msg.payload is the broadcast envelope:
+                  //   { type: 'broadcast', event: '<name>', payload: <user-data> }
+                  // Filter by the broadcast event name, then pass the
+                  // envelope to the callback (Supabase Realtime contract).
+                  const envelope = msg.payload as Record<string, unknown> | undefined
+                  if (!envelope || envelope['type'] !== 'broadcast') continue
+                  if (filter['event'] !== undefined && filter['event'] !== envelope['event']) continue
+                  for (const cb of cbs) cb(envelope)
+                } else {
+                  // Pass through: postgres_changes, presence, system, and
+                  // any event types that don't need special unwrapping.
+                  for (const cb of cbs) cb(msg.payload)
+                }
               }
             }
 

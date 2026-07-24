@@ -10,13 +10,12 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import {
-  createTestClient,
-  createServiceClient,
   uniqueId,
   uniqueEmail,
 } from './setup'
-import type { SinopebaseClient } from '../../src/sdk/client'
+import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import { Sinopebase } from '../../src/core/app'
+import { reserveLoopbackPort, requirePostgres, requireAnonKey, requireServiceRoleKey } from '../harness'
 
 // ---------------------------------------------------------------------------
 // Test state
@@ -25,20 +24,25 @@ import { Sinopebase } from '../../src/core/app'
 let client: SinopebaseClient
 let serviceClient: SinopebaseClient
 let server: Sinopebase
+let baseUrl: string
+let anonKey: string
+let serviceRoleKey: string
 
 beforeAll(async () => {
-  // Start the Sinopebase server for integration testing
+  const portReservation = await reserveLoopbackPort()
+  anonKey = requireAnonKey()
+  serviceRoleKey = requireServiceRoleKey()
+  // Start the Sinopebase server for integration testing with validated credentials
   server = new Sinopebase({
-    postgresUrl: '',
-    minioEndpoint: '',
-    minioAccessKey: '',
-    minioSecretKey: '',
-    port: 8090,
+    postgresUrl: requirePostgres(),
+    port: portReservation.port,
   })
+  await portReservation.release()
   await server.start()
 
-  client = createTestClient()
-  serviceClient = createServiceClient()
+  baseUrl = portReservation.origin
+  client = createClient(baseUrl, anonKey)
+  serviceClient = createClient(baseUrl, serviceRoleKey)
 
   // Ensure the todos collection exists (created via migration or setup)
   // In CI, this is handled by the Sinopebase backend bootstrap
@@ -66,8 +70,8 @@ describe('PostgREST', () => {
   it('insert() + select() + delete() — full CRUD cycle', async () => {
     const taskText = uniqueId()
 
-    // Create
-    const { data: inserted, error: insertError } = await client
+    // Create (service role — anon cannot insert)
+    const { data: inserted, error: insertError } = await serviceClient
       .from('todos')
       .insert({ task: taskText, is_complete: false })
       .select()
@@ -75,23 +79,23 @@ describe('PostgREST', () => {
 
     expect(insertError).toBeNull()
     expect(inserted).not.toBeNull()
-    expect(inserted!.task).toBe(taskText)
+    expect(inserted!['task']).toBe(taskText)
 
-    // Read back
+    // Read back (anon can select)
     const { data: found, error: findError } = await client
       .from('todos')
       .select('*')
-      .eq('id', inserted!.id)
+      .eq('id', inserted!['id'])
       .single()
 
     expect(findError).toBeNull()
-    expect(found!.task).toBe(taskText)
+    expect(found!['task']).toBe(taskText)
 
-    // Delete
-    const { error: deleteError } = await client
+    // Delete (service role — anon cannot delete)
+    const { error: deleteError } = await serviceClient
       .from('todos')
       .delete()
-      .eq('id', inserted!.id)
+      .eq('id', inserted!['id'])
 
     expect(deleteError).toBeNull()
 
@@ -99,7 +103,7 @@ describe('PostgREST', () => {
     const { data: gone } = await client
       .from('todos')
       .select('*')
-      .eq('id', inserted!.id)
+      .eq('id', inserted!['id'])
       .single()
 
     expect(gone).toBeNull()
@@ -120,7 +124,7 @@ describe('PostgREST filters', () => {
 
     expect(error).toBeNull()
     for (const row of data ?? []) {
-      expect(row.is_complete).toBe(false)
+      expect(row['is_complete']).toBe(false)
     }
   })
 
@@ -133,7 +137,7 @@ describe('PostgREST filters', () => {
 
     expect(error).toBeNull()
     for (const row of data ?? []) {
-      expect(row.is_complete).not.toBe(true)
+      expect(row['is_complete']).not.toBe(true)
     }
   })
 
@@ -190,7 +194,7 @@ describe('PostgREST filters', () => {
     expect(error).toBeNull()
     // All returned rows should have null task
     for (const row of data ?? []) {
-      expect(row.task).toBeNull()
+      expect(row['task']).toBeNull()
     }
   })
 
@@ -215,7 +219,7 @@ describe('PostgREST filters', () => {
     expect(error).toBeNull()
     if (data && data.length > 1) {
       for (let i = 1; i < data.length; i++) {
-        expect(data[i]!.id >= data[i - 1]!.id).toBe(true)
+        expect(data[i]!['id'] >= data[i - 1]!['id']).toBe(true)
       }
     }
   })
@@ -239,9 +243,9 @@ describe('PostgREST filters', () => {
     expect(err2).toBeNull()
     // Pages should not overlap
     if (page1!.length > 0 && page2!.length > 0) {
-      const page1Ids = new Set(page1!.map((r) => r.id))
+      const page1Ids = new Set(page1!.map((r) => r['id']))
       for (const row of page2!) {
-        expect(page1Ids.has(row.id)).toBe(false)
+        expect(page1Ids.has(row['id'])).toBe(false)
       }
     }
   })
@@ -258,15 +262,15 @@ describe('PostgREST filters', () => {
     const { data, error } = await client
       .from('todos')
       .select('*')
-      .eq('id', created!.id)
+      .eq('id', created!['id'])
       .single()
 
     expect(error).toBeNull()
     expect(data).not.toBeNull()
-    expect(data!.task).toBe(taskText)
+    expect(data!['task']).toBe(taskText)
 
     // Cleanup
-    await serviceClient.from('todos').delete().eq('id', created!.id)
+    await serviceClient.from('todos').delete().eq('id', created!['id'])
   })
 
   it('maybeSingle() — returns null for no match (no error)', async () => {
@@ -307,7 +311,10 @@ describe('PostgREST filters', () => {
 
 describe('PostgREST RLS', () => {
   it('anon cannot access authenticated data by default', async () => {
-    const anonClient = createTestClient()
+    const anonClient = createClient(
+      baseUrl,
+      anonKey,
+    )
     const { error } = await anonClient
       .from('todos')
       .select('*')
@@ -316,5 +323,193 @@ describe('PostgREST RLS', () => {
     // With RLS enabled, anon should get empty or error depending on policy
     // This test validates the RLS policy plumbing works
     expect(error === null || error !== null).toBe(true) // No crash
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PostgREST: Role-based access control — positive/negative tests
+// ---------------------------------------------------------------------------
+
+describe('PostgREST role access', () => {
+  const taskText = uniqueId()
+  let insertedId: string
+
+  beforeAll(async () => {
+    // Seed a row via service role
+    const { data, error } = await serviceClient
+      .from('todos')
+      .insert({ task: taskText, is_complete: false })
+      .select()
+      .single()
+    expect(error).toBeNull()
+    insertedId = data!['id']
+  })
+
+  afterAll(async () => {
+    await serviceClient.from('todos').delete().eq('id', insertedId)
+  })
+
+  // ── anon (read-only) ──
+
+  it('anon can SELECT from public table', async () => {
+    const { data, error } = await client
+      .from('todos')
+      .select('*')
+      .eq('id', insertedId)
+      .single()
+
+    expect(error).toBeNull()
+    expect(data).not.toBeNull()
+    expect(data!['task']).toBe(taskText)
+  })
+
+  it('anon cannot INSERT', async () => {
+    const { error } = await client
+      .from('todos')
+      .insert({ task: 'unauthorized', is_complete: false })
+
+    expect(error).not.toBeNull()
+    expect(error!.code).toBe('401')
+  })
+
+  it('anon cannot UPDATE', async () => {
+    const { error } = await client
+      .from('todos')
+      .update({ task: 'hacked' })
+      .eq('id', insertedId)
+
+    expect(error).not.toBeNull()
+    expect(error!.code).toBe('401')
+  })
+
+  it('anon cannot DELETE', async () => {
+    const { error } = await client
+      .from('todos')
+      .delete()
+      .eq('id', insertedId)
+
+    expect(error).not.toBeNull()
+    expect(error!.code).toBe('401')
+  })
+
+  // ── service_role (full access) ──
+
+  it('service role can SELECT', async () => {
+    const { data, error } = await serviceClient
+      .from('todos')
+      .select('*')
+      .eq('id', insertedId)
+      .single()
+
+    expect(error).toBeNull()
+    expect(data).not.toBeNull()
+  })
+
+  it('service role can INSERT', async () => {
+    const svcTask = uniqueId()
+    const { data, error } = await serviceClient
+      .from('todos')
+      .insert({ task: svcTask, is_complete: true })
+      .select()
+      .single()
+
+    expect(error).toBeNull()
+    expect(data!['task']).toBe(svcTask)
+
+    // Cleanup
+    await serviceClient.from('todos').delete().eq('id', data!['id'])
+  })
+
+  it('service role can UPDATE', async () => {
+    const original = insertedId // the seeded row
+    const { error } = await serviceClient
+      .from('todos')
+      .update({ task: 'service-updated' })
+      .eq('id', original)
+
+    expect(error).toBeNull()
+
+    // Verify the update
+    const { data } = await serviceClient
+      .from('todos')
+      .select('*')
+      .eq('id', original)
+      .single()
+    expect(data!['task']).toBe('service-updated')
+
+    // Restore
+    await serviceClient.from('todos').update({ task: taskText }).eq('id', original)
+  })
+
+  it('service role can DELETE', async () => {
+    const { data: temp } = await serviceClient
+      .from('todos')
+      .insert({ task: 'delete-me', is_complete: false })
+      .select()
+      .single()
+
+    const { error } = await serviceClient
+      .from('todos')
+      .delete()
+      .eq('id', temp!['id'])
+
+    expect(error).toBeNull()
+
+    // Verify gone
+    const { data: gone } = await serviceClient
+      .from('todos')
+      .select('*')
+      .eq('id', temp!['id'])
+      .single()
+    expect(gone).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PostgREST: exact count / HEAD regressions
+// ---------------------------------------------------------------------------
+
+describe('PostgREST count and HEAD', () => {
+  it('HEAD returns Content-Range with total count', async () => {
+    const response = await fetch(`${baseUrl}/rest/v1/todos`, {
+      method: 'HEAD',
+      headers: { authorization: `Bearer ${anonKey}` },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-range')).toMatch(/^\*\/\d+$/)
+  })
+
+  it('HEAD with filter returns filtered count', async () => {
+    const response = await fetch(`${baseUrl}/rest/v1/todos?is_complete=eq.true`, {
+      method: 'HEAD',
+      headers: { authorization: `Bearer ${anonKey}` },
+    })
+
+    expect(response.status).toBe(200)
+    const range = response.headers.get('content-range')
+    expect(range).toMatch(/^\*\/\d+$/)
+  })
+
+  it('GET with Prefer: count=exact returns Content-Range header', async () => {
+    const { count, error } = await client
+      .from('todos')
+      .select('*', { count: 'exact', head: false })
+      .limit(3)
+
+    expect(error).toBeNull()
+    expect(typeof count).toBe('number')
+    expect(count!).toBeGreaterThanOrEqual(0)
+  })
+
+  it('OR filter with exact count does not crash', async () => {
+    const { data, count, error } = await client
+      .from('todos')
+      .select('*', { count: 'exact', head: true })
+      .or('is_complete.eq.true,is_complete.is.null')
+
+    expect(error).toBeNull()
+    expect(data).toBeNull()
+    expect(typeof count).toBe('number')
   })
 })

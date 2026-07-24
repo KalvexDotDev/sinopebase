@@ -62,46 +62,6 @@ const INLINE_TAGS = new Set([
   "time",
 ]);
 
-/** Block-level tags that get a newline before and after. */
-const BLOCK_TAGS = new Set([
-  "p",
-  "div",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "ul",
-  "ol",
-  "li",
-  "blockquote",
-  "pre",
-  "hr",
-  "table",
-  "tr",
-  "td",
-  "th",
-  "tbody",
-  "thead",
-  "tfoot",
-  "section",
-  "article",
-  "nav",
-  "aside",
-  "header",
-  "footer",
-  "main",
-  "figure",
-  "figcaption",
-  "details",
-  "summary",
-  "dl",
-  "dt",
-  "dd",
-  "fieldset",
-  "legend",
-]);
 
 // ---------------------------------------------------------------------------
 // Token types for the HTML tokenizer

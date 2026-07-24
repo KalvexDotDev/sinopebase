@@ -62,7 +62,7 @@ export const ColumnTypeMap: Record<string, string> = {
  * Maps a PocketBase column type string to its PostgreSQL equivalent.
  */
 export function mapColumnType(goType: string): string {
-  return ColumnTypeMap[goType.toLowerCase()] ?? ColumnTypeMap.default
+  return ColumnTypeMap[goType.toLowerCase()] ?? ColumnTypeMap['default']
 }
 
 // ---------------------------------------------------------------------------

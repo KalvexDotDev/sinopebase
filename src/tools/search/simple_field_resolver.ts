@@ -88,7 +88,11 @@ export interface FieldResolver {
  * pattern (e.g. "^\\w+[\\w\\.]*$").
  */
 export class SimpleFieldResolver implements FieldResolver {
-  constructor(private readonly allowedFields: string[]) {}
+  private readonly allowedFields: string[]
+
+  constructor(allowedFields: string[]) {
+    this.allowedFields = allowedFields
+  }
 
   /**
    * No-op -- the simple resolver does not modify the base query.

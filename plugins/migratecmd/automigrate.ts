@@ -24,7 +24,7 @@ async function ensureMigrationsTable(db: IDatabase): Promise<void> {
 async function loadAppliedMigrationNames(db: IDatabase): Promise<Set<string>> {
   await ensureMigrationsTable(db)
   const rows = await db.select('_migrations', { filters: [] })
-  return new Set(rows.map((r) => String(r.name)).filter(Boolean))
+  return new Set(rows.map((r) => String(r['name'])).filter(Boolean))
 }
 
 /**

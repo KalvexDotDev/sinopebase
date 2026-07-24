@@ -5,8 +5,15 @@
  * Layer 2 — imports from ~/tools/security/jwt.
  */
 
-import type { Record } from '~/core/record_model.ts'
+import type { Record as RecordModel } from '~/core/record_model.ts'
 import { NewJWT } from '~/tools/security/jwt.ts'
+
+type TokenConfigKey =
+  | 'authToken'
+  | 'verificationToken'
+  | 'passwordResetToken'
+  | 'emailChangeToken'
+  | 'fileToken'
 
 // ---------------------------------------------------------------------------
 // Token type constants
@@ -54,89 +61,59 @@ export class MissingSigningKeyError extends Error {
 /**
  * Builds a signing key from the record's token key and the token-specific secret.
  */
-function buildSigningKey(record: Record, tokenSecret: string): string {
+function buildSigningKey(record: RecordModel, tokenSecret: string): string {
   return record.getString('tokenKey') + tokenSecret
+}
+
+function tokenSigningKey(record: RecordModel, tokenKey: TokenConfigKey): string {
+  const secret = record.collection.isAuth()
+    ? record.collection.authOptions?.[tokenKey].secret ?? ''
+    : ''
+  return buildSigningKey(record, secret)
 }
 
 /**
  * Creates a signing key for auth tokens using the collection's auth token secret.
  */
-function authSigningKey(record: Record): string {
-  const opts = record.collection.isAuth()
-    ? (record.collection as Record<string, unknown>).authOptions
-    : null
-  const secret = opts && typeof opts === 'object'
-    ? ((opts as Record<string, Record<string, unknown>>).authToken?.secret ?? '')
-    : ''
-  return buildSigningKey(record, secret)
+function authSigningKey(record: RecordModel): string {
+  return tokenSigningKey(record, 'authToken')
 }
 
 /**
  * Creates a signing key for verification tokens.
  */
-function verificationSigningKey(record: Record): string {
-  const opts = record.collection.isAuth()
-    ? (record.collection as Record<string, unknown>).authOptions
-    : null
-  const secret = opts && typeof opts === 'object'
-    ? ((opts as Record<string, Record<string, unknown>>).verificationToken?.secret ?? '')
-    : ''
-  return buildSigningKey(record, secret)
+function verificationSigningKey(record: RecordModel): string {
+  return tokenSigningKey(record, 'verificationToken')
 }
 
 /**
  * Creates a signing key for password reset tokens.
  */
-function passwordResetSigningKey(record: Record): string {
-  const opts = record.collection.isAuth()
-    ? (record.collection as Record<string, unknown>).authOptions
-    : null
-  const secret = opts && typeof opts === 'object'
-    ? ((opts as Record<string, Record<string, unknown>>).passwordResetToken?.secret ?? '')
-    : ''
-  return buildSigningKey(record, secret)
+function passwordResetSigningKey(record: RecordModel): string {
+  return tokenSigningKey(record, 'passwordResetToken')
 }
 
 /**
  * Creates a signing key for email change tokens.
  */
-function emailChangeSigningKey(record: Record): string {
-  const opts = record.collection.isAuth()
-    ? (record.collection as Record<string, unknown>).authOptions
-    : null
-  const secret = opts && typeof opts === 'object'
-    ? ((opts as Record<string, Record<string, unknown>>).emailChangeToken?.secret ?? '')
-    : ''
-  return buildSigningKey(record, secret)
+function emailChangeSigningKey(record: RecordModel): string {
+  return tokenSigningKey(record, 'emailChangeToken')
 }
 
 /**
  * Creates a signing key for file tokens.
  */
-function fileSigningKey(record: Record): string {
-  const opts = record.collection.isAuth()
-    ? (record.collection as Record<string, unknown>).authOptions
-    : null
-  const secret = opts && typeof opts === 'object'
-    ? ((opts as Record<string, Record<string, unknown>>).fileToken?.secret ?? '')
-    : ''
-  return buildSigningKey(record, secret)
+function fileSigningKey(record: RecordModel): string {
+  return tokenSigningKey(record, 'fileToken')
 }
 
 /**
  * Gets a token duration from auth options.
  */
-function getTokenDuration(record: Record, tokenKey: string): number {
-  const opts = record.collection.isAuth()
-    ? (record.collection as Record<string, unknown>).authOptions
-    : null
-  const tokenConfig = opts && typeof opts === 'object'
-    ? (opts as Record<string, Record<string, unknown>>)[tokenKey]
-    : null
-  if (tokenConfig && typeof tokenConfig === 'object') {
-    return (tokenConfig as { duration?: number }).duration ?? 3600
-  }
-  return 3600
+function getTokenDuration(record: RecordModel, tokenKey: TokenConfigKey): number {
+  return record.collection.isAuth()
+    ? record.collection.authOptions?.[tokenKey].duration ?? 3600
+    : 3600
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +124,7 @@ function getTokenDuration(record: Record, tokenKey: string): number {
  * Creates a basic auth token with the given claims.
  */
 async function newAuthToken(
-  record: Record,
+  record: RecordModel,
   durationMs: number,
   refreshable: boolean,
 ): Promise<string> {
@@ -181,7 +158,7 @@ async function newAuthToken(
  *
  * Equivalent to Go's `Record.NewStaticAuthToken(duration)`.
  */
-export async function newStaticAuthToken(record: Record, durationMs: number): Promise<string> {
+export async function newStaticAuthToken(record: RecordModel, durationMs: number): Promise<string> {
   if (durationMs <= 0) {
     const durationSec = getTokenDuration(record, 'authToken')
     durationMs = durationSec * 1000
@@ -194,7 +171,7 @@ export async function newStaticAuthToken(record: Record, durationMs: number): Pr
  *
  * Equivalent to Go's `Record.NewAuthToken()`.
  */
-export async function newAuthTokenForRecord(record: Record): Promise<string> {
+export async function newAuthTokenForRecord(record: RecordModel): Promise<string> {
   const durationSec = getTokenDuration(record, 'authToken')
   return newAuthToken(record, durationSec * 1000, true)
 }
@@ -204,7 +181,7 @@ export async function newAuthTokenForRecord(record: Record): Promise<string> {
  *
  * Equivalent to Go's `Record.NewVerificationToken()`.
  */
-export async function newVerificationToken(record: Record): Promise<string> {
+export async function newVerificationToken(record: RecordModel): Promise<string> {
   if (!record.collection.isAuth()) {
     throw new NotAuthRecordError()
   }
@@ -230,7 +207,7 @@ export async function newVerificationToken(record: Record): Promise<string> {
  *
  * Equivalent to Go's `Record.NewPasswordResetToken()`.
  */
-export async function newPasswordResetToken(record: Record): Promise<string> {
+export async function newPasswordResetToken(record: RecordModel): Promise<string> {
   if (!record.collection.isAuth()) {
     throw new NotAuthRecordError()
   }
@@ -256,7 +233,7 @@ export async function newPasswordResetToken(record: Record): Promise<string> {
  *
  * Equivalent to Go's `Record.NewEmailChangeToken(newEmail)`.
  */
-export async function newEmailChangeToken(record: Record, newEmail: string): Promise<string> {
+export async function newEmailChangeToken(record: RecordModel, newEmail: string): Promise<string> {
   if (!record.collection.isAuth()) {
     throw new NotAuthRecordError()
   }
@@ -283,7 +260,7 @@ export async function newEmailChangeToken(record: Record, newEmail: string): Pro
  *
  * Equivalent to Go's `Record.NewFileToken()`.
  */
-export async function newFileToken(record: Record): Promise<string> {
+export async function newFileToken(record: RecordModel): Promise<string> {
   if (!record.collection.isAuth()) {
     throw new NotAuthRecordError()
   }

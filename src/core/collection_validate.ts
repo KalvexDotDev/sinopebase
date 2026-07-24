@@ -8,7 +8,6 @@
 import type { IDatabase } from '~/core/db-interface.ts'
 import {
   Collection,
-  FieldsList,
   CollectionTypeBase,
   CollectionTypeAuth,
   CollectionTypeView,
@@ -58,16 +57,14 @@ const ValidCollectionTypes = new Set<CollectionType>([
 export class CollectionValidator {
   private original: Collection | null
   private newCollection: Collection
-  private db: IDatabase
 
   constructor(
     newCollection: Collection,
     original: Collection | null,
-    db: IDatabase,
+    _db?: IDatabase,
   ) {
     this.newCollection = newCollection
     this.original = original
-    this.db = db
   }
 
   /**

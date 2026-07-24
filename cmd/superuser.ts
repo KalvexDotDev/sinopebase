@@ -92,10 +92,10 @@ async function listSuperusers(db: IDatabase): Promise<SuperuserRecord[]> {
   await ensureSuperusersTable(db)
   const rows = await db.select(SUPERUSERS_TABLE, { filters: [] })
   return rows.map((r) => ({
-    id: String(r.id ?? ''),
-    email: String(r.email ?? ''),
-    created: r.created ? String(r.created) : undefined,
-    updated: r.updated ? String(r.updated) : undefined,
+    id: String(r['id'] ?? ''),
+    email: String(r['email'] ?? ''),
+    created: r['created'] ? String(r['created']) : undefined,
+    updated: r['updated'] ? String(r['updated']) : undefined,
   }))
 }
 
@@ -117,10 +117,10 @@ async function createSuperuserRecord(
     updated: now,
   })
   return {
-    id: String(record.id),
-    email: String(record.email),
-    created: String(record.created),
-    updated: String(record.updated),
+    id: String(record['id']),
+    email: String(record['email']),
+    created: String(record['created']),
+    updated: String(record['updated']),
   }
 }
 
@@ -160,8 +160,8 @@ async function main(): Promise<void> {
   }
 
   const app = new Sinopebase({
-    postgresUrl: process.env.POSTGRES_URL || undefined,
-    dataDir: process.env.DATA_DIR || './pb_data',
+    postgresUrl: process.env['POSTGRES_URL'] || undefined,
+    dataDir: process.env['DATA_DIR'] || './pb_data',
   })
 
   try {

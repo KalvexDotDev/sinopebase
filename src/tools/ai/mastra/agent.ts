@@ -44,7 +44,7 @@ let defaultProvider: AIProvider | null = null
 
 function getDefaultProvider(): AIProvider {
   if (!defaultProvider) {
-    const apiKey = process.env.OPENAI_API_KEY || ''
+    const apiKey = process.env['OPENAI_API_KEY'] || ''
     if (apiKey) {
       defaultProvider = new OpenAIProvider(apiKey)
     } else {

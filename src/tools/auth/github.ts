@@ -77,9 +77,9 @@ export class GitHubProvider extends BaseProvider {
       if (emailsResponse.ok) {
         const emails =
           (await emailsResponse.json()) as Array<Record<string, unknown>>
-        const primary = emails.find((e) => e.primary === true)
+        const primary = emails.find((e) => e['primary'] === true)
         if (primary) {
-          email = (primary.email as string) ?? ''
+          email = (primary['email'] as string) ?? ''
         }
       }
     } catch {
@@ -90,11 +90,11 @@ export class GitHubProvider extends BaseProvider {
     // 3. Map to AuthUser
     // -------------------------------------------------------------------
     return {
-      Id: String(userData.id ?? ''),
-      Name: (userData.name as string) ?? (userData.login as string) ?? '',
-      Username: (userData.login as string) ?? '',
+      Id: String(userData['id'] ?? ''),
+      Name: (userData['name'] as string) ?? (userData['login'] as string) ?? '',
+      Username: (userData['login'] as string) ?? '',
       Email: email,
-      AvatarUrl: (userData.avatar_url as string) ?? '',
+      AvatarUrl: (userData['avatar_url'] as string) ?? '',
       RawUser: userData,
     }
   }

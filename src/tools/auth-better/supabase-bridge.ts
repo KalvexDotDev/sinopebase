@@ -1,16 +1,21 @@
-import type { User, Session, AuthResponse } from '~/sdk/auth'
-import { toSinopebaseUser, toSinopebaseSession, toAuthResponse, ACCESS_TOKEN_EXPIRES_IN } from './types'
+import type { User, Session } from '~/sdk/auth'
+import { toSinopebaseUser, toSinopebaseSession, ACCESS_TOKEN_EXPIRES_IN } from './types'
+
+export interface GoTrueErrorResponse {
+  message: string
+  status: number
+}
 
 /**
- * Translate a better-auth signIn / signUp response into a supabase-js
- * GoTrue-compatible AuthResponse.
+ * Translate a better-auth signIn / signUp response into a raw
+ * GoTrue-compatible session response.
  *
  * Expected input shape:
  *   { token: string, user: { id, email, emailVerified?, createdAt?, updatedAt?, ... } }
  */
-export function bridgeSignInResponse(result: any): AuthResponse {
+export function bridgeSignInResponse(result: any): Session | GoTrueErrorResponse {
   if (!result || !result.token || !result.user) {
-    return toAuthResponse(null, null, 'Authentication failed', 400)
+    return bridgeErrorResponse('Authentication failed', 400)
   }
 
   const user = toSinopebaseUser({
@@ -28,33 +33,26 @@ export function bridgeSignInResponse(result: any): AuthResponse {
   const refreshToken = result.token
   const session = toSinopebaseSession(user, result.token, refreshToken, ACCESS_TOKEN_EXPIRES_IN)
 
-  return toAuthResponse(user, session)
+  return session
 }
 
 /**
- * Translate a better-auth getSession result into a GoTrue-compatible
- * { data: { user }, error } shape.
+ * Translate a better-auth getSession result into a raw GoTrue user response.
  *
  * Expected input shape:
  *   { session: {...}, user: { id, email, ... } } | null
  */
-export function bridgeGetUserResponse(result: any): {
-  data: { user: User | null }
-  error: { message: string; status: number } | null
-} {
+export function bridgeGetUserResponse(result: any): User | GoTrueErrorResponse {
   if (!result || !result.user) {
-    return { data: { user: null }, error: { message: 'Invalid token', status: 401 } }
+    return bridgeErrorResponse('Invalid token', 401)
   }
 
-  return {
-    data: { user: toSinopebaseUser(result.user) },
-    error: null,
-  }
+  return toSinopebaseUser(result.user)
 }
 
 /**
- * Build a standard AuthResponse error in the supabase-js convention.
+ * Build an error payload that GoTrue clients can parse.
  */
-export function bridgeErrorResponse(message: string, status: number = 400): AuthResponse {
-  return toAuthResponse(null, null, message, status)
+export function bridgeErrorResponse(message: string, status: number = 400): GoTrueErrorResponse {
+  return { message, status }
 }

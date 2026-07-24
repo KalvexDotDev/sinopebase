@@ -18,10 +18,16 @@ export class Message {
    * @param name - The event name (e.g. "users/create").
    * @param data - The raw payload bytes.
    */
+  readonly name: string
+  readonly data: Uint8Array
+
   constructor(
-    public readonly name: string,
-    public readonly data: Uint8Array,
-  ) {}
+    name: string,
+    data: Uint8Array,
+  ) {
+    this.name = name
+    this.data = data
+  }
 
   /**
    * Returns a JSON representation of the message.

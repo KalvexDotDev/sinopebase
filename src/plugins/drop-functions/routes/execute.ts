@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { Elysia } from 'elysia'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { DropFunctionsPluginOptions } from '../config'
 import { resolveFunctionConfig } from '../config'
@@ -30,7 +30,7 @@ export function createExecuteRoutes(
 
   return new Elysia()
     .all(prefix + '/:name', async ({ request, params, set, headers }) => {
-      const functionName = params.name
+      const functionName = (params as { name: string }).name
 
       // Prevent path traversal — only allow alphanumeric, hyphens, underscores
       if (!/^[a-zA-Z0-9_-]+$/.test(functionName)) {

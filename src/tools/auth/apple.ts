@@ -164,11 +164,11 @@ export class AppleProvider extends BaseProvider {
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data.access_token as string) ?? '',
-      RefreshToken: (data.refresh_token as string) ?? '',
-      ExpiresIn: (data.expires_in as number) ?? 0,
+      AccessToken: (data['access_token'] as string) ?? '',
+      RefreshToken: (data['refresh_token'] as string) ?? '',
+      ExpiresIn: (data['expires_in'] as number) ?? 0,
       Raw: data,
-      IdToken: data.id_token as string | undefined,
+      IdToken: data['id_token'] as string | undefined,
     }
   }
 
@@ -210,11 +210,11 @@ export class AppleProvider extends BaseProvider {
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data.access_token as string) ?? '',
-      RefreshToken: (data.refresh_token as string) ?? '',
-      ExpiresIn: (data.expires_in as number) ?? 0,
+      AccessToken: (data['access_token'] as string) ?? '',
+      RefreshToken: (data['refresh_token'] as string) ?? '',
+      ExpiresIn: (data['expires_in'] as number) ?? 0,
       Raw: data,
-      IdToken: data.id_token as string | undefined,
+      IdToken: data['id_token'] as string | undefined,
     }
   }
 
@@ -263,13 +263,13 @@ export class AppleProvider extends BaseProvider {
     ) as Record<string, unknown>
 
     return {
-      Id: (payload.sub as string) ?? '',
+      Id: (payload['sub'] as string) ?? '',
       Name:
-        (payload.name as string) ??
-        (payload.email as string) ??
+        (payload['name'] as string) ??
+        (payload['email'] as string) ??
         '',
-      Username: (payload.email as string) ?? '',
-      Email: (payload.email as string) ?? '',
+      Username: (payload['email'] as string) ?? '',
+      Email: (payload['email'] as string) ?? '',
       AvatarUrl: '',
       RawUser: payload,
     }

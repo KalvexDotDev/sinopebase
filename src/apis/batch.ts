@@ -40,8 +40,8 @@ export interface BatchRequestBody {
  * since Elysia runs in-memory; for production this would use a DB transaction).
  */
 export function createBatchPlugin(
-  db: IDatabase,
-  isSuperuser: () => boolean,
+  _db: IDatabase,
+  _isSuperuser: () => boolean,
   app: Elysia,
 ) {
   const batchApp = new Elysia()

@@ -1,0 +1,41 @@
+# Secrets and local configuration must never enter a build context.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# VCS, agent state, and local editor metadata are not build inputs.
+.git/
+.agents/
+.claude/
+.memento-staging/
+.idea/
+.vscode/
+
+# Dependencies and generated artifacts are rebuilt in the container.
+node_modules/
+ui/node_modules/
+dist/
+ui/dist/
+out/
+coverage/
+.cache/
+*.tsbuildinfo
+
+# Development/runtime state must be supplied as a mount, never baked in.
+pb_data/
+logs/
+tmp/
+*.log
+*.lcov
+
+# Tests and release documentation are not runtime build inputs.
+tests/
+test-fns-2/
+docs/
+README.md
+CHANGELOG.md
+CLAUDE.md

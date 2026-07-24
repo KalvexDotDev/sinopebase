@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "name": "sinope-supabase-compatibility",
+  "scope": "Bounded Sinope workload contract; not a Supabase parity or production-readiness claim.",
+  "focusedCommand": "bun test src/apis/postgrest.test.ts src/apis/postgrest-head-count.test.ts src/apis/postgrest-in-filter.test.ts src/apis/realtime-postgres-changes.test.ts src/apis/file.test.ts src/core/postgres-role-bootstrap.test.ts src/core/db-postgres-rls.test.ts tests/tools/auth-better/supabase-bridge.test.ts tests/integration/auth-better.test.ts",
+  "lastFocusedResult": {
+    "capturedAt": "2026-07-22",
+    "runtime": "Bun 1.3.14",
+    "passed": 49,
+    "failed": 0,
+    "assertions": 121
+  },
+  "contracts": [
+    {
+      "id": "auth.gotrue-root-responses",
+      "status": "verified-local",
+      "expectations": ["GoTrue session and user successes are response-root payloads", "auth failures expose response-root message and status", "signup, password sign-in, refresh, get-user, and logout are exercised"],
+      "evidence": ["tests/tools/auth-better/supabase-bridge.test.ts", "tests/integration/auth-better.test.ts"],
+      "dependencies": ["better-auth", "PostgreSQL session store"]
+    },
+    {
+      "id": "auth.uuid-and-sinope-mirror",
+      "status": "external-conditional",
+      "expectations": ["Sinopebase-generated better-auth IDs are UUIDs", "isolated Sinope shim normalizes public.user IDs and mirrors users into auth.users"],
+      "evidence": ["src/tools/auth-better/index.ts", "D:/Projects/sinope-sinopebase/supabase/sinopebase_compat.sql", "D:/Projects/sinope-sinopebase/tests/integration/sinopebase-compat.test.ts"],
+      "dependencies": ["isolated Sinope schema", "auth.users", "gen_random_uuid()", "trigger DDL privilege"],
+      "requiredEnvironment": ["SINOPEBASE_TEST_URL", "SINOPEBASE_TEST_ANON_KEY", "SINOPEBASE_TEST_SERVICE_ROLE_KEY"]
+    },
+    {
+      "id": "postgrest.read-shape-and-count",
+      "status": "verified-local",
+      "expectations": ["singular object media type and PGRST116 cardinality failures", "order query", "HEAD content-range exact count with no body", "UUID IN operands"],
+      "evidence": ["src/apis/postgrest.test.ts", "src/apis/postgrest-head-count.test.ts", "src/apis/postgrest-in-filter.test.ts"],
+      "dependencies": ["PostgreSQL for UUID IN regression"]
+    },
+    {
+      "id": "postgrest.embedded-single-column-fks",
+      "status": "verified-local",
+      "expectations": ["outbound object, inbound array, FK-column alias, and !inner embedded selection"],
+      "evidence": ["src/apis/postgrest.test.ts"],
+      "dependencies": ["public-schema single-column foreign-key metadata"],
+      "unsupported": ["composite foreign keys", "unqualified full select/filter grammar"]
+    },
+    {
+      "id": "postgres.rls-request-context",
+      "status": "verified-local",
+      "expectations": ["transaction-local role and JWT claims", "auth.uid isolation", "anon public-only read", "service-role bypass", "concurrent pool isolation", "REST and HEAD use identical context"],
+      "evidence": ["src/core/db-postgres-rls.test.ts"],
+      "dependencies": ["PostgreSQL roles", "role membership", "RLS policies", "auth.uid()"]
+    },
+    {
+      "id": "postgres.request-role-bootstrap",
+      "status": "verified-local",
+      "expectations": ["safe role attributes", "idempotent membership", "validated SET LOCAL ROLE", "fail-closed unsafe/unauthorized setup"],
+      "evidence": ["src/core/postgres-role-bootstrap.test.ts"],
+      "dependencies": ["initial CREATE ROLE and GRANT authority"],
+      "productionGap": "Runtime privileged role DDL must move to controlled provisioning or migrations."
+    },
+    {
+      "id": "realtime.postgres-changes-process-local",
+      "status": "verified-local",
+      "expectations": ["Phoenix v2 join bindings", "filtered REST INSERT/UPDATE/DELETE events", "subscriber canRead denial prevents delivery"],
+      "evidence": ["src/apis/realtime-postgres-changes.test.ts"],
+      "dependencies": ["single Sinopebase process", "trusted authorize/canRead callbacks"],
+      "unsupported": ["WAL/logical replication", "cross-process writes", "durable multi-replica delivery", "live PostgreSQL RLS proof"]
+    },
+    {
+      "id": "storage.http-and-policy-boundary",
+      "status": "verified-local",
+      "expectations": ["raw and unnamed-multipart storage-js uploads", "raw list/delete/download shapes", "fail-closed missing metadata policy", "identity-aware policy call", "cross-member 404", "MIME and size limits"],
+      "evidence": ["src/apis/file.test.ts"],
+      "dependencies": ["request-context resolver", "available StorageAccessPolicy", "trusted object metadata"],
+      "productionGap": "Signed URLs are expiry-only, bodies are buffered, and no provider object-store/restore proof exists."
+    },
+    {
+      "id": "sinope.application-onboarding-and-certification",
+      "status": "external-conditional",
+      "expectations": ["supabase-js sign-up/authentication", "service onboarding", "tenant lookup", "framework read", "certification creation", "certification packet read"],
+      "evidence": ["D:/Projects/sinope-sinopebase/tests/integration/sinopebase-compat.test.ts"],
+      "dependencies": ["isolated Sinope database", "ISO 27001 and SOC 2 seed data", "SINOPEBASE_TEST_* environment"]
+    }
+  ],
+  "providerGaps": [
+    "Netlify Database role/RLS/migration/pool/TLS/cold-wake capability probe has not run.",
+    "Netlify Blobs credentials, least privilege, consistency, ambiguous-write, export, and restore capability probe has not run.",
+    "No contract here proves production security, recovery, operations, or multi-replica Realtime behavior."
+  ]
+}

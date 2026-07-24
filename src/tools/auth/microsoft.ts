@@ -61,12 +61,12 @@ export class MicrosoftProvider extends BaseProvider {
   override MapUser(rawUser: unknown): AuthUser {
     const data = rawUser as Record<string, unknown>
     return {
-      Id: (data.id as string) ?? '',
-      Name: (data.displayName as string) ?? '',
+      Id: (data['id'] as string) ?? '',
+      Name: (data['displayName'] as string) ?? '',
       Username:
-        (data.userPrincipalName as string) ?? (data.mail as string) ?? '',
+        (data['userPrincipalName'] as string) ?? (data['mail'] as string) ?? '',
       Email:
-        (data.mail as string) ?? (data.userPrincipalName as string) ?? '',
+        (data['mail'] as string) ?? (data['userPrincipalName'] as string) ?? '',
       AvatarUrl: '',
       RawUser: rawUser,
     }

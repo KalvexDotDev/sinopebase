@@ -8,7 +8,6 @@
  */
 
 import { BaseModel } from './db_model'
-import { DateTime } from '~/tools/types/datetime'
 
 /**
  * AuthOrigin represents the origin/fingerprint of an authentication.

@@ -7,7 +7,7 @@
 
 import type { IDatabase } from '~/core/db-interface.ts'
 import type { Collection } from '~/core/collection_model.ts'
-import { Record } from '~/core/record_model.ts'
+import { Record as RecordModel } from '~/core/record_model.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -26,7 +26,7 @@ const MaxNestedRels = 6
 export type ExpandFetchFunc = (
   relCollection: Collection,
   relIds: string[],
-) => Promise<Record[]>
+) => Promise<RecordModel[]>
 
 // ---------------------------------------------------------------------------
 // Expand Functions
@@ -44,7 +44,7 @@ export type ExpandFetchFunc = (
  */
 export async function expandRecord(
   db: IDatabase,
-  record: Record,
+  record: RecordModel,
   expands: string[],
   fetchFunc?: ExpandFetchFunc,
 ): Promise<Map<string, Error>> {
@@ -60,7 +60,7 @@ export async function expandRecord(
  */
 export async function expandRecords(
   db: IDatabase,
-  records: Record[],
+  records: RecordModel[],
   expands: string[],
   fetchFunc?: ExpandFetchFunc,
 ): Promise<Map<string, Error>> {
@@ -87,7 +87,7 @@ export async function expandRecords(
  */
 async function expandRecordsInternal(
   db: IDatabase,
-  records: Record[],
+  records: RecordModel[],
   expandPath: string,
   fetchFunc?: ExpandFetchFunc,
   recursionLevel: number = 1,
@@ -116,7 +116,7 @@ async function expandRecordsInternal(
  */
 async function expandDirectRelation(
   db: IDatabase,
-  records: Record[],
+  records: RecordModel[],
   fieldName: string,
   mainCollection: Collection,
   remainingParts: string,
@@ -129,7 +129,7 @@ async function expandDirectRelation(
   }
 
   const relField = field as Record<string, unknown>
-  const relCollectionId = String(relField.collectionId ?? '')
+  const relCollectionId = String(relField['collectionId'] ?? '')
 
   // We need a function to resolve the collection by id
   // For now, this is a stub — the actual collection resolution needs access to the app or collection cache
@@ -158,7 +158,7 @@ async function expandDirectRelation(
   }
 
   // Index related records by id
-  const indexedRels = new Map<string, Record>()
+  const indexedRels = new Map<string, RecordModel>()
   for (const rel of rels) {
     indexedRels.set(rel.id, rel)
   }
@@ -168,11 +168,11 @@ async function expandDirectRelation(
     const recordRelIds = record.getStringSlice(fieldName)
     const validRels = recordRelIds
       .map((id) => indexedRels.get(id))
-      .filter((r): r is Record => r !== undefined)
+      .filter((r): r is RecordModel => r !== undefined)
 
     if (validRels.length === 0) continue
 
-    const isMultiple = relField.maxSelect !== 1
+    const isMultiple = relField['maxSelect'] !== 1
     const expandData = record.expandData()
 
     if (isMultiple) {
@@ -192,7 +192,7 @@ async function expandDirectRelation(
  */
 async function expandIndirectRelation(
   _db: IDatabase,
-  _records: Record[],
+  _records: RecordModel[],
   _expandName: string,
   _relCollectionName: string,
   _relFieldName: string,
@@ -213,7 +213,7 @@ async function expandIndirectRelation(
 /**
  * Collects unique relation ids from records for the given field.
  */
-function collectRelationIds(records: Record[], fieldName: string): string[] {
+function collectRelationIds(records: RecordModel[], fieldName: string): string[] {
   const idSet = new Set<string>()
   for (const record of records) {
     const ids = record.getStringSlice(fieldName)

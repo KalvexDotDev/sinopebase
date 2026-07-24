@@ -20,8 +20,8 @@ describe('URLField', () => {
 
   it('settings schema is string with uri format', () => {
     const f = new URLField()
-    expect(f.settingsSchema.type).toBe('string')
-    expect(f.settingsSchema.format).toBe('uri')
+    expect(f.settingsSchema['type']).toBe('string')
+    expect(f.settingsSchema['format']).toBe('uri')
   })
 
   describe('validateValue', () => {

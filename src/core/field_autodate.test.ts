@@ -20,9 +20,9 @@ describe('AutodateField', () => {
 
   it('settings schema is readOnly date-time', () => {
     const f = new AutodateField()
-    expect(f.settingsSchema.type).toBe('string')
-    expect(f.settingsSchema.format).toBe('date-time')
-    expect(f.settingsSchema.readOnly).toBe(true)
+    expect(f.settingsSchema['type']).toBe('string')
+    expect(f.settingsSchema['format']).toBe('date-time')
+    expect(f.settingsSchema['readOnly']).toBe(true)
   })
 
   it('defaults to no onCreate/onUpdate', () => {

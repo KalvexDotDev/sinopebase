@@ -24,11 +24,19 @@ export class ReplaceWithExpression {
    * @param old         - The SQL expression that contains `placeholder`.
    * @param new         - The SQL expression to substitute in place of `placeholder`.
    */
+  placeholder: string
+  old: string
+  new_: string
+
   constructor(
-    public placeholder: string,
-    public old: string,
-    public new_: string,
-  ) {}
+    placeholder: string,
+    old: string,
+    new_: string,
+  ) {
+    this.placeholder = placeholder
+    this.old = old
+    this.new_ = new_
+  }
 
   /**
    * Returns the SQL fragment with all occurrences of `placeholder`

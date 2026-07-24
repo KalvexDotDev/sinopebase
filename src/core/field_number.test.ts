@@ -33,10 +33,10 @@ describe('NumberField', () => {
     f.onlyInt = true
 
     const schema = f.settingsSchema
-    expect(schema.type).toBe('number')
-    expect(schema.minimum).toBe(0)
-    expect(schema.maximum).toBe(100)
-    expect(schema.multipleOf).toBe(1)
+    expect(schema['type']).toBe('number')
+    expect(schema['minimum']).toBe(0)
+    expect(schema['maximum']).toBe(100)
+    expect(schema['multipleOf']).toBe(1)
   })
 
   it('validateSettings validates min <= max', () => {

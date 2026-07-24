@@ -20,8 +20,8 @@ describe('EmailField', () => {
 
   it('settings schema is string with email format', () => {
     const f = new EmailField()
-    expect(f.settingsSchema.type).toBe('string')
-    expect(f.settingsSchema.format).toBe('email')
+    expect(f.settingsSchema['type']).toBe('string')
+    expect(f.settingsSchema['format']).toBe('email')
   })
 
   describe('validateValue', () => {

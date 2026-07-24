@@ -24,14 +24,14 @@ describe('cmd/superuser CRUD operations', () => {
       updated: new Date().toISOString(),
     }])
 
-    expect(result[0]!.id).toBeTruthy()
-    expect(result[0]!.email).toBe('admin@test.com')
+    expect(result[0]!['id']).toBeTruthy()
+    expect(result[0]!['email']).toBe('admin@test.com')
   })
 
   it('lists superusers', () => {
     const result = db.select(SUPERUSERS_TABLE, {})
     expect(result.rows.length).toBeGreaterThan(0)
-    expect(result.rows.some((r) => r.email === 'admin@test.com')).toBe(true)
+    expect(result.rows.some((r) => r['email'] === 'admin@test.com')).toBe(true)
   })
 
   it('updates a superuser email', () => {
@@ -39,7 +39,7 @@ describe('cmd/superuser CRUD operations', () => {
       filters: [{ column: 'email', operator: 'eq', value: 'admin@test.com' }],
     })
     expect(result.rows.length).toBe(1)
-    const id = String(result.rows[0]!.id)
+    const id = String(result.rows[0]!['id'])
 
     const updated = db.update(
       SUPERUSERS_TABLE,
@@ -47,7 +47,7 @@ describe('cmd/superuser CRUD operations', () => {
       { email: 'updated@test.com', updated: new Date().toISOString() },
     )
 
-    expect(updated[0]!.email).toBe('updated@test.com')
+    expect(updated[0]!['email']).toBe('updated@test.com')
   })
 
   it('deletes a superuser', () => {
@@ -55,7 +55,7 @@ describe('cmd/superuser CRUD operations', () => {
       filters: [{ column: 'email', operator: 'eq', value: 'updated@test.com' }],
     })
     if (result.rows.length > 0) {
-      const id = String(result.rows[0]!.id)
+      const id = String(result.rows[0]!['id'])
       const deleted = db.delete(SUPERUSERS_TABLE, [
         { column: 'id', operator: 'eq', value: id },
       ])

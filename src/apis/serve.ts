@@ -19,12 +19,11 @@
  */
 
 import { Elysia } from 'elysia'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 
 import type { App } from '~/core/app'
 import { NewRouter, type RouterOptions } from './base'
-import { cors } from './middlewares_cors'
 import { wwwRedirect } from './middlewares'
 
 // ---------------------------------------------------------------------------
@@ -59,19 +58,6 @@ export interface ServeConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Default CSP (Content-Security-Policy)
-// ---------------------------------------------------------------------------
-
-const DEFAULT_CSP = [
-  "default-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' http://127.0.0.1:* https://tile.openstreetmap.org data: blob:",
-  "connect-src 'self' http://127.0.0.1:* https://nominatim.openstreetmap.org",
-  "script-src 'self' http://127.0.0.1:*",
-  "frame-ancestors 'none'",
-].join('; ')
-
-// ---------------------------------------------------------------------------
 // Helper: resolve the host string for display
 // ---------------------------------------------------------------------------
 
@@ -97,7 +83,7 @@ interface CertManager {
  * For production with real LetsEncrypt, use a reverse proxy (Caddy, nginx)
  * that handles TLS termination.
  */
-function createCertManager(dataDir: string, domains: string[]): CertManager {
+function createCertManager(dataDir: string, _domains: string[]): CertManager {
   const cacheDir = join(dataDir, '.autocert-cache')
   if (!existsSync(cacheDir)) {
     mkdirSync(cacheDir, { recursive: true })
@@ -207,14 +193,17 @@ export async function Serve(
   }
 
   // 7. Start the server
-  let server: ReturnType<Elysia['listen']> | null = null
+  const listenWithTls = router.listen as unknown as (
+    address: string,
+    tls: { cert: string; key: string },
+  ) => Elysia
 
   try {
     if (cfg.httpsAddr && cfg.tlsCertPath && cfg.tlsKeyPath) {
       // Custom TLS cert
       const cert = readFileSync(cfg.tlsCertPath, 'utf-8')
       const key = readFileSync(cfg.tlsKeyPath, 'utf-8')
-      server = router.listen(cfg.httpsAddr, {
+      listenWithTls(cfg.httpsAddr, {
         cert,
         key,
       })
@@ -227,18 +216,18 @@ export async function Serve(
       const hostname = cfg.certificateDomains?.[0] ?? serverAddrToHost(cfg.httpsAddr)
       const tls = await certManager.getCertificate(hostname)
       if (tls) {
-        server = router.listen(cfg.httpsAddr, {
+        listenWithTls(cfg.httpsAddr, {
           cert: tls.cert,
           key: tls.key,
         })
       } else {
         // Fall back to HTTP
         console.warn('[serve] No TLS certificate available — falling back to HTTP.')
-        server = router.listen(cfg.httpAddr ?? mainAddr)
+        router.listen(cfg.httpAddr ?? mainAddr)
       }
     } else {
       // Plain HTTP
-      server = router.listen(mainAddr)
+      router.listen(mainAddr)
     }
   } catch (err) {
     console.error('[serve] Failed to start server:', err)

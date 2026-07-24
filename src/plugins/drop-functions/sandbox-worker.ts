@@ -8,6 +8,8 @@
 // Types are inlined because import paths don't resolve from Blob URL workers.
 // ---------------------------------------------------------------------------
 
+declare var self: DedicatedWorkerGlobalScope
+
 type SandboxMessage =
   | { type: 'result'; data: unknown }
   | { type: 'error'; error: string; stack?: string }

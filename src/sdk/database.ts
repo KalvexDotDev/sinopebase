@@ -183,7 +183,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
   select(columns = '*'): this { this.columns = columns; return this }
 
   // Transforms (implementation)
-  order(column: string, options = { ascending: true }): this {
+  order(column: string, options: { ascending?: boolean; nullsFirst?: boolean } = { ascending: true }): this {
     this.orderParams.push(`${column}.${options.ascending !== false ? 'asc' : 'desc'}${options.nullsFirst ? '.nullsfirst' : ''}`)
     return this
   }
@@ -259,16 +259,16 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
         return { data: null, error: null, count, status: res.status, statusText: res.statusText }
       }
 
-      const json = await res.json().catch(() => null)
+      const json: Record<string, unknown> | null = await res.json().catch(() => null)
 
       if (!res.ok) {
         return {
           data: null,
           error: {
-            message: json?.message ?? res.statusText,
-            details: json?.details ?? '',
-            hint: json?.hint ?? '',
-            code: json?.code ?? String(res.status),
+            message: (json?.['message'] as string) ?? res.statusText,
+            details: (json?.['details'] as string) ?? '',
+            hint: (json?.['hint'] as string) ?? '',
+            code: (json?.['code'] as string) ?? String(res.status),
           },
           count: null,
           status: res.status,

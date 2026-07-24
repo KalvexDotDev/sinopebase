@@ -16,8 +16,7 @@
  * Each factory returns an Elysia `onRequest` (or `beforeHandle`) hook.
  */
 
-import type { Elysia } from 'elysia'
-import { ParseUnverifiedJWT } from '~/tools/security/jwt'
+import type { Context, Elysia, PreContext } from 'elysia'
 import { verifyAccessToken } from './auth-jwt'
 import {
   ApiError,
@@ -56,6 +55,20 @@ export const DEFAULT_RATE_LIMIT_PRIORITY = -1000
 // ---------------------------------------------------------------------------
 
 const SuperusersCollectionName = '_superusers'
+
+type AuthPayload = Awaited<ReturnType<typeof verifyAccessToken>> &
+  Partial<Record<'collection' | 'collectionId' | 'id', string>>
+
+interface MiddlewareError {
+  readonly message?: string
+  readonly stack?: string
+}
+
+function asAuthPayload(
+  payload: Awaited<ReturnType<typeof verifyAccessToken>>,
+): AuthPayload {
+  return payload as AuthPayload
+}
 
 /**
  * Extract the Bearer token from the Authorization header.
@@ -99,7 +112,7 @@ export function requireAuth(...optCollectionNames: string[]) {
     }
 
     try {
-      const payload = await verifyAccessToken(token)
+      const payload = asAuthPayload(await verifyAccessToken(token))
 
       // Store the decoded token payload so downstream handlers can read auth context
       ctx.store['auth'] = payload
@@ -145,7 +158,7 @@ export function requireSuperuserOrOwnerAuth(ownerIdPathParam = 'id') {
     }
 
     try {
-      const payload = await verifyAccessToken(token)
+      const payload = asAuthPayload(await verifyAccessToken(token))
       ctx.store['auth'] = payload
 
       const coll = (payload['collection'] as string) ?? ''
@@ -182,7 +195,7 @@ export function requireSameCollectionContextAuth(collectionParam = 'collection')
     }
 
     try {
-      const payload = await verifyAccessToken(token)
+      const payload = asAuthPayload(await verifyAccessToken(token))
       ctx.store['auth'] = payload
 
       const tokenCollectionId =
@@ -241,19 +254,20 @@ export function requireGuestOnly() {
  * This middleware is registered by default for all routes.
  */
 export function loadAuthToken() {
-  return async (ctx: {
-    request: Request
-    store: Record<string, unknown>
-  }): Promise<void> => {
+  return async (
+    ctx: Pick<PreContext, 'request' | 'store'>,
+  ): Promise<void> => {
+    const store = ctx.store as Record<string, unknown>
+
     // Already loaded by another middleware
-    if (ctx.store['auth'] != null) return
+    if (store['auth'] != null) return
 
     const token = getAuthTokenFromRequest(ctx.request)
     if (!token) return
 
     try {
       const payload = await verifyAccessToken(token)
-      ctx.store['auth'] = payload
+      store['auth'] = payload
     } catch {
       // Silently ignore — invalid/expired token
     }
@@ -337,32 +351,29 @@ export function activityLogger() {
  * ```
  */
 export function activityLoggerStart() {
-  return (ctx: {
-    request: Request
-    store: Record<string, unknown>
-  }): void => {
-    ctx.store[REQUEST_EVENT_KEY_EXEC_START] = Date.now()
+  return (ctx: Pick<PreContext, 'store'>): void => {
+    const store = ctx.store as Record<string, unknown>
+    store[REQUEST_EVENT_KEY_EXEC_START] = Date.now()
   }
 }
 
 export function activityLoggerEnd() {
-  return (ctx: {
-    request: Request
-    response: unknown
-    set: { status?: number }
-    store: Record<string, unknown>
-  }): void => {
+  return (
+    ctx: Pick<Context, 'request' | 'set' | 'store'> & { response: unknown },
+  ): void => {
     logRequest(ctx, null)
   }
 }
 
 export function activityLoggerError() {
-  return (ctx: {
-    request: Request
-    error: Error
-    set: { status?: number }
-    store: Record<string, unknown>
-  }): void => {
+  return (
+    ctx: {
+      request: Request
+      set: Context['set']
+      store: object
+      error: unknown
+    },
+  ): void => {
     logRequest(ctx, ctx.error)
   }
 }
@@ -370,16 +381,17 @@ export function activityLoggerError() {
 function logRequest(
   ctx: {
     request: Request
-    set?: { status?: number }
-    store: Record<string, unknown>
+    set?: Context['set']
+    store: object
   },
-  err: Error | null,
+  err: unknown | null,
 ): void {
-  const start = ctx.store[REQUEST_EVENT_KEY_EXEC_START] as number | undefined
+  const store = ctx.store as Record<string, unknown>
+  const start = store[REQUEST_EVENT_KEY_EXEC_START] as number | undefined
   const execTime = start != null ? Date.now() - start : 0
 
   // Check if success logging is disabled
-  if (!err && ctx.store[REQUEST_EVENT_KEY_SKIP_SUCCESS_LOG] != null) return
+  if (!err && store[REQUEST_EVENT_KEY_SKIP_SUCCESS_LOG] != null) return
 
   const method = ctx.request.method.toUpperCase().slice(0, 50)
   const url = ctx.request.url.slice(0, 3000)
@@ -388,7 +400,7 @@ function logRequest(
   const meta: Record<string, unknown> = {}
   if (execTime > 0) meta['execTime'] = execTime
 
-  const auth = ctx.store['auth'] as Record<string, unknown> | undefined
+  const auth = store['auth'] as Record<string, unknown> | undefined
   if (auth) {
     meta['authCollection'] = auth['collection'] ?? ''
     meta['authId'] = auth['id'] ?? ''
@@ -404,7 +416,8 @@ function logRequest(
   }
 
   if (err) {
-    logData['error'] = err.message
+    const error = err as MiddlewareError
+    logData['error'] = error.message
     console.error(`[API] ${method} ${url} ${status} ${execTime}ms`, logData)
   } else {
     console.log(`[API] ${method} ${url} ${status} ${execTime}ms`, logData)
@@ -427,9 +440,7 @@ function logRequest(
  * and the serve layer.
  */
 export function securityHeaders() {
-  return (ctx: {
-    set: { headers: Record<string, string> }
-  }): void => {
+  return (ctx: Pick<PreContext, 'set'>): void => {
     ctx.set.headers['x-xss-protection'] = '1; mode=block'
     ctx.set.headers['x-content-type-options'] = 'nosniff'
     ctx.set.headers['x-frame-options'] = 'SAMEORIGIN'
@@ -449,10 +460,7 @@ export function securityHeaders() {
  * ```
  */
 export function wwwRedirect(redirectHosts: string[]) {
-  return (ctx: {
-    request: Request
-    set: { status?: number; headers: Record<string, string>; redirect?: string }
-  }): void => {
+  return (ctx: Pick<PreContext, 'request' | 'set'>): void => {
     const host = ctx.request.headers.get('host') ?? ''
 
     if (
@@ -480,14 +488,12 @@ export function wwwRedirect(redirectHosts: string[]) {
  * Register this as the outermost onError handler.
  */
 export function panicRecover() {
-  return (ctx: {
-    error: Error
-    set: { status?: number }
-    request: Request
-    store: Record<string, unknown>
-  }): void => {
-    const stack = ctx.error.stack ?? ''
-    console.error(`[PANIC RECOVER] ${ctx.error.message}`, stack.slice(0, 2048))
+  return (
+    ctx: { set: Context['set']; error: unknown },
+  ): void => {
+    const error = ctx.error as MiddlewareError
+    const stack = error.stack ?? ''
+    console.error(`[PANIC RECOVER] ${error.message}`, stack.slice(0, 2048))
 
     ctx.set.status = 500
   }

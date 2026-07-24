@@ -28,6 +28,6 @@ export async function up(db: MigrationDB): Promise<void> {
 /**
  * Rolls back v0.23 schema changes part 2.
  */
-export async function down(db: MigrationDB): Promise<void> {
+export async function down(_db: MigrationDB): Promise<void> {
   // Columns remain after rollback (DROP COLUMN not universally supported).
 }

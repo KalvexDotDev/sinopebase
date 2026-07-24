@@ -8,25 +8,52 @@
 
 import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 
-/** Base URL for the local Sinopebase backend */
-const SINOPEBASE_URL = process.env.SINOPEBASE_URL ?? 'http://127.0.0.1:8090'
+/**
+ * Lazy-validated credential accessors.
+ * Throws on missing env vars to prevent silent fallback to test defaults.
+ */
 
-/** Service role key for admin operations (bypasses RLS) */
-const SERVICE_ROLE_KEY = process.env.SINOPEBASE_SERVICE_ROLE_KEY ?? 'test-service-role-key'
+/** Base URL for the local Sinopebase backend (defaults to localhost:8090) */
+function getSinopebaseUrl(): string {
+  return process.env['SINOPEBASE_URL']?.trim() || 'http://127.0.0.1:8090'
+}
 
-/** Anon key for public operations */
-const ANON_KEY = process.env.SINOPEBASE_ANON_KEY ?? 'test-anon-key'
+/** Require SINOPEBASE_ANON_KEY — throws if not set */
+function getAnonKey(): string {
+  const value = process.env['SINOPEBASE_ANON_KEY']?.trim()
+  if (!value) {
+    throw new Error(
+      'SINOPEBASE_ANON_KEY must be set for infrastructure contract tests.\n' +
+      '  export SINOPEBASE_ANON_KEY=<your-anon-key>\n' +
+      '  This prevents silent fallback to a hard-coded test credential.',
+    )
+  }
+  return value
+}
+
+/** Require SINOPEBASE_SERVICE_ROLE_KEY — throws if not set */
+function getServiceRoleKey(): string {
+  const value = process.env['SINOPEBASE_SERVICE_ROLE_KEY']?.trim()
+  if (!value) {
+    throw new Error(
+      'SINOPEBASE_SERVICE_ROLE_KEY must be set for infrastructure contract tests.\n' +
+      '  export SINOPEBASE_SERVICE_ROLE_KEY=<your-service-role-key>\n' +
+      '  This prevents silent fallback to a hard-coded test credential.',
+    )
+  }
+  return value
+}
 
 /**
  * Create a client configured for the local Sinopebase backend.
  * Mirrors supabase-js: createClient(url, key)
  */
-export function createTestClient(key: string = ANON_KEY): SinopebaseClient {
-  return createClient(SINOPEBASE_URL, key)
+export function createTestClient(key?: string): SinopebaseClient {
+  return createClient(getSinopebaseUrl(), key ?? getAnonKey())
 }
 
 export function createServiceClient(): SinopebaseClient {
-  return createClient(SINOPEBASE_URL, SERVICE_ROLE_KEY)
+  return createClient(getSinopebaseUrl(), getServiceRoleKey())
 }
 
 /**

@@ -21,7 +21,8 @@ import {
 import type { Collection } from '~/core/collection_model.ts'
 import { DateTime } from '~/tools/types/datetime.ts'
 import { Store } from '~/tools/store/store.ts'
-import type { GeoPoint } from '~/tools/types/geo_point.ts'
+
+type Data = { [key: string]: unknown }
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -90,7 +91,7 @@ export class Record extends BaseModel {
   /**
    * Returns the table name for this record (same as the collection name).
    */
-  override tableName(): string {
+  tableName(): string {
     return this.collection.name
   }
 
@@ -191,7 +192,7 @@ export class Record extends BaseModel {
   set(key: string, value: unknown): void {
     if (key === FieldNameExpand) {
       if (typeof value === 'object' && value !== null) {
-        this.setExpand(value as Record<string, unknown>)
+        this.setExpand(value as Data)
       }
       return
     }
@@ -212,7 +213,7 @@ export class Record extends BaseModel {
    *
    * Equivalent to Go's `Record.Load(data)`.
    */
-  load(data: Record<string, unknown>): void {
+  load(data: Data): void {
     for (const [key, value] of Object.entries(data)) {
       this.set(key, value)
     }
@@ -285,9 +286,9 @@ export class Record extends BaseModel {
   /**
    * Returns the expand data (shallow copy).
    */
-  expandData(): Record<string, unknown> {
+  expandData(): Data {
     if (!this.expandStore) return {}
-    const entries: Record<string, unknown> = {}
+    const entries: Data = {}
     for (const [k, v] of this.expandStore.getAll()) {
       entries[k] = v
     }
@@ -297,7 +298,7 @@ export class Record extends BaseModel {
   /**
    * Replaces the expand data.
    */
-  setExpand(expand: Record<string, unknown>): void {
+  setExpand(expand: Data): void {
     if (!this.expandStore) {
       this.expandStore = new Store()
     }
@@ -382,7 +383,7 @@ export class Record extends BaseModel {
     }
 
     if (this.expandStore) {
-      const expandEntries: Record<string, unknown> = {}
+      const expandEntries: Data = {}
       for (const [k, v] of this.expandStore.getAll()) {
         expandEntries[k] = v
       }
@@ -410,13 +411,13 @@ export class Record extends BaseModel {
   /**
    * Returns ONLY custom (non-collection, non-system) field data.
    */
-  customData(): Record<string, unknown> {
+  customData(): Data {
     const knownFields = new Set<string>()
     for (const f of this.collection.fields) {
       knownFields.add(f.name)
     }
 
-    const result: Record<string, unknown> = {}
+    const result: Data = {}
     for (const [k, v] of this.dataStore.getAll()) {
       if (!knownFields.has(k) && !k.startsWith(InternalCustomFieldKeyPrefix)) {
         result[k] = v
@@ -458,8 +459,8 @@ export class Record extends BaseModel {
    *
    * Equivalent to Go's `Record.PublicExport()`.
    */
-  publicExport(): Record<string, unknown> {
-    const result: Record<string, unknown> = {}
+  publicExport(): Data {
+    const result: Data = {}
     const customVisibility = this.customVisibilityStore.getAll()
 
     // Export schema fields
@@ -501,7 +502,7 @@ export class Record extends BaseModel {
 
     // Add expand (if non-null)
     if (this.expandStore && this.expandStore.length > 0) {
-      const expandEntries: Record<string, unknown> = {}
+      const expandEntries: Data = {}
       for (const [k, v] of this.expandStore.getAll()) {
         expandEntries[k] = v
       }
@@ -518,14 +519,14 @@ export class Record extends BaseModel {
   /**
    * JSON serialization — uses PublicExport().
    */
-  toJSON(): Record<string, unknown> {
+  toJSON(): Data {
     return this.publicExport()
   }
 
   /**
    * Loads the record from a JSON object.
    */
-  loadFromJSON(data: Record<string, unknown>): void {
+  loadFromJSON(data: Data): void {
     this.load(data)
   }
 
@@ -536,8 +537,8 @@ export class Record extends BaseModel {
   /**
    * Prepares the data for database persistence.
    */
-  dbExport(): Record<string, unknown> {
-    const result: Record<string, unknown> = {}
+  dbExport(): Data {
+    const result: Data = {}
 
     for (const field of this.collection.fields) {
       result[field.name] = this.getRaw(field.name)

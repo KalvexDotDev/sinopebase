@@ -13,11 +13,21 @@ import type { IDatabase } from '~/core/db-interface'
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-async function selectRows(db: IDatabase, table: string, options?: any): Promise<Record<string, unknown>[]> {
+async function selectRows(
+  db: IDatabase,
+  table: string,
+  options?: unknown,
+): Promise<Record<string, unknown>[]> {
   try {
-    const result = await db.select(table, options ?? {})
+    const result: unknown = await db.select(
+      table,
+      (options ?? {}) as Parameters<IDatabase['select']>[1],
+    )
     if (Array.isArray(result)) return result
-    if (result && typeof result === 'object' && 'rows' in result) return (result as any).rows
+    if (result && typeof result === 'object' && 'rows' in result) {
+      const { rows } = result
+      if (Array.isArray(rows)) return rows
+    }
     return []
   } catch {
     return []
@@ -45,18 +55,24 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
 
     try {
       const q = query as Record<string, string>
-      const page = Math.max(1, parseInt(q.page ?? '1', 10) || 1)
-      const perPage = Math.min(200, Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30))
+      const page = Math.max(1, parseInt(q['page'] ?? '1', 10) || 1)
+      const perPage = Math.min(
+        200,
+        Math.max(
+          1,
+          parseInt(q['perPage'] ?? q['per_page'] ?? '30', 10) || 30,
+        ),
+      )
 
       const rows = await selectRows(db, '_logs')
 
       const logs = rows.map((r) => ({
-        id: String(r.id ?? ''),
-        level: Number(r.level ?? 0),
-        message: String(r.message ?? ''),
-        data: (r.data as Record<string, unknown>) ?? {},
-        created: String(r.created ?? ''),
-        updated: String(r.updated ?? ''),
+        id: String(r['id'] ?? ''),
+        level: Number(r['level'] ?? 0),
+        message: String(r['message'] ?? ''),
+        data: (r['data'] as Record<string, unknown>) ?? {},
+        created: String(r['created'] ?? ''),
+        updated: String(r['updated'] ?? ''),
       }))
 
       const totalItems = logs.length
@@ -92,7 +108,7 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
 
       const stats: Record<string, number> = {}
       for (const row of rows) {
-        const created = String(row.created ?? '').slice(0, 10)
+        const created = String(row['created'] ?? '').slice(0, 10)
         stats[created] = (stats[created] ?? 0) + 1
       }
 
@@ -127,12 +143,12 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
 
       const row = rows[0]!
       return {
-        id: String(row.id ?? ''),
-        level: Number(row.level ?? 0),
-        message: String(row.message ?? ''),
-        data: (row.data as Record<string, unknown>) ?? {},
-        created: String(row.created ?? ''),
-        updated: String(row.updated ?? ''),
+        id: String(row['id'] ?? ''),
+        level: Number(row['level'] ?? 0),
+        message: String(row['message'] ?? ''),
+        data: (row['data'] as Record<string, unknown>) ?? {},
+        created: String(row['created'] ?? ''),
+        updated: String(row['updated'] ?? ''),
       }
     } catch (err) {
       set.status = 400
