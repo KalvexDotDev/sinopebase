@@ -174,7 +174,7 @@ export class Hook<T extends Resolver> {
 
     // Build the chain from tail to head.
     for (let i = allHandlers.length - 1; i >= 0; i--) {
-      const handlerFn = allHandlers[i];
+      const handlerFn = allHandlers[i]!;
       const oldNext = event.nextFunc();
       event.setNextFunc(() => {
         event.setNextFunc(oldNext);

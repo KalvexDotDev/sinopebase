@@ -19,7 +19,9 @@
         "ui/**/*.test.ts",
         "src/**/*.test.ts",
         "tests/tools/**/*.test.ts",
-        "tests/harness/**/*.test.ts"
+        "tests/apis/**/*.test.ts",
+        "tests/harness/**/*.test.ts",
+        "tests/core/**/*.test.ts"
       ],
       "exclude": [
         "src/core/db-postgres-contract.test.ts",

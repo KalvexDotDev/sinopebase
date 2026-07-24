@@ -66,6 +66,12 @@ interface RealtimeHubOptions<TContext> {
   authorize?: (token: string | undefined) => Promise<TContext | undefined>
   /** Apply subscriber-specific visibility (normally PostgreSQL RLS). */
   canRead?: (context: TContext | undefined, change: PostgresChange) => Promise<boolean>
+  /** Hook to authorize topic joins. Called after successful authorize(). */
+  canJoinTopic?: (context: TContext, topic: string) => boolean
+  /** Hook to authorize broadcast events. Called after joined-state and auth checks. */
+  canBroadcast?: (context: TContext, topic: string, event: string, payload: unknown) => boolean
+  /** Allow schema wildcard ("*") in postgres_changes filters. Default false — wildcard requests are rejected. */
+  allowSchemaWildcard?: boolean
   /** Maximum queued postgres-changes deliveries per client (default 256). */
   maxDeliveryQueue?: number
   /** Maximum payload body length in bytes for broadcast messages (default 102400 = 100 KB). */
@@ -89,6 +95,8 @@ interface ClientState<TContext> {
   protocol: 'object' | 'v2'
   context: TContext | undefined
   topics: Map<string, PostgresChangesBinding[]>
+  /** Last successfully validated token, used for heartbeat re-validation when the heartbeat omits an access_token. */
+  lastToken?: string
 }
 
 interface PendingDelivery {
@@ -108,15 +116,20 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   private readonly maxBroadcastPayloadSize: number
 
   /**
-   * Per-client message serialisation queue.
+   * Per-client message serialisation queue (per-batch, not persistent).
    * Ensures messages from the same WebSocket are processed one-at-a-time
    * so that a phx_join always finishes before a subsequent broadcast is
-   * evaluated (prevents race conditions).
+   * evaluated (prevents race conditions). Each handleMessage call chains
+   * onto the previous promise; there is no durable backlog and the queue
+   * does not survive restarts.
    */
   private readonly messageQueue = new Map<string, Promise<void>>()
   private readonly options: RealtimeHubOptions<TContext>
 
   constructor(options: RealtimeHubOptions<TContext> = {}) {
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' && !options.authorize) {
+      throw new Error('[realtime] authorize callback is required in production mode')
+    }
     this.options = options
     this.maxDeliveryQueue = options.maxDeliveryQueue ?? 256
     this.maxBroadcastPayloadSize = options.maxBroadcastPayloadSize ?? 102400
@@ -141,8 +154,8 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     const previous = this.messageQueue.get(key) ?? Promise.resolve()
     const next = previous
       .then(() => this.processMessage(ws, rawMessage, key))
-      .catch(() => {
-        /* swallow — the queue must not break */
+      .catch((err) => {
+        console.error('[realtime] error:', err)
       })
     this.messageQueue.set(key, next)
     return next
@@ -187,7 +200,16 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           return
         }
 
+        if (context !== undefined && this.options.canJoinTopic && !this.options.canJoinTopic(context, msg.topic)) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'topic not authorized' },
+          })
+          return
+        }
+
         entry.state.context = context
+        if (token !== undefined) entry.state.lastToken = token
         const filters = postgresChangesFilters(msg.payload)
         const bindings = filters.map((filter) => ({
           ...filter,
@@ -215,7 +237,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         if (this.options.authorize) {
           const heartbeatToken = typeof msg.payload['access_token'] === 'string'
             ? msg.payload['access_token']
-            : undefined
+            : entry.state.lastToken
           if (heartbeatToken) {
             const refreshed = await this.options.authorize(heartbeatToken)
             if (refreshed === undefined && entry.state.context !== undefined) {
@@ -233,7 +255,10 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
               }))
               return
             }
-            if (refreshed !== undefined) entry.state.context = refreshed
+            if (refreshed !== undefined) {
+              entry.state.context = refreshed
+              entry.state.lastToken = heartbeatToken
+            }
           }
         }
         sendPhoenix(ws, msg, 'phx_reply', { status: 'ok', response: {} })
@@ -260,11 +285,27 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           return
         }
 
-        const broadcast = msg.payload as unknown as BroadcastPayload
-        if (broadcast.payload === undefined) break
+        const broadcastPayload = msg.payload
+        const broadcastEvent = typeof broadcastPayload['event'] === 'string' ? broadcastPayload['event'] : ''
+        const broadcastData = broadcastPayload['payload']
+        const self = broadcastPayload['self'] !== false
+
+        // ── Null/undefined broadcast payload (silently ignored) ──
+        if (broadcastData == null) break
+
+        // ── Broadcast auth hook ──
+        if (this.options.canBroadcast && entry.state.context) {
+          if (!this.options.canBroadcast(entry.state.context, msg.topic, broadcastEvent, broadcastData)) {
+            sendPhoenix(ws, msg, 'phx_reply', {
+              status: 'error',
+              response: { reason: 'broadcast not authorized' },
+            })
+            return
+          }
+        }
 
         // ── Payload size limit (DoS prevention) ──
-        const raw = JSON.stringify(broadcast.payload)
+        const raw = JSON.stringify(broadcastData)
         if (raw.length > this.maxBroadcastPayloadSize) {
           sendPhoenix(ws, msg, 'phx_reply', {
             status: 'error',
@@ -281,12 +322,12 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           'broadcast',
           {
             type: 'broadcast',
-            event: broadcast.event,
-            payload: broadcast.payload,
+            event: broadcastEvent,
+            payload: broadcastData,
           },
         )
         ws.publish(msg.topic, response)
-        ws.send(response)
+        if (self) ws.send(response)
         break
       }
     }
@@ -309,7 +350,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         // per binding.
         const columnGroups = new Map<string, { ids: number[]; columns?: string[] }>()
         for (const binding of bindings) {
-          if (!bindingMatches(binding, change, row)) continue
+          if (!bindingMatches(binding, change, row, !this.options.allowSchemaWildcard)) continue
           const key = binding.columns && binding.columns.length > 0
             ? [...binding.columns].sort().join(',')
             : '*'
@@ -360,15 +401,19 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     return {
       deliver: () => {
         for (const delivery of bounded) {
-          const payload = postgresChangePayload(change, delivery.columns)
-          delivery.ws.send(encodePhoenix(
-            delivery.protocol,
-            null,
-            null,
-            delivery.topic,
-            'postgres_changes',
-            { ids: delivery.ids, data: payload },
-          ))
+          try {
+            const payload = postgresChangePayload(change, delivery.columns)
+            delivery.ws.send(encodePhoenix(
+              delivery.protocol,
+              null,
+              null,
+              delivery.topic,
+              'postgres_changes',
+              { ids: delivery.ids, data: payload },
+            ))
+          } catch (err) {
+            console.error('[realtime] delivery error:', err)
+          }
         }
       },
     }
@@ -414,7 +459,7 @@ function parsePhoenixMessage(rawMessage: unknown): PhoenixMessage | null {
 
   if (Array.isArray(value)) {
     const [joinRef, ref, topic, event, payload] = value
-    if (typeof topic !== 'string' || typeof event !== 'string') return null
+    if (typeof topic !== 'string' || topic.length === 0 || typeof event !== 'string') return null
     return {
       joinRef: typeof joinRef === 'string' ? joinRef : null,
       ref: typeof ref === 'string' ? ref : null,
@@ -425,7 +470,7 @@ function parsePhoenixMessage(rawMessage: unknown): PhoenixMessage | null {
     }
   }
 
-  if (!isRecord(value) || typeof value['topic'] !== 'string' || typeof value['event'] !== 'string') {
+  if (!isRecord(value) || typeof value['topic'] !== 'string' || (value['topic'] as string).length === 0 || typeof value['event'] !== 'string') {
     return null
   }
 
@@ -465,7 +510,7 @@ function encodePhoenix(
 ): string {
   return protocol === 'v2'
     ? JSON.stringify([joinRef, ref, topic, event, payload])
-    : JSON.stringify({ topic, event, payload, ref })
+    : JSON.stringify({ topic, event, payload, ref, join_ref: joinRef })
 }
 
 function websocketApiKey(ws: WSClient): string | undefined {
@@ -485,7 +530,7 @@ function postgresChangesFilters(payload: Record<string, unknown>): PostgresChang
     if (!isRecord(value)) return []
     const event = typeof value['event'] === 'string' ? value['event'].toUpperCase() : '*'
     if (!['INSERT', 'UPDATE', 'DELETE', '*'].includes(event)) return []
-    if (typeof value['schema'] !== 'string') return []
+    if (typeof value['schema'] !== 'string' || value['schema'] === '') return []
     return [{
       event: event as PostgresChangesFilter['event'],
       schema: value['schema'],
@@ -504,8 +549,10 @@ function bindingMatches(
   binding: PostgresChangesBinding,
   change: PostgresChange,
   row: Record<string, unknown>,
+  rejectSchemaWildcard = true,
 ): boolean {
   if (binding.event !== '*' && binding.event !== change.event) return false
+  if (rejectSchemaWildcard && binding.schema === '*') return false
   if (binding.schema !== '*' && binding.schema !== change.schema) return false
   if (binding.table && binding.table !== '*' && binding.table !== change.table) return false
   return !binding.filter || realtimeFilterMatches(binding.filter, row)

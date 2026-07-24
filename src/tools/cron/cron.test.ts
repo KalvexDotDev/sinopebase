@@ -82,7 +82,6 @@ describe("Cron", () => {
     cron.start();
     // Small delay for start-up timer to fire
     await new Promise((r) => setTimeout(r, 50));
-    const wasStarted = cron.isRunning;
     cron.setInterval(120_000);
     // After restart it should still be running
     expect(cron.hasStarted).toBe(true);

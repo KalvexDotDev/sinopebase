@@ -108,7 +108,7 @@ export class BaseProvider implements Provider {
       CodeChallenge?: string
       CodeChallengeMethod?: string
     },
-  ): string {
+  ): string | Promise<string> {
     const url = new URL(this.AuthUrl)
     url.searchParams.set('response_type', 'code')
     url.searchParams.set('client_id', this.ClientId)

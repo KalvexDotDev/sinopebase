@@ -89,8 +89,8 @@ describe("DefaultClient", () => {
     const subs = client.subscriptions();
     const opts = subs[`topic1?options={"query":{"a":"1"},"headers":{"X-Token":"abc"}}`];
     expect(opts).toBeDefined();
-    expect(opts.query).toEqual({ a: "1" });
-    expect(opts.headers).toEqual({ x_token: "abc" }); // snakecased
+    expect(opts!.query).toEqual({ a: "1" });
+    expect(opts!.headers).toEqual({ x_token: "abc" }); // snakecased
   });
 
   it("context store works", () => {

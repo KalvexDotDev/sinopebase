@@ -1,7 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { Provider, DEFAULT_PER_PAGE, MAX_PER_PAGE } from "./provider";
+import { Provider, DEFAULT_PER_PAGE } from "./provider";
 import { SimpleFieldResolver } from "./simple_field_resolver";
-import type { FilterData } from "./filter";
 
 describe("Provider", () => {
   const resolver = new SimpleFieldResolver(["id", "name", "status", "created"]);

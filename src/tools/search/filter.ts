@@ -152,7 +152,7 @@ export function buildFilterExpr(
   fieldResolver: FieldResolver,
   placeholderReplacements?: Record<string, unknown>,
   maxExpressions?: number,
-): { sql: string; params: unknown[] } {
+): { sql: string; values: unknown[] } {
   const result = buildFilterExprRaw(
     filterData,
     fieldResolver,
@@ -264,7 +264,6 @@ function tokenize(input: string): FilterToken[] {
 
     // Single-quoted text string
     if (ch === "'") {
-      const start = pos;
       pos++; // skip opening quote
       let value = "";
       while (pos < input.length) {
@@ -310,9 +309,7 @@ function tokenize(input: string): FilterToken[] {
     // Numbers (integer or float)
     if (/\d/.test(ch) || (ch === "." && pos + 1 < input.length && /\d/.test(input[pos + 1]!))) {
       const start = pos;
-      let isFloat = false;
       while (pos < input.length && (/\d/.test(input[pos]!) || input[pos] === ".")) {
-        if (input[pos] === ".") isFloat = true;
         pos++;
       }
       // Check if it's followed by an identifier char (then treat as identifier start)
@@ -749,7 +746,7 @@ function resolveEqualExpr(
   equal: boolean,
   left: ResolverResult,
   right: ResolverResult,
-  params: Record<string, unknown>,
+  _params: Record<string, unknown>,
 ): { sql: string } {
   const equalOp = equal ? "=" : "!=";
   const nullEqualOp = equal ? "IS NOT DISTINCT FROM" : "IS DISTINCT FROM";
@@ -876,11 +873,11 @@ function resolveToken(
       }
 
       const args = token.args ?? [];
-      const resolveArg = (argToken: FilterToken): ResolverResult | Error => {
-        return resolveToken(argToken, fieldResolver);
+      const resolveArg = (argToken: import('./token_functions').FilterToken): ResolverResult | Error => {
+        return resolveToken(argToken as FilterToken, fieldResolver);
       };
 
-      return fn(resolveArg, ...args);
+      return (fn as (...args: unknown[]) => ResolverResult | Error)(resolveArg, ...args);
     }
 
     default:

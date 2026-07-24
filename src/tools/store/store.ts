@@ -81,7 +81,7 @@ export class Store<K, V> {
         }
       } else {
         for (const k of Object.keys(entries as Record<string, V>)) {
-          this.#data.set(k as unknown as K, (entries as Record<string, V>)[k]);
+          this.#data.set(k as unknown as K, (entries as Record<string, V>)[k] as V);
         }
       }
     }
@@ -133,7 +133,7 @@ export class Store<K, V> {
         }
       } else {
         for (const k of Object.keys(newData as Record<string, V>)) {
-          this.#data.set(k as unknown as K, (newData as Record<string, V>)[k]);
+          this.#data.set(k as unknown as K, (newData as Record<string, V>)[k] as V);
         }
       }
     }

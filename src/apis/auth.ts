@@ -3,6 +3,8 @@
  *
  * Implements the same response shapes as supabase-js GoTrue client expects.
  * Uses jose for JWT generation/verification and an in-memory store for users.
+ *
+ * v2: Refresh token rotation with family-based replay detection.
  */
 
 import { Elysia } from 'elysia'
@@ -11,8 +13,10 @@ import {
   generateAccessToken,
   verifyAccessToken,
   generateRefreshToken,
-  ACCESS_TOKEN_EXPIRES_IN,
+  verifyRefreshToken,
+  ACCESS_TOKEN_TTL,
 } from './auth-jwt'
+import { generateSessionId, generateTokenId, generateFamilyId } from './auth-utils'
 import { bridgeSignInResponse, bridgeGetUserResponse } from '~/tools/auth-better/supabase-bridge'
 import { lookupSessionByToken } from '~/tools/auth-better'
 
@@ -29,8 +33,8 @@ function sessionResponse(
   return {
     access_token: accessToken,
     token_type: 'bearer' as const,
-    expires_in: ACCESS_TOKEN_EXPIRES_IN,
-    expires_at: now + ACCESS_TOKEN_EXPIRES_IN,
+    expires_in: ACCESS_TOKEN_TTL,
+    expires_at: now + ACCESS_TOKEN_TTL,
     refresh_token: refreshToken,
     user,
   }
@@ -72,10 +76,17 @@ export const authPlugin = new Elysia()
       const storedUser = await authStore.createUser(email, passwordHash)
       const user = authStore.toUser(storedUser)
 
-      const accessToken = await generateAccessToken(user)
-      const refreshToken = generateRefreshToken()
+      // Issue tokens with session and family tracking
+      const sessionId = generateSessionId()
+      const tokenId = generateTokenId()
+      const familyId = generateFamilyId()
 
-      authStore.addRefreshToken(refreshToken, user.id)
+      const accessToken = await generateAccessToken(user, sessionId)
+      const refreshToken = await generateRefreshToken(
+        user.id, sessionId, tokenId, familyId,
+      )
+
+      authStore.addRefreshToken(tokenId, user.id, sessionId, familyId)
 
       return sessionResponse(user, accessToken, refreshToken)
     },
@@ -116,16 +127,23 @@ export const authPlugin = new Elysia()
         authStore.updateLastSignIn(storedUser.id)
         const user = authStore.toUser(storedUser)
 
-        const accessToken = await generateAccessToken(user)
-        const refreshToken = generateRefreshToken()
+        // Issue tokens with session and family tracking
+        const sessionId = generateSessionId()
+        const tokenId = generateTokenId()
+        const familyId = generateFamilyId()
 
-        authStore.addRefreshToken(refreshToken, user.id)
+        const accessToken = await generateAccessToken(user, sessionId)
+        const refreshToken = await generateRefreshToken(
+          user.id, sessionId, tokenId, familyId,
+        )
+
+        authStore.addRefreshToken(tokenId, user.id, sessionId, familyId)
 
         return sessionResponse(user, accessToken, refreshToken)
       }
 
       if (grantType === 'refresh_token') {
-        // Refresh session
+        // Refresh session — with rotation + replay detection
         const { refresh_token } = body as { refresh_token?: string }
 
         if (!refresh_token) {
@@ -133,23 +151,57 @@ export const authPlugin = new Elysia()
           return errorResponse('Invalid refresh token', 400)
         }
 
-        const data = authStore.consumeRefreshToken(refresh_token)
-        if (!data) {
+        // 1. Verify the refresh JWT
+        let claims: Awaited<ReturnType<typeof verifyRefreshToken>>
+        try {
+          claims = await verifyRefreshToken(refresh_token)
+        } catch {
           set.status = 400
           return errorResponse('Invalid refresh token', 400)
         }
 
-        const storedUser = authStore.findUserById(data.userId)
+        // 2. Validate token for rotation (checks expiry, family status, and replay)
+        const validation = authStore.validateTokenForRotation(claims.jti)
+
+        if (validation.valid === false && validation.replay) {
+          // REPLAY ATTACK DETECTED — family is now compromised
+          set.status = 400
+          return errorResponse('Invalid refresh token', 400)
+        }
+
+        if (validation.valid === false && validation.compromised) {
+          // Family was previously compromised
+          set.status = 400
+          return errorResponse('Invalid refresh token', 400)
+        }
+
+        if (validation.valid === false) {
+          set.status = 400
+          return errorResponse('Invalid refresh token', 400)
+        }
+
+        // 3. Consume the old token (marks it as used)
+        authStore.consumeRefreshToken(claims.jti)
+
+        // 4. Look up user
+        const storedUser = authStore.findUserById(claims.sub)
         if (!storedUser) {
           set.status = 400
           return errorResponse('Invalid refresh token', 400)
         }
 
         const user = authStore.toUser(storedUser)
-        const accessToken = await generateAccessToken(user)
-        const newRefreshToken = generateRefreshToken()
 
-        authStore.addRefreshToken(newRefreshToken, user.id)
+        // 5. Issue new pair with SAME family, new session ID and token ID
+        const newSessionId = generateSessionId()
+        const newTokenId = generateTokenId()
+
+        const accessToken = await generateAccessToken(user, newSessionId)
+        const newRefreshToken = await generateRefreshToken(
+          user.id, newSessionId, newTokenId, claims.family,
+        )
+
+        authStore.addRefreshToken(newTokenId, user.id, newSessionId, claims.family, claims.jti)
 
         return sessionResponse(user, accessToken, newRefreshToken)
       }
@@ -170,7 +222,12 @@ export const authPlugin = new Elysia()
         if (token) {
           try {
             const payload = await verifyAccessToken(token)
-            authStore.removeAllRefreshTokensForUser(payload.sub)
+            // Invalidate by session for precision
+            if (payload.sid) {
+              authStore.invalidateSession(payload.sid)
+            } else {
+              authStore.removeAllRefreshTokensForUser(payload.sub)
+            }
           } catch {
             // Token invalid — still acknowledge logout
           }

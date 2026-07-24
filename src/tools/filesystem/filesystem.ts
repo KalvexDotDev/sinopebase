@@ -15,7 +15,6 @@
 
 import { LocalFileStore } from '~/tools/filesystem/store.ts'
 import { S3FileStore } from '~/tools/filesystem/store-s3.ts'
-import type { IFileStore } from '~/tools/filesystem/store-interface.ts'
 import { FileHandle } from '~/tools/filesystem/file.ts'
 import type { FileInfo } from '~/tools/filesystem/file.ts'
 

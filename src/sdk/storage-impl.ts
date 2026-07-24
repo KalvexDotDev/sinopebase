@@ -11,8 +11,6 @@ import type {
 } from './storage'
 import type { PostgrestError } from './client'
 
-type BodyInit_ = string | Blob | Buffer | FormData | URLSearchParams | ReadableStream | null | undefined
-
 export function createStorageClient(baseUrl: string, apiKey: string): StorageClient {
   const headers = {
     'apikey': apiKey,
@@ -50,7 +48,7 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
       return {
         async upload(path: string, file: Blob | Buffer, options?: UploadOptions) {
           const form = new FormData()
-          form.append('file', file instanceof Blob ? file : new Blob([file]))
+          form.append('file', file instanceof Blob ? file : new Blob([file as BlobPart]))
           if (options?.upsert) form.append('upsert', 'true')
           // Don't set Content-Type for FormData — browser/fetch auto-sets boundary
           const { 'content-type': _, ...restHeaders } = headers as Record<string, string>

@@ -5,7 +5,7 @@
  * Layer 1 -- imports Layer 0 (~/tools/...).
  */
 
-import type { FieldResolver, ResolverResult } from "./simple_field_resolver";
+import type { FieldResolver } from "./simple_field_resolver";
 
 /**
  * Special sort keys.

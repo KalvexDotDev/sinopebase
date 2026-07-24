@@ -4,7 +4,6 @@ import {
   S3FilesystemStorage,
   S3FilesystemBackups,
 } from './test_s3_filesystem';
-import type { S3Config } from './test_s3_filesystem';
 
 describe('TestS3Filesystem', () => {
   let form: TestS3Filesystem;

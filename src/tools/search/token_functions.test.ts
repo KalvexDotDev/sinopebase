@@ -1,7 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { tokenFunctions, concatUniqueParams } from "./token_functions";
 import { NullFallbackPreference } from "./simple_field_resolver";
-import type { FilterToken } from "./token_functions";
 
 describe("tokenFunctions", () => {
   describe("geoDistance", () => {
@@ -90,7 +89,7 @@ describe("tokenFunctions", () => {
     it("merges non-conflicting params", () => {
       const dest = { a: 1 };
       concatUniqueParams(dest, { b: 2 });
-      expect(dest).toEqual({ a: 1, b: 2 });
+      expect(dest as Record<string, number>).toEqual({ a: 1, b: 2 });
     });
 
     it("throws on conflicting param values", () => {

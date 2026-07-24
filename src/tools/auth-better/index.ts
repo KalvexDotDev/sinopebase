@@ -9,7 +9,6 @@
 import { betterAuth } from 'better-auth'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
 import pg from 'pg'
-import { Kysely } from 'kysely'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
 let tablesEnsured = false
@@ -17,7 +16,6 @@ let tablesEnsured = false
 import {
   createBetterAuthDB,
   createAuthTables,
-  type BetterAuthDatabase,
 } from './adapter'
 
 // ---------------------------------------------------------------------------
@@ -123,7 +121,7 @@ export async function createAuth(
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).
   ;(auth as any).__db = db
 
-  return auth
+  return auth as any
 }
 
 // ---------------------------------------------------------------------------

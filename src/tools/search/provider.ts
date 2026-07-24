@@ -139,12 +139,12 @@ export class Provider {
   // Fluent configuration
   // -----------------------------------------------------------------------
 
-  maxFilterExprLimit(max: number): this {
+  setMaxFilterExprLimit(max: number): this {
     this.maxFilterExprLimit = max;
     return this;
   }
 
-  maxSortExprLimit(max: number): this {
+  setMaxSortExprLimit(max: number): this {
     this.maxSortExprLimit = max;
     return this;
   }

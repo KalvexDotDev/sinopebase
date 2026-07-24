@@ -15,14 +15,16 @@ import { ExistInSliceWithRegex } from "~/tools/list/list";
 /**
  * Preference for NULL/empty value handling in resolved fields.
  */
-export enum NullFallbackPreference {
+export const NullFallbackPreference = {
   /** Automatically determine whether to apply COALESCE fallback (default). */
-  Auto = 0,
+  Auto: 0,
   /** Never apply COALESCE or NULL fallbacks (e.g. for JSON fields). */
-  Disabled = 1,
+  Disabled: 1,
   /** Always prefer COALESCE or NULL fallbacks when needed. */
-  Enforced = 2,
-}
+  Enforced: 2,
+} as const;
+
+export type NullFallbackPreference = (typeof NullFallbackPreference)[keyof typeof NullFallbackPreference];
 
 /**
  * Result of a successful field resolution.

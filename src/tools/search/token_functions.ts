@@ -56,7 +56,6 @@ export const tokenFunctions: Record<string, TokenFunction> = {
     }
 
     const resolvedArgs: ResolverResult[] = [];
-    const expectedTypes = ["identifier", "number"] as const;
 
     for (let i = 0; i < 4; i++) {
       const arg = args[i]!;
@@ -172,6 +171,7 @@ export const tokenFunctions: Record<string, TokenFunction> = {
 
     // Build identifiers and merge params
     const result: ResolverResult = {
+      identifier: '',
       nullFallback: NullFallbackPreference.Enforced,
       params: {},
     };

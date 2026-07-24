@@ -7,8 +7,6 @@
 
 import { Modifiers } from "./modifiers.ts";
 import type { Modifier } from "./modifiers.ts";
-import { html2Text } from "~/tools/mailer/html2text.ts";
-import { ExistInSlice } from "~/tools/list/list.ts";
 
 // ---------------------------------------------------------------------------
 // Registration

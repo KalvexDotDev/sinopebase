@@ -20,14 +20,14 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
       headers,
       body: body ? JSON.stringify(body) : undefined,
     })
-    const json: Record<string, unknown> | null = await res.json().catch(() => null)
+    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
     if (!res.ok) {
       return {
         data: { user: null, session: null },
         error: { message: (json?.['message'] as string) ?? res.statusText, status: res.status },
       } as T
     }
-    return json as T
+    return json as unknown as T
   }
 
   let currentSession: Session | null = null
@@ -64,11 +64,11 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
         ? { ...headers, Authorization: `Bearer ${token}` }
         : headers
       const res = await fetch(`${baseUrl}/auth/v1/user`, { headers: authHeaders })
-      const json: Record<string, unknown> | null = await res.json().catch(() => null)
+      const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
       if (!res.ok) {
         return { data: { user: null }, error: { message: (json?.['message'] as string) ?? res.statusText, status: res.status } }
       }
-      return { data: { user: json as User }, error: null }
+      return { data: { user: json as unknown as User }, error: null }
     },
 
     async refreshSession(): Promise<AuthResponse> {

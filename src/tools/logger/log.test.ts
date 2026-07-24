@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { ConsoleLogger, LogLevel } from "./log";
+import type { Logger } from "./log";
 
 describe("LogLevel", () => {
   it("has expected numeric values", () => {
@@ -67,7 +68,7 @@ describe("ConsoleLogger", () => {
   });
 
   it("implements the Logger interface", () => {
-    const logger: { Write: (level: number, message: string, data?: Record<string, unknown>) => void } = new ConsoleLogger();
+    const logger: Logger = new ConsoleLogger();
 
     expect(logger.Write).toBeFunction();
   });

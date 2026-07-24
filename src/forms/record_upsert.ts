@@ -11,9 +11,8 @@
  *   - Hidden field protection
  */
 
-import type { FieldStub, CollectionStub, FieldsListStub } from '~/core/record_field_resolver';
+import type { FieldStub, CollectionStub } from '~/core/record_field_resolver';
 import { FieldNamePassword, FieldNameExpand } from '~/core/record_field_resolver';
-import { Columnify } from '~/tools/inflector/inflector';
 
 // ---------------------------------------------------------------------------
 // Access level constants
@@ -50,7 +49,7 @@ export interface RecordStubUpsert {
   /** Clone the record. */
   clone(): RecordStubUpsert;
   /** Get original record data (pre-modification state). */
-  original(): { fieldsData(): Record<string, unknown>; getRaw(name: string): unknown };
+  original(): { fieldsData(): Record<string, unknown>; getRaw(name: string): unknown; validatePassword?(password: string): boolean };
   /** Set a field if it exists in the schema, returning the field or null. */
   setIfFieldExists(k: string, v: unknown): FieldStub | null;
   /** Auth record methods. */

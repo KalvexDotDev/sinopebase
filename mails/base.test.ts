@@ -61,6 +61,6 @@ describe('base mail helper', () => {
 
     await sendWithMessage(mockMailer, message)
 
-    expect(received).toBe(message)
+    expect(received!).toBe(message)
   })
 })

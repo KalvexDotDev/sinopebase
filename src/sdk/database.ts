@@ -259,7 +259,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
         return { data: null, error: null, count, status: res.status, statusText: res.statusText }
       }
 
-      const json: Record<string, unknown> | null = await res.json().catch(() => null)
+      const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
 
       if (!res.ok) {
         return {
@@ -276,7 +276,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
         }
       }
 
-      return { data: json as T[], error: null, count, status: res.status, statusText: res.statusText }
+      return { data: json as unknown as T[], error: null, count, status: res.status, statusText: res.statusText }
     } catch (err) {
       return {
         data: null,

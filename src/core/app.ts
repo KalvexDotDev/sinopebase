@@ -498,6 +498,11 @@ import { LocalFileStore } from '../tools/filesystem/store'
 import { S3FileStore } from '../tools/filesystem/store-s3'
 import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
 import { createStoragePlugin } from '../apis/file'
+import { type ValidatedConfig, detectMode } from './config'
+import { rateLimit, resetRateLimiters } from '../apis/middlewares_rate_limit'
+import { ApiError } from '../apis/api_error_aliases'
+import { resolve } from 'node:path'
+import { logger, generateRequestId } from './logger'
 
 export interface AppConfig {
   /** PostgreSQL connection URL (empty string = use in-memory db) */
@@ -518,6 +523,26 @@ export interface AppConfig {
   oauthProviders?: import('../tools/auth-better').OAuthProviderConfig[]
   /** Additional trusted origins for CORS/OAuth callbacks */
   extraOrigins?: string[]
+  /** Runtime mode (default: auto-detected from env) */
+  mode?: 'production' | 'development'
+  /** Service role key for admin-level access (must be >=32 chars in production) */
+  serviceRoleKey?: string
+  /** Anonymous/public API key for unauthenticated requests (must be >=32 chars in production) */
+  anonKey?: string
+  /** Server bind hostname */
+  host?: string
+  /** TLS certificate and key file paths */
+  tls?: { cert: string; key: string }
+  /** OpenAI API key for the Mastra plugin */
+  openaiApiKey?: string
+  /** Require authentication for Mastra agent endpoints */
+  mastraRequireAuth?: boolean
+  /** Trusted reverse proxy IPs for correct client IP resolution */
+  trustedProxies?: string[]
+  /** Rate limit: max requests per IP per window (default 100) */
+  rateLimitMax?: number
+  /** Rate limit: window duration in seconds (default 60) */
+  rateLimitWindow?: number
 }
 
 /**
@@ -535,12 +560,17 @@ const ADMIN_PLACEHOLDER = `<!DOCTYPE html>
 
 export class Sinopebase {
   private config: AppConfig
+  private mode: 'production' | 'development' = 'development'
   private server: Elysia | null = null
   private pendingServer: Elysia | null = null
   private database: IDatabase | null = null
   private fileStore: IFileStore | null = null
   private auth: any = null
   private lifecycle: Promise<void> = Promise.resolve()
+  /** Cached secrets — validated once at startup, never read from process.env thereafter. */
+  private cachedServiceRoleKey = ''
+  private cachedAnonKey = ''
+  private cachedJwtSecret = ''
   /**
    * Plugin registration callbacks queued via {@link use}.
    * Executed during {@link initializeServer} after core routes are registered
@@ -557,6 +587,8 @@ export class Sinopebase {
       minioEndpoint: '',
       minioAccessKey: '',
       minioSecretKey: '',
+      host: '0.0.0.0',
+      mastraRequireAuth: true,
       ...config,
     }
   }
@@ -621,9 +653,40 @@ export class Sinopebase {
   }
 
   private async initializeServer(): Promise<void> {
+    // Detect runtime mode: explicit config takes precedence, otherwise env auto-detect
+    this.mode = this.config.mode ?? detectMode()
+
     // Set JWT secret from config if provided
     if (this.config.jwtSecret) {
       process.env['JWT_SECRET'] = this.config.jwtSecret
+    }
+
+    // Set env vars from config for downstream consumers
+    if (this.config.serviceRoleKey) {
+      process.env['SINOPEBASE_SERVICE_ROLE_KEY'] = this.config.serviceRoleKey
+    }
+    if (this.config.anonKey) {
+      process.env['SINOPEBASE_ANON_KEY'] = this.config.anonKey
+    }
+
+    // Production fail-closed: validate infrastructure requirements before connecting
+    if (this.mode === 'production') {
+      const pgUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
+      if (!pgUrl) {
+        throw new Error(
+          'Production mode requires POSTGRES_URL. ' +
+          'Set NODE_ENV=development or SINOPEBASE_PRODUCTION=false to use the in-memory database.',
+        )
+      }
+      const s3CheckEndpoint = this.config.minioEndpoint || process.env['RUSTFS_ENDPOINT'] || ''
+      const s3CheckKey = this.config.minioAccessKey || process.env['RUSTFS_ACCESS_KEY'] || ''
+      const s3CheckSecret = this.config.minioSecretKey || process.env['RUSTFS_SECRET_KEY'] || ''
+      if (!s3CheckEndpoint || !s3CheckKey || !s3CheckSecret) {
+        throw new Error(
+          'Production mode requires S3/MinIO configuration. ' +
+          'Set RUSTFS_ENDPOINT, RUSTFS_ACCESS_KEY, and RUSTFS_SECRET_KEY.',
+        )
+      }
     }
 
     // Initialize database: PostgreSQL or in-memory fallback
@@ -634,7 +697,7 @@ export class Sinopebase {
       })
       await pg.connect()
       this.database = pg
-      console.log('Database: PostgreSQL connected')
+      logger.info('Database', { provider: 'PostgreSQL', status: 'connected' })
 
       // Fail-closed in production: refuse to start with well-known test keys
       // when PostgreSQL is configured. These keys bypass all authentication.
@@ -642,6 +705,9 @@ export class Sinopebase {
       {
         const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']
         const anonKey = process.env['SINOPEBASE_ANON_KEY']
+        const jwtSecret = process.env['JWT_SECRET'] || this.config.jwtSecret || ''
+        const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
+
         if (!serviceKey || serviceKey === 'test-service-role-key') {
           throw new Error(
             'SINOPEBASE_SERVICE_ROLE_KEY is unset or using the "test-service-role-key" default. ' +
@@ -654,6 +720,23 @@ export class Sinopebase {
             'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
           )
         }
+        if (!jwtSecret || jwtSecret === JWT_DEV_FALLBACK) {
+          if (this.mode === 'production') {
+            throw new Error(
+              'JWT_SECRET is unset or using the dev fallback. ' +
+              'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
+            )
+          }
+          logger.warn('JWT_SECRET is using the dev fallback in PostgreSQL mode. Set JWT_SECRET to a cryptographically random value in production.')
+        }
+
+        // Cache validated secrets — never read from process.env per-request.
+        this.cachedServiceRoleKey = serviceKey!
+        this.cachedAnonKey = anonKey!
+        this.cachedJwtSecret = jwtSecret || JWT_DEV_FALLBACK
+        process.env['JWT_SECRET'] = this.cachedJwtSecret
+        process.env['SINOPEBASE_SERVICE_ROLE_KEY'] = serviceKey!
+        process.env['SINOPEBASE_ANON_KEY'] = anonKey!
       }
 
       // Initialize better-auth with PostgreSQL
@@ -664,9 +747,9 @@ export class Sinopebase {
         oauthProviders: this.config.oauthProviders,
         extraOrigins: this.config.extraOrigins,
       })
-        console.log('Auth: better-auth initialized (PostgreSQL)')
+        logger.info('Auth', { provider: 'better-auth', backend: 'PostgreSQL', status: 'initialized' })
       } catch (err) {
-        console.warn('Auth: better-auth init failed, falling back to in-memory:', (err as Error).message)
+        logger.warn('Auth: better-auth init failed, falling back to in-memory', { error: (err as Error).message })
         this.auth = null
       }
 
@@ -674,11 +757,15 @@ export class Sinopebase {
       try {
         await PostgresStorageAccessPolicy.ensureMetadata(pg)
       } catch (err) {
-        console.warn('Storage metadata schema init failed:', (err as Error).message)
+        logger.warn('Storage metadata schema init failed', { error: (err as Error).message })
       }
     } else {
       this.database = new MemoryDatabaseAdapter()
-      console.log('Database: in-memory (no POSTGRES_URL set)')
+      if (this.mode === 'development') {
+        logger.warn('Using in-memory database — no POSTGRES_URL set. Data will not persist.')
+      } else {
+        logger.info('Database', { provider: 'in-memory' })
+      }
     }
 
     // Initialize storage: RustFS/S3 or local fallback
@@ -709,10 +796,14 @@ export class Sinopebase {
         secretKey: s3SecretKey,
         useSSL,
       })
-      console.log(`Storage: S3 (${this.config.minioEndpoint})`)
+      logger.info('Storage', { type: 'S3', endpoint: this.config.minioEndpoint })
     } else {
       this.fileStore = new LocalFileStore(this.config.dataDir ?? './pb_data')
-      console.log('Storage: local filesystem (no RUSTFS_ENDPOINT set)')
+      if (this.mode === 'development') {
+        logger.warn('Using local file storage — no RUSTFS_ENDPOINT set.')
+      } else {
+        logger.info('Storage', { type: 'local' })
+      }
     }
 
     // Create required tables
@@ -723,11 +814,9 @@ export class Sinopebase {
       token: string | undefined,
     ): Promise<PostgresRequestContext | undefined> => {
       if (!token) return undefined
-      // Keys are validated at startup — guaranteed non-default in PostgreSQL mode.
-      const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']!
-      if (token === serviceKey) return { role: 'service_role' }
-      const anonKey = process.env['SINOPEBASE_ANON_KEY']!
-      if (token === anonKey) return { role: 'anon' }
+      // Keys are validated at startup — cached, never read from process.env per-request.
+      if (token === this.cachedServiceRoleKey) return { role: 'service_role' }
+      if (token === this.cachedAnonKey) return { role: 'anon' }
 
       try {
         if (this.auth) {
@@ -766,8 +855,17 @@ export class Sinopebase {
         // Let NOT_FOUND pass through — handled by the stub-route onError
         // (or Elysia's default 404 handler for non-API paths).
         if (code === 'NOT_FOUND') return
+
+        // Structured API errors carry their own HTTP status and body.
+        // Preserve the original status (e.g. 429 Too Many Requests)
+        // instead of flattening to 500.
+        if (error instanceof ApiError) {
+          set.status = error.status
+          return error.toJSON()
+        }
+
         const reportedError = error as Error
-        console.error('[PANIC RECOVER]', reportedError.message, (reportedError.stack ?? '').slice(0, 2048))
+        logger.error('PANIC RECOVER', { message: reportedError.message, stack: (reportedError.stack ?? '').slice(0, 2048) })
         set.status = 500
         return { message: 'Internal server error', code: '500' }
       })
@@ -778,13 +876,81 @@ export class Sinopebase {
         set.headers['referrer-policy'] = 'strict-origin-when-cross-origin'
       })
 
-      // Health check
+      // ── Request ID and response logging ──
+    const requestMeta = new WeakMap<Request, { startTime: number; requestId: string }>()
+    server
+      .onRequest(({ request, set }) => {
+        const requestId = request.headers.get('x-request-id') || generateRequestId()
+        set.headers['x-request-id'] = requestId
+        requestMeta.set(request, { startTime: performance.now(), requestId })
+      })
+      .onAfterResponse(({ request, set }) => {
+        const meta = requestMeta.get(request)
+        if (meta) {
+          const duration = Math.round(performance.now() - meta.startTime)
+          try {
+            logger.info('request', {
+              request_id: meta.requestId,
+              method: request.method,
+              path: new URL(request.url).pathname,
+              status: set.status ?? 200,
+              duration_ms: duration,
+            })
+          } catch {
+            // best-effort — never crash on logging
+          }
+          requestMeta.delete(request)
+        }
+      })
+
+      // ── Rate limiting ──
+    const rlHandler = rateLimit(
+      this.config.rateLimitMax ?? 100,
+      this.config.rateLimitWindow ?? 60,
+    )
+    server.onRequest(async ({ request, set }) => {
+      const url = new URL(request.url)
+      if (url.pathname === '/api/health' || url.pathname === '/api/ready') return
+      await rlHandler({ request, set })
+    })
+
+      // Health check (liveness — always returns 200 if the process is up)
       .get('/api/health', () => ({
         code: 200,
         message: 'Sinopebase is running',
+        mode: this.mode,
+        tls: !!this.config.tls,
         db: this.database instanceof PostgresDatabase ? 'postgresql' : 'memory',
         storage: this.fileStore instanceof S3FileStore ? 's3' : 'local',
       }))
+
+      // Readiness check (reports DB connectivity)
+      .get('/api/ready', async ({ set }) => {
+        if (this.database instanceof PostgresDatabase) {
+          try {
+            const pool = this.database.getPool()
+            const client = await pool.connect()
+            client.release()
+            return {
+              code: 200,
+              status: 'ready',
+              db: 'connected',
+            }
+          } catch {
+            set.status = 503
+            return {
+              code: 503,
+              status: 'not ready',
+              db: 'disconnected',
+            }
+          }
+        }
+        return {
+          code: 200,
+          status: 'ready',
+          db: this.database ? 'memory' : 'none',
+        }
+      })
 
       // ── Realtime WebSocket ──
       .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
@@ -804,17 +970,15 @@ export class Sinopebase {
           const authHeader = request.headers.get('authorization') ?? ''
           const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
           // Allow service role key to bypass auth (full access).
-          // Keys are validated at startup — guaranteed non-default in PostgreSQL mode.
-          const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']!
-          if (token === serviceKey) {
+          // Keys are cached at startup — never read from process.env per-request.
+          if (token === this.cachedServiceRoleKey) {
             postgrestContexts.set(request, { role: 'service_role' })
             return
           }
           // Allow anon key for read-only REST access and for storage paths
           // (where RLS policies at the DB layer enforce per-bucket permissions).
-          // Keys are validated at startup — guaranteed non-default in PostgreSQL mode.
-          const anonKey = process.env['SINOPEBASE_ANON_KEY']!
-          if (token === anonKey && (
+          // Keys are cached at startup — never read from process.env per-request.
+          if (token === this.cachedAnonKey && (
             url.pathname.startsWith('/storage/v1/')
             || request.method === 'GET'
             || request.method === 'HEAD'
@@ -874,7 +1038,7 @@ export class Sinopebase {
 
     // ── Plugins ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
-    const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env['OPENAI_API_KEY'], requireAuth: false })
+    const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env['OPENAI_API_KEY'], requireAuth: this.config.mastraRequireAuth ?? true })
     await mastraPlugin.register(server, this.auth ?? undefined, this.database ?? undefined, this.fileStore ?? undefined)
     const { MetricsPlugin } = await import('../plugins/metrics/plugin')
     await new MetricsPlugin().register(server)
@@ -906,10 +1070,23 @@ export class Sinopebase {
     })
 
     const port = this.config.port ?? 8090
-    server.listen(port)
+    const host = this.config.host ?? '0.0.0.0'
+    if (this.config.tls) {
+      server.listen({
+        port,
+        hostname: host,
+        tls: {
+          cert: Bun.file(this.config.tls.cert),
+          key: Bun.file(this.config.tls.key),
+        },
+      })
+    } else {
+      server.listen({ port, hostname: host })
+    }
     this.server = server
     this.pendingServer = null
-    console.log(`Sinopebase serving on http://127.0.0.1:${port}`)
+    const protocol = this.config.tls ? 'https' : 'http'
+    logger.info('Sinopebase server started', { protocol, port, host })
   }
 
   /**
@@ -920,6 +1097,9 @@ export class Sinopebase {
   }
 
   private async stopServer(): Promise<void> {
+    // Release rate limiter state and stop the cleanup timer
+    resetRateLimiters()
+
     const server = this.server
     if (server) await server.stop(true)
     if (this.server === server) this.server = null
@@ -930,7 +1110,7 @@ export class Sinopebase {
       try {
         await this.database.close()
       } catch (error) {
-        console.error('Failed to close PostgreSQL pool:', (error as Error).message)
+        logger.error('Failed to close PostgreSQL pool', { error: (error as Error).message })
       }
     }
 
@@ -960,31 +1140,58 @@ export class Sinopebase {
     return { ...this.config }
   }
 
+  /** Build a ValidatedConfig-compatible snapshot (for tests and production validation). */
+  buildValidatedConfig(): ValidatedConfig {
+    return {
+      postgresUrl: this.config.postgresUrl || '',
+      jwtSecret: this.config.jwtSecret || '',
+      serviceRoleKey:
+        this.config.serviceRoleKey || process.env['SINOPEBASE_SERVICE_ROLE_KEY'] || '',
+      anonKey: this.config.anonKey || process.env['SINOPEBASE_ANON_KEY'] || '',
+      port: this.config.port ?? 8090,
+      host: this.config.host ?? '0.0.0.0',
+      tls: this.config.tls,
+      s3Endpoint: this.config.minioEndpoint || process.env['RUSTFS_ENDPOINT'] || undefined,
+      s3AccessKey: this.config.minioAccessKey || process.env['RUSTFS_ACCESS_KEY'] || undefined,
+      s3SecretKey: this.config.minioSecretKey || process.env['RUSTFS_SECRET_KEY'] || undefined,
+      oauthProviders: this.config.oauthProviders ?? [],
+      extraOrigins: this.config.extraOrigins ?? [],
+      openaiApiKey: process.env['OPENAI_API_KEY'],
+      mastraRequireAuth: this.config.mastraRequireAuth ?? true,
+      dataDir: this.config.dataDir ?? './pb_data',
+      trustedProxies: this.config.trustedProxies ?? [],
+    }
+  }
+
   /**
    * Mount the admin UI static files at /_/.
    * Serves the built Svelte SPA from ui/dist/ with client-side routing fallback.
    */
   private mountAdminUI(server: Elysia): void {
-    const distPath = './ui/dist'
+    const distPath = resolve('./ui/dist')
 
     // Single catch-all route for admin UI — serves files or falls back to index.html
     server.get('/_/*', async ({ request, set }) => {
       try {
         const url = new URL(request.url)
-        let filePath = url.pathname.replace(/^\/_\/?/, '') || 'index.html'
+        const requested = url.pathname.replace(/^\/_\/?/, '') || 'index.html'
 
-        if (filePath.includes('..')) { set.status = 403; return 'Forbidden' }
+        // Path-traversal guard: resolve and verify the path stays within distPath.
+        const resolved = resolve(distPath, requested)
+        if (!resolved.startsWith(distPath + '/') && !resolved.startsWith(distPath + '\\')) {
+          set.status = 403; return 'Forbidden'
+        }
 
-        const file = Bun.file(`${distPath}/${filePath}`)
+        const file = Bun.file(resolved)
         if (await file.exists()) {
-          const ext = filePath.split('.').pop() || ''
+          const ext = requested.split('.').pop() || ''
           const mime: Record<string, string> = { html: 'text/html', css: 'text/css', js: 'application/javascript', mjs: 'application/javascript', json: 'application/json', png: 'image/png', svg: 'image/svg+xml', ico: 'image/x-icon' }
           set.headers['Content-Type'] = mime[ext] || 'application/octet-stream'
           return new Response(await file.arrayBuffer(), { headers: { 'Content-Type': set.headers['Content-Type'] as string } })
         }
 
         // SPA fallback
-        const index = Bun.file(`${distPath}/index.html`)
+        const index = Bun.file(resolve(distPath, 'index.html'))
         if (await index.exists()) {
           set.headers['Content-Type'] = 'text/html'
           return new Response(await index.arrayBuffer(), { headers: { 'Content-Type': 'text/html' } })

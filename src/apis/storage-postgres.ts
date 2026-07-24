@@ -82,6 +82,18 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     // Also grant the sequences so inserts that generate UUIDs work under SET ROLE.
     await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`.execute(writer).catch(() => undefined)
 
+    // Ensure the auth schema and auth.uid() function exist for RLS policies.
+    // This mirrors Supabase's auth.uid() — reads the JWT sub claim set by
+    // withRequestContext. Created here so RLS policy DDL below can reference it.
+    await sql`CREATE SCHEMA IF NOT EXISTS auth`.execute(writer).catch(() => undefined)
+    await sql`
+      CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+      LANGUAGE sql STABLE
+      AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$
+    `.execute(writer)
+    await sql`GRANT USAGE ON SCHEMA auth TO anon, authenticated`.execute(writer).catch(() => undefined)
+    await sql`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`.execute(writer).catch(() => undefined)
+
     // Enable RLS on both tables.
     await sql`ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`.execute(writer).catch(() => undefined)
     await sql`ALTER TABLE storage.buckets ENABLE ROW LEVEL SECURITY`.execute(writer).catch(() => undefined)
@@ -89,6 +101,9 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     // ── RLS policies ──
     // Anon: can CRUD in public buckets; private buckets require auth.
     // Each operation checks bucket_id IN (SELECT id FROM storage.buckets WHERE public = true).
+    // Authenticated: owner-scoped access — each user can only manage (update, delete) their own
+    // objects, and insert with their own owner_id. SELECT allows owner match OR public bucket
+    // so authenticated users can still read objects in shared/public buckets.
     await sql`
       DO $$ BEGIN
         -- Drop the legacy v0.4-Wave-0 permissive anon policy if it exists.
@@ -118,8 +133,30 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
         IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_all_buckets' AND tablename = 'buckets' AND schemaname = 'storage') THEN
           CREATE POLICY storage_auth_all_buckets ON storage.buckets FOR ALL TO authenticated USING (true) WITH CHECK (true);
         END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_all_objects' AND tablename = 'objects' AND schemaname = 'storage') THEN
-          CREATE POLICY storage_auth_all_objects ON storage.objects FOR ALL TO authenticated USING (true);
+        -- Drop the legacy v0.4-Wave-0 permissive auth policy — replaced with owner-scoped policies below.
+        IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_all_objects' AND tablename = 'objects' AND schemaname = 'storage') THEN
+          EXECUTE 'DROP POLICY storage_auth_all_objects ON storage.objects';
+        END IF;
+        -- Owner-scoped SELECT: users see their own objects OR any object in a public bucket.
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_select_objects' AND tablename = 'objects' AND schemaname = 'storage') THEN
+          CREATE POLICY storage_auth_select_objects ON storage.objects FOR SELECT TO authenticated
+            USING (owner_id = auth.uid()::text OR bucket_id IN (SELECT id FROM storage.buckets WHERE public = true));
+        END IF;
+        -- Owner-scoped INSERT: users can only insert objects with their own owner_id.
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_insert_objects' AND tablename = 'objects' AND schemaname = 'storage') THEN
+          CREATE POLICY storage_auth_insert_objects ON storage.objects FOR INSERT TO authenticated
+            WITH CHECK (owner_id = auth.uid()::text);
+        END IF;
+        -- Owner-scoped UPDATE: users can only modify their own objects.
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_update_objects' AND tablename = 'objects' AND schemaname = 'storage') THEN
+          CREATE POLICY storage_auth_update_objects ON storage.objects FOR UPDATE TO authenticated
+            USING (owner_id = auth.uid()::text)
+            WITH CHECK (owner_id = auth.uid()::text);
+        END IF;
+        -- Owner-scoped DELETE: users can only delete their own objects.
+        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'storage_auth_delete_objects' AND tablename = 'objects' AND schemaname = 'storage') THEN
+          CREATE POLICY storage_auth_delete_objects ON storage.objects FOR DELETE TO authenticated
+            USING (owner_id = auth.uid()::text);
         END IF;
       END $$;
     `.execute(writer).catch(() => undefined)

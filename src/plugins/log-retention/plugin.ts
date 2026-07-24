@@ -4,6 +4,7 @@
 
 import { Elysia } from 'elysia'
 import { BatchLogHandler } from '~/tools/logger/batch_handler'
+import type { LogEntry } from '~/tools/logger/log'
 
 export interface LogRetentionOptions {
   /** Days to retain logs (default: 30) */
@@ -31,8 +32,8 @@ export class LogRetentionPlugin {
     if (!db) return
 
     // Bridge activity logger → _logs table using BatchLogHandler
-    this.batchHandler = new BatchLogHandler(
-      async (entries) => {
+    this.batchHandler = new BatchLogHandler({
+      writeFunc: async (entries: LogEntry[]) => {
         for (const entry of entries) {
           try {
             await db.insert('_logs', {
@@ -47,12 +48,10 @@ export class LogRetentionPlugin {
           }
         }
       },
-      {
-        batchSize: this.options.batchSize,
-        flushInterval: this.options.flushInterval,
-        minLevel: 0, // Info and above
-      },
-    )
+      batchSize: this.options.batchSize,
+      flushInterval: this.options.flushInterval,
+      level: 0, // Info and above
+    })
 
     // Schedule periodic cleanup of old logs
     const retentionMs = this.options.retentionDays * 24 * 60 * 60 * 1000

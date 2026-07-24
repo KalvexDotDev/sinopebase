@@ -4,14 +4,6 @@
 
 import { Elysia } from 'elysia'
 
-interface MetricSnapshot {
-  timestamp: string
-  uptime: number
-  requests: { total: number; byStatus: Record<string, number>; byMethod: Record<string, number> }
-  latency: { avg: number; p50: number; p95: number; p99: number }
-  memory: { heapUsed: number; heapTotal: number; rss: number }
-}
-
 const startTime = Date.now()
 const requestCounts = { total: 0 }
 const statusCounts: Record<string, number> = {}

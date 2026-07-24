@@ -1,5 +1,8 @@
 /**
  * JWT helpers using the jose library.
+ *
+ * Access tokens: short-lived JWTs with kid in the protected header.
+ * Refresh tokens: structured JWTs with family tracking for replay detection.
  */
 
 import { SignJWT, jwtVerify } from 'jose'
@@ -12,6 +15,19 @@ export interface JwtPayload {
   aud: string
   exp: number
   iat: number
+  /** Session identifier — used for targeted invalidation */
+  sid?: string
+}
+
+export interface JwtRefreshPayload {
+  sub: string
+  sid: string
+  jti: string
+  family: string
+  iat: number
+  exp: number
+  iss: string
+  aud: string
 }
 
 const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
@@ -27,25 +43,33 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret)
 }
 
-const ACCESS_TOKEN_EXPIRES_IN = 3600 // 1 hour in seconds
+export const ACCESS_TOKEN_TTL = 3600 // 1 hour in seconds
+export const REFRESH_TOKEN_TTL = 604800 // 7 days in seconds
+
+/** @deprecated Use ACCESS_TOKEN_TTL instead */
+export const ACCESS_TOKEN_EXPIRES_IN = ACCESS_TOKEN_TTL
 
 const TOKEN_ISSUER = 'sinopebase'
 const TOKEN_AUDIENCE = 'authenticated'
 
-export async function generateAccessToken(user: User): Promise<string> {
+export async function generateAccessToken(
+  user: User,
+  sessionId: string,
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   return new SignJWT({
     sub: user.id,
     email: user.email,
     role: user.role,
     aud: user.aud ?? TOKEN_AUDIENCE,
+    sid: sessionId,
     jti: crypto.randomUUID(),
   })
-    .setProtectedHeader({ alg: 'HS256' })
+    .setProtectedHeader({ alg: 'HS256', kid: 'sinopebase-v1' })
     .setIssuer(TOKEN_ISSUER)
     .setAudience(TOKEN_AUDIENCE)
     .setIssuedAt(now)
-    .setExpirationTime(now + ACCESS_TOKEN_EXPIRES_IN)
+    .setExpirationTime(now + ACCESS_TOKEN_TTL)
     .sign(getSecret())
 }
 
@@ -59,8 +83,33 @@ export async function verifyAccessToken(
   return payload as unknown as JwtPayload
 }
 
-export function generateRefreshToken(): string {
-  return crypto.randomUUID()
+export async function generateRefreshToken(
+  userId: string,
+  sessionId: string,
+  tokenId: string,
+  familyId: string,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  return new SignJWT({
+    sub: userId,
+    sid: sessionId,
+    jti: tokenId,
+    family: familyId,
+  })
+    .setProtectedHeader({ alg: 'HS256', kid: 'sinopebase-v1' })
+    .setIssuer(TOKEN_ISSUER)
+    .setAudience(TOKEN_AUDIENCE)
+    .setIssuedAt(now)
+    .setExpirationTime(now + REFRESH_TOKEN_TTL)
+    .sign(getSecret())
 }
 
-export { ACCESS_TOKEN_EXPIRES_IN }
+export async function verifyRefreshToken(
+  token: string,
+): Promise<JwtRefreshPayload> {
+  const { payload } = await jwtVerify(token, getSecret(), {
+    issuer: TOKEN_ISSUER,
+    audience: TOKEN_AUDIENCE,
+  })
+  return payload as unknown as JwtRefreshPayload
+}

@@ -11,6 +11,7 @@ import {
   StorageAccessError,
   type StorageAccessPolicy,
 } from './storage-access'
+import { signUrl, verifySignedUrl, SignedUrlError } from './signed-url'
 
 interface ParsedUploadBody {
   data: ArrayBuffer
@@ -379,7 +380,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     },
   )
 
-  // POST /storage/v1/object/sign/:bucket/* — Create signed URL
+  // POST /storage/v1/object/sign/:bucket/* — Create HMAC-signed URL
   app.post(
     '/storage/v1/object/sign/:bucket/*',
     async ({ params, body, request, set }) => {
@@ -398,12 +399,55 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
         }
       }
       const b = (body ?? {}) as Record<string, unknown>
-      const expiresIn = b['expiresIn']
+      const rawExpiresIn = b['expiresIn']
       return storageOperation(set, async () => {
         const { context, access } = await resolveStorageAccess(options, request)
         if (access) await access.authorizeSignedUrl(context, bucket, path)
-        const signedURL = `/storage/v1/object/${bucket}/${path}${expiresIn ? `?expires=${String(expiresIn)}` : ''}`
+        const expiresInSec = typeof rawExpiresIn === 'number'
+          ? rawExpiresIn
+          : typeof rawExpiresIn === 'string'
+            ? parseInt(rawExpiresIn, 10) || 3600
+            : 3600
+        const token = signUrl(bucket, path, expiresInSec)
+        const signedURL = `/storage/v1/object/signed/${token}`
         return { signedURL }
+      })
+    },
+  )
+
+  // GET /storage/v1/object/signed/:token — Verify HMAC token and stream file
+  app.get(
+    '/storage/v1/object/signed/:token',
+    async ({ params, set }) => {
+      const token = params['token']
+      if (!token) {
+        set.status = 400
+        return {
+          data: null,
+          error: {
+            message: 'Token is required',
+            details: '',
+            hint: '',
+            code: '400',
+          },
+        }
+      }
+      return storageOperation(set, async () => {
+        let bucket: string
+        let path: string
+        try {
+          ({ bucket, path } = verifySignedUrl(token))
+        } catch (err) {
+          const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
+          throw new StorageAccessError(403, '403', message)
+        }
+        const buffer = await store.read(bucket, path)
+        return new Response(buffer, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(buffer.length),
+          },
+        })
       })
     },
   )

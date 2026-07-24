@@ -159,7 +159,7 @@ async function findSendmailPath(): Promise<string> {
         const { execFile } = await import("node:child_process");
         try {
           await new Promise<void>((resolve, reject) => {
-            const proc = execFile(
+            execFile(
               process.env['ComSpec'] ? "where" : "which",
               [option],
               { timeout: 1000 },

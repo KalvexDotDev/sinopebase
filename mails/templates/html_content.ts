@@ -8,14 +8,6 @@
  * Layer 5 -- imports from ~/core/*.
  */
 
-import {
-  EmailPlaceholderAppName,
-  EmailPlaceholderAppUrl,
-  EmailPlaceholderToken,
-  EmailPlaceholderOtp,
-  EmailPlaceholderAlertInfo,
-} from '~/core/collection_model_auth_templates.ts'
-
 // ---------------------------------------------------------------------------
 // Re-export placeholders for convenience
 // ---------------------------------------------------------------------------

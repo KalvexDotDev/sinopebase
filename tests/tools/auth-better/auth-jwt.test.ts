@@ -2,7 +2,9 @@
  * JWT security regression tests.
  *
  * Verifies issuer/audience enforcement, token expiry validation,
- * and the dev-fallback warning behavior added in v0.4 Wave 0.
+ * the dev-fallback warning behavior, and hardening additions:
+ * - kid in protected header
+ * - sid claim in payload
  */
 
 import { describe, it, expect } from 'bun:test'
@@ -11,8 +13,10 @@ import {
   verifyAccessToken,
   ACCESS_TOKEN_EXPIRES_IN,
 } from '~/apis/auth-jwt'
+import { generateSessionId } from '~/apis/auth-utils'
 
 describe('JWT — issuer and audience enforcement', () => {
+  const sessionId = generateSessionId()
   const mockUser = {
     id: 'test-user-1',
     email: 'test@example.com',
@@ -20,17 +24,25 @@ describe('JWT — issuer and audience enforcement', () => {
     aud: 'authenticated',
   }
 
-  it('generates a token with issuer and audience claims', async () => {
-    const token = await generateAccessToken(mockUser)
+  it('generates a token with kid in protected header', async () => {
+    const token = await generateAccessToken(mockUser, sessionId)
+    const parts = token.split('.')
+    const header = JSON.parse(atob(parts[0]!))
+    expect(header.kid).toBe('sinopebase-v1')
+  })
+
+  it('generates a token with issuer, audience, and sid claims', async () => {
+    const token = await generateAccessToken(mockUser, sessionId)
     // Decode without verifying to inspect claims
     const parts = token.split('.')
     const payload = JSON.parse(atob(parts[1]!))
     expect(payload.iss).toBe('sinopebase')
     expect(payload.aud).toBe('authenticated')
+    expect(payload.sid).toBe(sessionId)
   })
 
   it('verifies a valid token', async () => {
-    const token = await generateAccessToken(mockUser)
+    const token = await generateAccessToken(mockUser, sessionId)
     const payload = await verifyAccessToken(token)
     expect(payload.sub).toBe(mockUser.id)
     expect(payload.email).toBe(mockUser.email)
@@ -86,7 +98,7 @@ describe('JWT — issuer and audience enforcement', () => {
   })
 
   it('token expiry is set to 1 hour', async () => {
-    const token = await generateAccessToken(mockUser)
+    const token = await generateAccessToken(mockUser, sessionId)
     const parts = token.split('.')
     const payload = JSON.parse(atob(parts[1]!))
     const lifetime = payload.exp - payload.iat

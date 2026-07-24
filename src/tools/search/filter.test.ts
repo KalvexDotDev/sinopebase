@@ -7,7 +7,7 @@ import {
   parseOrFilters,
   parseInValue,
 } from "./filter";
-import { SimpleFieldResolver, NullFallbackPreference } from "./simple_field_resolver";
+import { SimpleFieldResolver } from "./simple_field_resolver";
 
 beforeEach(() => {
   clearFilterCache();

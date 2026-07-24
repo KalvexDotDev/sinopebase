@@ -8,8 +8,6 @@
 // Types are inlined because import paths don't resolve from Blob URL workers.
 // ---------------------------------------------------------------------------
 
-declare var self: DedicatedWorkerGlobalScope
-
 type SandboxMessage =
   | { type: 'result'; data: unknown }
   | { type: 'error'; error: string; stack?: string }
@@ -23,6 +21,12 @@ interface WorkerData {
     body: string
   }
   ctx: Record<string, unknown>
+}
+
+/** `self` is a built-in global in Bun Workers — declared here for TS. */
+declare var self: {
+  onmessage: ((event: MessageEvent<WorkerData>) => void) | null
+  postMessage(message: SandboxMessage): void
 }
 
 /**

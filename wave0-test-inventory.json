@@ -46,20 +46,50 @@
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 669,
-      "disposition": "Fail startup in production mode instead of continuing after PostgreSQL/auth initialization failure."
+      "line": 754,
+      "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 680,
-      "disposition": "Require an explicit memory-adapter development/test profile; production and release suites must fail without PostgreSQL."
+      "line": 765,
+      "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 714,
-      "disposition": "Require an explicit local-storage development/test profile; production and storage contracts must fail without object storage."
+      "line": 803,
+      "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 55,
+      "disposition": "Wave 1 rate-limit wiring tests — PostgreSQL required per test infra fail-closed policy."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 56,
+      "disposition": "Wave 1 rate-limit wiring tests — storage falls through per test policy."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 57,
+      "disposition": "Wave 1 rate-limit wiring tests — storage falls through per test policy."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 58,
+      "disposition": "Wave 1 rate-limit wiring tests — storage falls through per test policy."
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "tests/apis/storage-ownership-rls.test.ts",
+      "line": 21,
+      "disposition": "Wave 1 storage ownership RLS tests — requires PostgreSQL with RLS enabled."
     },
     {
       "kind": "infrastructure-skip",
@@ -72,6 +102,42 @@
       "file": "src/core/db-postgres-rls.test.ts",
       "line": 7,
       "disposition": "Replace ambient describe.skip with the required-infrastructure gate; release runs fail when TEST_POSTGRES_URL is absent."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 19,
+      "disposition": "Tests use explicit mode config — env is isolated per-file with beforeAll/afterAll snapshot."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 20,
+      "disposition": "Tests use explicit mode config — env is isolated per-file with beforeAll/afterAll snapshot."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 21,
+      "disposition": "Tests use explicit mode config — env is isolated per-file with beforeAll/afterAll snapshot."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 22,
+      "disposition": "Tests use explicit mode config — env is isolated per-file with beforeAll/afterAll snapshot."
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 118,
+      "disposition": "Intentional fixed port for buildValidatedConfig test expectations."
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 131,
+      "disposition": "Intentional fixed port for buildValidatedConfig test expectations."
     }
   ]
 }

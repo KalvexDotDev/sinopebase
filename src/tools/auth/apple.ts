@@ -120,7 +120,7 @@ export class AppleProvider extends BaseProvider {
    * @param userPayload   The JSON string of the `user` field returned by
    *                      Apple on the very first login (optional).
    */
-  async ExchangeCode(
+  override async ExchangeCode(
     code: string,
     codeVerifier?: string,
     userPayload?: string,
@@ -235,9 +235,9 @@ export class AppleProvider extends BaseProvider {
    *                If not provided, FetchUser will attempt to decode it
    *                from the stored token response.
    */
-  async FetchUser(
-    token: string,
-    client?: HttpClient,
+  override async FetchUser(
+    _token: string,
+    _client?: HttpClient,
     idToken?: string,
   ): Promise<AuthUser> {
     if (!idToken) {

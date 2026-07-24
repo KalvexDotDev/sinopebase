@@ -32,7 +32,7 @@
  *   handler.dispose()
  */
 
-import type { LogEntry, Logger } from "./log";
+import type { LogEntry, Logger, LogLevel } from "./log";
 
 // --------------------------------------------------
 // Types
@@ -169,7 +169,7 @@ export class BatchLogHandler implements Logger {
 
     const entry: LogEntry = {
       time: new Date(),
-      level,
+      level: level as LogLevel,
       message,
       data,
     };

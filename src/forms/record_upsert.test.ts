@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import {
   RecordUpsert,
   AccessLevelDefault,
-  AccessLevelManager,
-  AccessLevelSuperuser,
 } from './record_upsert';
-import type { RecordStubUpsert, FieldStub } from './record_upsert';
+import type { RecordStubUpsert } from './record_upsert';
+import type { FieldStub, CollectionStub } from '~/core/record_field_resolver';
 
 // ---------------------------------------------------------------------------
 // Mock factory
@@ -59,13 +58,13 @@ function createMockRecord(options: MockRecordOptions = {}): RecordStubUpsert {
     }
   }
 
-  const collection = {
+  const collection: CollectionStub = {
     id: 'c_test',
     name: 'test',
     listRule: null,
     fields: {
       getByName(n: string) {
-        return fieldsMap.get(n) ?? null;
+        return fieldsMap.get(n);
       },
       all() {
         return [...fieldsMap.values()];

@@ -197,7 +197,8 @@ export class SMTPClient implements Mailer, SendInterceptor {
     }
 
     // Attachments
-    const attachments: nodemailer.Attachment[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attachments: { filename?: string; content?: any; cid?: string }[] = [];
 
     for (const [filename, stream] of Object.entries(m.attachments)) {
       attachments.push({

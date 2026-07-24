@@ -11,7 +11,7 @@
  * hard-coding the endpoint URLs.
  */
 
-import { BaseProvider } from '~/tools/auth/base_provider.ts'
+import { BaseProvider, type TokenResponse } from '~/tools/auth/base_provider.ts'
 import type { AuthUser, HttpClient } from '~/tools/auth/auth.ts'
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ export class OIDCProvider extends BaseProvider {
   // Overrides that trigger discovery
   // -----------------------------------------------------------------------
 
-  override BuildAuthUrl(
+  override async BuildAuthUrl(
     state: string,
     opts?: {
       Scope?: string[]
@@ -145,14 +145,14 @@ export class OIDCProvider extends BaseProvider {
       CodeChallengeMethod?: string
     },
   ): Promise<string> {
-    // Return a promise -- discover first, then build
-    return this.withDiscovery(() => super.BuildAuthUrl(state, opts))
+    await this.Discover()
+    return await super.BuildAuthUrl(state, opts)
   }
 
   override async ExchangeCode(
     code: string,
     codeVerifier?: string,
-  ): Promise<ReturnType<BaseProvider['ExchangeCode']>> {
+  ): Promise<TokenResponse> {
     await this.Discover()
     return super.ExchangeCode(code, codeVerifier)
   }
@@ -181,12 +181,4 @@ export class OIDCProvider extends BaseProvider {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Internal helpers
-  // -----------------------------------------------------------------------
-
-  private async withDiscovery<T>(fn: () => T): Promise<T> {
-    await this.Discover()
-    return fn()
-  }
 }
