@@ -128,11 +128,11 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18.4-alpine
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: sinopebase_test
+          POSTGRES_USER: sinopebase
+          POSTGRES_PASSWORD: sinopebase
+          POSTGRES_DB: sinopebase
         ports:
           - 5432:5432
         options: >-
@@ -140,19 +140,18 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      minio:
-        image: minio/minio:latest
+      rustfs:
+        image: rustfs/rustfs:latest
         env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
+          RUSTFS_ROOT_USER: rustfsadmin
+          RUSTFS_ROOT_PASSWORD: rustfsadmin
         ports:
           - 9000:9000
         options: >-
-          server /data --console-address :9001
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:9000/health"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4
@@ -163,9 +162,9 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Wait for PostgreSQL
-        run: until pg_isready -h localhost -p 5432 -U postgres; do sleep 2; done
-      - name: Wait for MinIO
-        run: until curl -sf http://localhost:9000/minio/health/live; do sleep 2; done
+        run: until pg_isready -h localhost -p 5432 -U sinopebase; do sleep 2; done
+      - name: Wait for RustFS
+        run: until wget -q --spider http://localhost:9000/health; do sleep 2; done
 
       - name: Generate CI test keys
         run: |
@@ -173,12 +172,12 @@ jobs:
           echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "RUSTFS_ENDPOINT=http://localhost:9000" >> "$GITHUB_ENV"
-          echo "RUSTFS_ACCESS_KEY=minioadmin" >> "$GITHUB_ENV"
-          echo "RUSTFS_SECRET_KEY=minioadmin" >> "$GITHUB_ENV"
+          echo "RUSTFS_ACCESS_KEY=rustfsadmin" >> "$GITHUB_ENV"
+          echo "RUSTFS_SECRET_KEY=rustfsadmin" >> "$GITHUB_ENV"
       - name: Run test suite (JUnit, PostgreSQL-backed, no storage/realtime)
         run: bun run test:ci
         env:
-          TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/sinopebase_test
+          TEST_POSTGRES_URL: postgresql://sinopebase:sinopebase@localhost:5432/sinopebase
 
       - name: Publish test results (JUnit)
         uses: dorny/test-reporter@v1
