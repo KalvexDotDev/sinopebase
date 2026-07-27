@@ -38,10 +38,9 @@ declare var self: {
 self.onmessage = async (event: MessageEvent<WorkerData>) => {
   const { filePath, serializedReq, ctx } = event.data
 
-  // Strip parent env — Bun Worker env:{} may not fully isolate in all versions
-  for (const key of Object.keys(process.env)) {
-    delete process.env[key]
-  }
+  // Strip parent env — Bun Worker env:{} may not fully isolate in all versions.
+  // `delete process.env.KEY` is a no-op in Bun; `process.env = {}` works.
+  ;(process as unknown as { env: Record<string, string | undefined> }).env = {}
 
   try {
     // Cache-busting query param so updated functions aren't served stale
