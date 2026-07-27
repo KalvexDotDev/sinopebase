@@ -1,10 +1,77 @@
+# Sinopebase — Railway Production Configuration
+# Version-controlled infrastructure. Deployed via GitHub Actions after CI passes.
+#
+# Railway reads this file at deploy time. All secrets come from Railway's
+# shared variables or GitHub Actions, never hardcoded here.
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
+# Number of replicas for the service. Keep at 1 until Realtime fan-out
+# durability is proven across multiple instances (see v0.4 HANDOFF.md).
+numReplicas = 1
+
+# Health-check path — Railway probes this every ~30s.
+# Must return HTTP 2xx within the timeout or the container is restarted.
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
+
+# Restart on failure, with a max of 3 retries before escalating.
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+
+# Start command — compiled bun binary, no shell needed.
+# The Dockerfile already sets this as the ENTRYPOINT.
 startCommand = "/app/sinopebase"
+
+# Sleep for this many seconds when the deploy fails.
+sleepApplication = false
+
+# ── Resource limits ──────────────────────────────────────────
+# Uncomment if Railway plan supports resource configuration:
+# [deploy.resources]
+# cpu = "1"
+# memory = "512MB"
+
+# ── Networking ───────────────────────────────────────────────
+# Railway provides public TCP proxying on $PORT (injected automatically).
+# The service listens on all interfaces so the proxy can reach it.
+# TLS is terminated at Railway's edge — Sinopebase speaks plain HTTP
+# internally. DO NOT set TLS_CERT/TLS_KEY unless you are terminating
+# TLS at the application level (not recommended).
+
+# ── Private networking ───────────────────────────────────────
+# Railway auto-creates a private network per environment. All services
+# in the same environment can reach each other via their service names.
+# PostgreSQL and Bucket connections go over the private network.
+
+# ── Watch paths ──────────────────────────────────────────────
+# Only trigger deploys when files that affect the service change.
+# Uncomment to prevent UI-only or docs-only commits from triggering:
+# [deploy.watch]
+# paths = ["src/", "package.json", "bun.lock", "Dockerfile"]
+
+# ── Environment variables (set in Railway dashboard) ──────────
+# Non-secret config documented here for IaC traceability.
+# Secrets (keys, passwords) set by hand — never committed.
+#
+# [variables]
+# SINOPEBASE_PRODUCTION = "true"
+# MASTRA_REQUIRE_AUTH = "true"
+#
+# --- Database (Railway PostgreSQL — reference, not raw value) ---
+# POSTGRES_URL = ${{Sinope-PG-Prod.DATABASE_URL}}
+#
+# --- Storage (Railway Bucket — S3-compatible) ---
+# S3_ENDPOINT = ${{<bucket-service>.BUCKET_ENDPOINT}}
+# S3_BUCKET = "sinope-evidence-prod"
+# S3_REGION = ${{<bucket-service>.BUCKET_REGION}}
+# S3_ACCESS_KEY (set by hand — ${{<bucket-service>.ACCESS_KEY_ID}})
+# S3_SECRET_KEY (set by hand — ${{<bucket-service>.SECRET_ACCESS_KEY}})
+#
+# --- Auth (generated in dashboard via Raw Editor) ---
+# JWT_SECRET
+# SINOPEBASE_SERVICE_ROLE_KEY
+# SINOPEBASE_ANON_KEY

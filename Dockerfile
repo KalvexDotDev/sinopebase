@@ -69,7 +69,8 @@ COPY --from=builder /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so.6
 
 ENV DATA_DIR=/data
 
-VOLUME ["/data"]
+# Railway does not support VOLUME directives — mount a Railway Volume
+# through the dashboard (Service Settings → Volumes → /data).
 EXPOSE 8090
 
 # BusyBox wget is provided by Alpine without adding a package. This checks the
