@@ -164,9 +164,9 @@ jobs:
       - name: Generate CI test keys
         id: keys
         run: |
-          echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)" >> "$GITHUB_OUTPUT"
-          echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)" >> "$GITHUB_OUTPUT"
-          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_OUTPUT"
+          echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32 | tr -d '\n')" >> "$GITHUB_OUTPUT"
+          echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32 | tr -d '\n')" >> "$GITHUB_OUTPUT"
+          echo "JWT_SECRET=$(openssl rand -hex 32 | tr -d '\n')" >> "$GITHUB_OUTPUT"
       - name: Run test suite (JUnit, PostgreSQL-backed)
         run: bun run test:ci
         env:
