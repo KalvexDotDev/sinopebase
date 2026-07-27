@@ -17,6 +17,7 @@ interface TestResponse {
   error?: unknown
   [key: string]: unknown
 }
+
 import { DropFunctionsPlugin } from '~/plugins/drop-functions/plugin'
 import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
 
