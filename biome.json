@@ -20,7 +20,7 @@
         "noUnusedImports": "error"
       },
       "suspicious": {
-        "noExplicitAny": "warn"
+        "noExplicitAny": "error"
       }
     }
   },

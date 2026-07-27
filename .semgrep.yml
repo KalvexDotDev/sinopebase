@@ -1,0 +1,34 @@
+# Sinopebase Semgrep SAST Configuration
+# Focused on TypeScript security, secrets, and OWASP Top Ten.
+# See C:\Users\Jaimie\memento\sinopebase-v0.4-production-readiness.md line 272.
+
+rules:
+  # TypeScript/JavaScript security patterns
+  - patterns/ts
+
+  # Secret detection (API keys, tokens, credentials)
+  - patterns/secrets
+
+  # OWASP Top Ten coverage
+  - patterns/owasp
+
+  # Additional TypeScript-specific rules
+  - patterns/ts-sql-injection
+  - patterns/ts-xss
+  - patterns/ts-path-traversal
+
+options:
+  # Match the project's TypeScript strictness posture
+  generic_slow_rollout: false
+  max_memory_mb: 2048
+
+paths:
+  include:
+    - src/**/*.ts
+    - tests/**/*.ts
+  exclude:
+    - node_modules/
+    - dist/
+    - ui/
+    - .claude/
+    - "*.d.ts"

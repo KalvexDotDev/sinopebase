@@ -1,0 +1,20 @@
+#!/bin/sh
+# Sinopebase pre-commit hook
+# Runs Gitleaks to detect secrets before commit.
+# Install: bun run gitleaks:install
+
+set -e
+
+echo "[pre-commit] Running Gitleaks secret scan on staged changes..."
+
+# Check if gitleaks is installed
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "[pre-commit] WARNING: gitleaks not found. Install it from https://github.com/gitleaks/gitleaks#installing"
+  echo "[pre-commit] Skipping secret scan. To enforce, install gitleaks and re-commit."
+  exit 0
+fi
+
+# Scan staged changes only
+gitleaks protect --staged --verbose --config .gitleaks.toml
+
+echo "[pre-commit] Gitleaks scan passed — no secrets detected."

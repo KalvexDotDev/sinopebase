@@ -1,0 +1,51 @@
+# MegaLinter configuration for Sinopebase CI
+# Orchestrates all linters and security scanners in a single job.
+# See: https://megalinter.io/latest/config-file/
+
+# General
+DISABLE_ERRORS: false
+PRINT_ALPACA: false
+GITHUB_COMMENT_REPORTER: true
+
+# Files to scan
+FILTER_REGEX_INCLUDE: (src/|tests/)
+FILTER_REGEX_EXCLUDE: (node_modules/|dist/|ui/|\.claude/)
+
+# Linters enabled
+# JS/TS via ESLint
+ENABLE_LINTERS:
+  - JAVASCRIPT_ES
+  - TYPESCRIPT_ES
+  - COPYPASTE_JSCPD
+  - REPOSITORY_GITLEAKS
+  - REPOSITORY_SEMGREP
+
+# ── JavaScript / TypeScript ESLint ────────────────────────────
+JAVASCRIPT_DEFAULT_STYLE: eslint
+TYPESCRIPT_DEFAULT_STYLE: eslint
+JAVASCRIPT_ES_CONFIG_FILE: eslint.config.mjs
+TYPESCRIPT_ES_CONFIG_FILE: eslint.config.mjs
+JAVASCRIPT_ES_ARGUMENTS: --ext .js,.mjs,.cjs
+TYPESCRIPT_ES_ARGUMENTS: --ext .ts,.tsx
+# NOTE: TYPESCRIPT_ES will fail until @typescript-eslint supports TS7.
+# In the interim, TS linting is covered by Biome (noExplicitAny, correctness)
+# and Semgrep (SAST). Remove this note when TS7 support lands:
+#   https://github.com/typescript-eslint/typescript-eslint/issues/10940
+
+# ── Copy-paste detection ──────────────────────────────────────
+COPYPASTE_JSCPD_CONFIG_FILE: .jscpd.json
+
+# ── Gitleaks ──────────────────────────────────────────────────
+REPOSITORY_GITLEAKS_CONFIG_FILE: .gitleaks.toml
+REPOSITORY_GITLEAKS_ARGUMENTS: detect --no-git
+
+# ── Semgrep ───────────────────────────────────────────────────
+REPOSITORY_SEMGREP_CONFIG_FILE: .semgrep.yml
+REPOSITORY_SEMGREP_ARGUMENTS: --config .semgrep.yml --error
+
+# ── Spell check (optional, informational) ─────────────────────
+SPELL_MISSPELL: false
+
+# ── Reporting ─────────────────────────────────────────────────
+SARIF_REPORTER: true
+UPDATED_SOURCES_REPORTER: true

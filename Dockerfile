@@ -22,7 +22,9 @@ RUN cd ui && bun run build
 
 # Build a self-contained executable for the builder platform. It carries the
 # Bun runtime and therefore needs no Bun installation in the final image.
-RUN bun build cmd/serve.ts --compile --outfile /out/sinopebase --target bun
+# --minify reduces binary size and attack surface; --sourcemap=external keeps
+# debugging symbols out of the binary while preserving them for crash forensics.
+RUN bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target bun
 
 # Pin the Docker Official Image index digest for alpine:3.22. Alpine is kept
 # deliberately small; no shell packages, package manager cache, or DB clients
@@ -39,7 +41,11 @@ LABEL org.opencontainers.image.title="Sinopebase" \
       org.opencontainers.image.licenses="UNLICENSED" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.created="${CREATED}"
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.base.name="alpine:3.22" \
+      org.opencontainers.image.base.digest="sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce" \
+      com.shell.cmd="/app/sinopebase" \
+      com.shell.expose="8090"
 
 WORKDIR /app
 

@@ -22,22 +22,37 @@
     "test:compatibility": "bun test src/apis/postgrest.test.ts src/apis/postgrest-head-count.test.ts src/apis/postgrest-in-filter.test.ts src/apis/realtime-postgres-changes.test.ts src/apis/file.test.ts src/core/postgres-role-bootstrap.test.ts src/core/db-postgres-rls.test.ts tests/tools/auth-better/supabase-bridge.test.ts tests/integration/auth-better.test.ts",
     "test:release": "bun tests/harness/require-release-infra.ts && bun run test:component && bun run test:contract:auth && bun run test:contract:postgrest && bun run test:contract:storage && bun run test:contract:realtime && bun run test:contract:postgres-rls && bun run test:integration:plugins && bun test",
     "lint": "biome check src/ tests/",
+    "lint:eslint": "bun run scripts/lint-eslint.mjs",
+    "lint:eslint:sarif": "bun run scripts/lint-eslint.mjs --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif",
+    "lint:jscpd": "jscpd src/ tests/ --config .jscpd.json",
     "format": "biome format --write src/ tests/",
     "format:check": "biome format src/ tests/",
     "typecheck": "bun run tsc --noEmit",
-    "typecheck:harness": "bun run tsc --noEmit --project wave0-test-tsconfig.json"
+    "typecheck:harness": "bun run tsc --noEmit --project wave0-test-tsconfig.json",
+    "test:ci": "bun test --reporter=tap 2>&1 | npx tap-xunit > junit.xml",
+    "security:semgrep": "semgrep --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/",
+    "security:gitleaks": "gitleaks detect --config .gitleaks.toml --verbose",
+    "gitleaks:install": "git config core.hooksPath .githooks",
+    "ci": "bun run ci:audit && bun run format:check && bun run lint && bun run lint:eslint && bun run lint:jscpd && bun run typecheck && bun run test && bun run build",
+    "ci:audit": "bun audit; exit 0"
   },
   "exports": {
     ".": "./cmd/serve.ts",
     "./sdk": "./src/sdk/client.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@types/bun": "latest",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/ws": "^8.18.1",
     "biome": "^0.3.3",
-    "bun-types": "^1.3.14"
+    "bun-types": "^1.3.14",
+    "eslint": "^10.8.0",
+    "eslint-plugin-security": "^4.0.1",
+    "jscpd": "^5.0.14",
+    "tap-xunit": "^2.4.1"
   },
   "peerDependencies": {
     "typescript": "^7.0.2"

@@ -1,0 +1,13 @@
+# Generated / third-party
+node_modules/
+dist/
+ui/dist/
+ui/node_modules/
+
+# Type declaration files
+*.d.ts
+
+# Tooling
+.claude/
+.git/
+.megalinter-reports/

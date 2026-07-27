@@ -1,0 +1,33 @@
+# Gitleaks configuration for Sinopebase
+# Detects secrets (API keys, tokens, credentials) before they enter the commit history.
+
+title = "Sinopebase Gitleaks Config"
+
+# Allowlist for known-safe patterns
+[allowlist]
+  description = "Sinopebase allowlist"
+
+  # Example/placeholder tokens in documentation
+  [[allowlist.paths]]
+    description = "Documentation and example files with placeholder values"
+    paths = [
+      '''README\.md$''',
+      '''docs/.*\.md$''',
+      '''\.env\.railway$''',
+      '''\.env\.example$''',
+      '''CHANGELOG\.md$''',
+    ]
+
+  # Known test fixtures
+  [[allowlist.paths]]
+    description = "Test fixtures with example credentials"
+    paths = [
+      '''tests/.*\.test\.ts$''',
+      '''tests/.*fixture.*''',
+    ]
+
+  # Fake/sample tokens in docs
+  [[allowlist.rules]]
+    description = "Example/placeholder API keys"
+    id = "generic-api-key"
+    regexes = ['''(?i)(example|placeholder|test|fake|demo|your-)''']

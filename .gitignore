@@ -37,3 +37,12 @@ pb_data/
 .DS_Store
 
 .memento-staging/
+
+# CI/CD tool artifacts
+.gitleaks-report.json
+.megalinter-reports/
+eslint-results.sarif
+semgrep-results.sarif
+trivy-results.sarif
+junit.xml
+jscpd-report.json

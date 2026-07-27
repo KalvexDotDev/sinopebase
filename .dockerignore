@@ -39,3 +39,18 @@ docs/
 README.md
 CHANGELOG.md
 CLAUDE.md
+
+# CI/CD tool configs and artifacts (not needed at runtime)
+.eslintcache
+.gitleaks.toml
+.gitleaks-report.json
+.githooks/
+.gitleaks*
+.mega-linter.yml
+.megalinter-reports/
+.semgrep.yml
+.semgrepignore
+.jscpd.json
+jscpd-report.json
+*.sarif
+junit.xml

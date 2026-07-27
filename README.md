@@ -136,13 +136,34 @@ Add these variables to your GitHub repository (`Settings > Secrets and variables
 
 ### CI/CD Pipeline
 
-The `.github/workflows/ci.yml` pipeline runs:
-1. **test** — lint, typecheck, test suite, and build
-2. **docker** — build Docker image and scan with Trivy (CRITICAL/HIGH)
-3. **deploy-staging** — deploy to Railway on `master`/`main` pushes
-4. **deploy-preview** — deploy ephemeral preview environments on pull requests
-5. **cleanup-preview** — tear down preview environments when PRs close
-6. **smoketest** — verify `/api/health` and `/api/ready` endpoints on staging
+The `.github/workflows/ci.yml` pipeline enforces quality and security gates before any deploy:
+
+**Stage 1 — Quality Gates (parallel):**
+1. **audit** — `bun audit` dependency vulnerability scan
+2. **lint** — Biome format check + lint (`noExplicitAny: error`) + ESLint (`eslint-plugin-security`)
+3. **typecheck** — TypeScript strict mode (`tsc --noEmit`)
+4. **jscpd** — Copy-paste detection (threshold 5%)
+
+**Stage 2 — Security Gates (parallel):**
+5. **semgrep** — SAST scan (TS injection, XSS, path traversal, secrets, OWASP Top Ten) → SARIF upload
+6. **gitleaks** — Secret detection before commit history is built
+7. **megalinter** — Orchestrated lint/security umbrella (ESLint, jscpd, Gitleaks, Semgrep)
+
+**Stage 3 — Test Suite:**
+8. **test** — Full Bun test suite (JUnit → GitHub test reporter)
+
+**Stage 4 — Container:**
+9. **docker** — Multi-stage Alpine build with `bun build --compile` + Trivy scan (CRITICAL,HIGH, exit-code: 1)
+
+**Stage 5 — Deploy (human approval required):**
+10. **deploy-staging** — Deploy to Railway staging (environment: `staging` 🔒)
+11. **deploy-preview** — Ephemeral preview per PR
+12. **smoketest** — Verify `/api/health` and `/api/ready` on staging
+13. **cleanup-preview** — Tear down preview on PR close
+
+**Local CI:** Run `bun run ci` to execute the full quality chain locally (format → lint → eslint → jscpd → typecheck → test → build).
+
+**Pre-commit:** Install Gitleaks with `bun run gitleaks:install` to scan staged changes for secrets before every commit.
 
 ### Railway Configuration
 

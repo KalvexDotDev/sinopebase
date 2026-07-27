@@ -21,6 +21,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    "allowUnreachableCode": false,
 
     // Some stricter flags (disabled by default)
     "noUnusedLocals": true,
