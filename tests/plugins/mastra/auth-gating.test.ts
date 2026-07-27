@@ -113,10 +113,14 @@ describe('Mastra Auth — HTTP gating', () => {
   beforeAll(() => {
     // Minimal Elysia app with auth middleware — use a truthy auth object so
     // validateAIRequest delegates to the mocked lookupSessionByToken.
-    app = new Elysia()
-      .use(createAuthMiddleware({}, true))
+    // Minimal Elysia app with auth middleware — cast through unknown because the
+    // mock auth {} doesn't satisfy SinopebaseAuth's full generic type extension.
+    app = (new Elysia() as unknown as Elysia)
+      .use(
+        createAuthMiddleware({} as unknown as import('~/tools/auth-better').SinopebaseAuth, true),
+      )
       .post('/api/mastra/chat', async ({ request, set: _set }) => {
-        const authCtx = (request as Record<string, unknown>).__authContext as
+        const authCtx = (request as unknown as Record<string, unknown>).__authContext as
           | AuthContext
           | undefined
 

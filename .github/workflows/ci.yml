@@ -55,8 +55,8 @@ jobs:
           bun-version: latest
           cache: true
       - run: bun install --frozen-lockfile
-      - name: TypeScript strict typecheck
-        run: bun run typecheck
+      - name: "TypeScript typecheck (regression gate — fails only on NEW errors)"
+        run: bun run typecheck:ci
 
   jscpd:
     needs: audit

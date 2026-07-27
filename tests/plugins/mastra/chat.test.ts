@@ -12,6 +12,7 @@ interface TestResponse {
   id?: unknown
   choices?: unknown[]
   error?: unknown
+  data?: unknown[] | Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -57,10 +58,11 @@ describe('Mastra AI Plugin', () => {
     })
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
+    const choices = json.choices as Array<{ message?: { content?: unknown } }>
     expect(json.id).toBeTruthy()
-    expect(json.choices).toBeInstanceOf(Array)
-    expect(json.choices.length).toBeGreaterThan(0)
-    expect(json.choices[0].message.content).toBeTruthy()
+    expect(choices).toBeInstanceOf(Array)
+    expect(choices.length).toBeGreaterThan(0)
+    expect(choices[0]?.message?.content).toBeTruthy()
   })
 
   it('rejects chat with empty messages', async () => {
@@ -110,9 +112,10 @@ describe('Mastra AI Plugin', () => {
     })
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
-    expect(json.data).toBeInstanceOf(Array)
-    expect(json.data.length).toBe(1)
-    expect(json.data[0].embedding).toBeInstanceOf(Array)
+    const data = json.data as unknown[]
+    expect(data).toBeInstanceOf(Array)
+    expect(data.length).toBe(1)
+    expect((data[0] as Record<string, unknown>).embedding).toBeInstanceOf(Array)
   })
 
   it('returns embeddings for array input', async () => {
@@ -125,8 +128,9 @@ describe('Mastra AI Plugin', () => {
     })
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
-    expect(json.data).toBeInstanceOf(Array)
-    expect(json.data.length).toBe(3)
+    const data = json.data as unknown[]
+    expect(data).toBeInstanceOf(Array)
+    expect(data.length).toBe(3)
   })
 
   it('rejects embeddings with no input', async () => {

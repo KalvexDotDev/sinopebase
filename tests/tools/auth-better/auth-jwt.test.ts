@@ -18,6 +18,10 @@ describe('JWT — issuer and audience enforcement', () => {
     email: 'test@example.com',
     role: 'authenticated',
     aud: 'authenticated',
+    app_metadata: {} as Record<string, unknown>,
+    user_metadata: {} as Record<string, unknown>,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
 
   it('generates a token with kid in protected header', async () => {

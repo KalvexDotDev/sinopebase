@@ -118,7 +118,7 @@ async function insertRecord(
   try {
     await db.insert(collection.name, serialized)
   } catch {
-    await (db as MemoryAdapterFallback).insert(collection.name, [serialized])
+    await (db as IDatabase & MemoryAdapterFallback).insert(collection.name, [serialized])
   }
 }
 
@@ -136,7 +136,7 @@ async function updateRecord(
       serialized,
     )
   } catch {
-    ;(db as MemoryAdapterFallback).update(
+    ;(db as IDatabase & MemoryAdapterFallback).update(
       collection.name,
       [{ column: 'id', operator: 'eq', value: recordId }],
       serialized,
@@ -152,7 +152,7 @@ async function deleteRecord(
   try {
     await db.delete(collection.name, [{ column: 'id', operator: 'eq', value: recordId }])
   } catch {
-    ;(db as MemoryAdapterFallback).delete(collection.name, [
+    ;(db as IDatabase & MemoryAdapterFallback).delete(collection.name, [
       { column: 'id', operator: 'eq', value: recordId },
     ])
   }

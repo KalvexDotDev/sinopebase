@@ -90,14 +90,14 @@ export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => b
               try {
                 await db.insert('_collections', serialized)
               } catch {
-                await (db as MemoryAdapterFallback).insert('_collections', [serialized])
+                await (db as unknown as MemoryAdapterFallback).insert('_collections', [serialized])
               }
             }
           } catch {
             try {
               await db.insert('_collections', serialized)
             } catch {
-              await (db as MemoryAdapterFallback).insert('_collections', [serialized])
+              await (db as unknown as MemoryAdapterFallback).insert('_collections', [serialized])
             }
           }
         } catch (colErr) {

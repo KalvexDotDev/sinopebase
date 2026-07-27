@@ -33,7 +33,7 @@ describe('better-auth Supabase bridge', () => {
   })
 
   it('returns a GoTrue user at the response root', () => {
-    const response = bridgeGetUserResponse({ user: betterAuthUser })
+    const response = bridgeGetUserResponse({ user: betterAuthUser, session: {} })
 
     expect(response).toMatchObject({
       id: betterAuthUser.id,

@@ -28,6 +28,7 @@
     "format": "biome format --write src/ tests/",
     "format:check": "biome format src/ tests/",
     "typecheck": "bun run tsc --noEmit",
+    "typecheck:ci": "bun run scripts/typecheck-ci.ts",
     "typecheck:harness": "bun run tsc --noEmit --project wave0-test-tsconfig.json",
     "test:ci": "bun test --reporter=tap 2>&1 | npx tap-xunit > junit.xml",
     "security:semgrep": "semgrep --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/",

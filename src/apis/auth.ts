@@ -9,7 +9,12 @@
 
 import { Elysia } from 'elysia'
 import { lookupSessionByToken } from '~/tools/auth-better'
-import { bridgeGetUserResponse, bridgeSignInResponse } from '~/tools/auth-better/supabase-bridge'
+import {
+  type BetterAuthGetSessionResult,
+  type BetterAuthSignInResult,
+  bridgeGetUserResponse,
+  bridgeSignInResponse,
+} from '~/tools/auth-better/supabase-bridge'
 import {
   ACCESS_TOKEN_TTL,
   generateAccessToken,
@@ -263,16 +268,27 @@ export { errorResponse, sessionResponse, userResponse }
  */
 interface BetterAuthInstance {
   api: {
-    signUpEmail(args: { body: { email: string; password: string; name: string } }): Promise<unknown>
-    signInEmail(args: { body: { email: string; password: string } }): Promise<unknown>
-    signOut(args: { headers: Headers }): Promise<unknown>
-    getSession(args: { headers: Headers }): Promise<unknown>
+    signUpEmail(args: { body: { email: string; password: string; name: string } }): Promise<void>
+    signInEmail(args: {
+      body: { email: string; password: string }
+    }): Promise<BetterAuthSignInResult>
+    signOut(args: { headers: Headers }): Promise<void>
+    getSession(args: { headers: Headers }): Promise<BetterAuthGetSessionResult | null>
   }
-  /** Kysely database handle (available when better-auth is wired to PostgreSQL). */
+  /** Kysely-like database handle. Kept wide to avoid coupling to Kysely generics. */
   __db?: {
     selectFrom(table: string): {
       select(columns: string): {
-        where(col: string, op: string, val: unknown): { execute(): Promise<unknown[]> }
+        where(
+          col: string,
+          op: string,
+          val: unknown,
+        ): { execute(): Promise<Array<Record<string, unknown>>> }
+      }
+    }
+    updateTable?(table: string): {
+      set(data: Record<string, unknown>): {
+        where(col: string, op: string, val: unknown): { execute(): Promise<unknown> }
       }
     }
   }
@@ -331,15 +347,17 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
           }
           // Rotate the session token — invalidate old token, issue new one
           const db = auth.__db
+          if (!db) throw new Error('Database not available for token rotation')
           const newToken = crypto.randomUUID().replace(/-/g, '')
-          const sessionId = (
-            await db
-              .selectFrom('session')
-              .select('session.id')
-              .where('session.token', '=', refresh_token)
-              .execute()
-          )[0]?.id
-          if (sessionId) {
+          const rows = await db
+            .selectFrom('session')
+            .select('session.id')
+            .where('session.token', '=', refresh_token)
+            .execute()
+          const sessionId = (rows[0] as Record<string, unknown> | undefined)?.id as
+            | string
+            | undefined
+          if (sessionId && db.updateTable) {
             await db
               .updateTable('session')
               .set({ token: newToken, updatedAt: new Date() })
@@ -383,7 +401,7 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
           set.status = 401
           return { message: 'Invalid token' }
         }
-        return bridgeGetUserResponse({ user: row })
+        return bridgeGetUserResponse({ user: row, session: {} })
       } catch {
         set.status = 401
         return { message: 'Invalid authorization header' }

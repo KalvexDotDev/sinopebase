@@ -148,7 +148,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
         await db.insert('_collections', serialized)
       } catch {
         // MemoryDatabase insert takes array
-        await (db as MemoryAdapterFallback).insert('_collections', [serialized])
+        await (db as unknown as MemoryAdapterFallback).insert('_collections', [serialized])
       }
 
       return collection.toJSON()
@@ -219,7 +219,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
         )
       } catch {
         // MemoryDatabase update is synchronous
-        ;(db as MemoryAdapterFallback).update(
+        ;(db as unknown as MemoryAdapterFallback).update(
           '_collections',
           [{ column: 'id', operator: 'eq', value: collection.id }],
           serialized,
@@ -255,7 +255,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
       try {
         await db.delete('_collections', [{ column: 'id', operator: 'eq', value: collection.id }])
       } catch {
-        ;(db as MemoryAdapterFallback).delete('_collections', [
+        ;(db as unknown as MemoryAdapterFallback).delete('_collections', [
           { column: 'id', operator: 'eq', value: collection.id },
         ])
       }

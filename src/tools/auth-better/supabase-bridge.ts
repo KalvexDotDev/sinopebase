@@ -6,7 +6,7 @@ export interface GoTrueErrorResponse {
   status: number
 }
 
-interface BetterAuthSignInResult {
+export interface BetterAuthSignInResult {
   token: string
   user: {
     id: string
@@ -20,7 +20,7 @@ interface BetterAuthSignInResult {
   }
 }
 
-interface BetterAuthGetSessionResult {
+export interface BetterAuthGetSessionResult {
   session: Record<string, unknown>
   user: {
     id: string
@@ -42,7 +42,7 @@ interface BetterAuthGetSessionResult {
  *   { token: string, user: { id, email, emailVerified?, createdAt?, updatedAt?, ... } }
  */
 export function bridgeSignInResponse(
-  result: BetterAuthSignInResult,
+  result: BetterAuthSignInResult | null,
 ): Session | GoTrueErrorResponse {
   if (!result?.token || !result.user) {
     return bridgeErrorResponse('Authentication failed', 400)

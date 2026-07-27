@@ -22,15 +22,28 @@ import type { IDatabase } from './db-interface'
 /** Minimal interface for the better-auth instance held by the app. */
 interface AuthInstance {
   api: {
-    signUpEmail(args: { body: Record<string, unknown> }): Promise<unknown>
-    signInEmail(args: { body: Record<string, unknown> }): Promise<unknown>
-    signOut(args: { headers: Headers }): Promise<unknown>
-    getSession(args: { headers: Headers }): Promise<unknown>
+    signUpEmail(args: { body: Record<string, unknown> }): Promise<void>
+    signInEmail(args: {
+      body: Record<string, unknown>
+    }): Promise<{ token: string; user: Record<string, unknown> }>
+    signOut(args: { headers: Headers }): Promise<void>
+    getSession(args: {
+      headers: Headers
+    }): Promise<{ session: Record<string, unknown>; user: Record<string, unknown> } | null>
   }
   __db?: {
     selectFrom(table: string): {
       select(columns: string): {
-        where(col: string, op: string, val: unknown): { execute(): Promise<unknown[]> }
+        where(
+          col: string,
+          op: string,
+          val: unknown,
+        ): { execute(): Promise<Array<Record<string, unknown>>> }
+      }
+    }
+    updateTable?(table: string): {
+      set(data: Record<string, unknown>): {
+        where(col: string, op: string, val: unknown): { execute(): Promise<unknown> }
       }
     }
   }

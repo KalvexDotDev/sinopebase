@@ -151,8 +151,13 @@ export interface SessionLookup {
  *
  * Returns the joined user row, or null if the token is invalid or expired.
  */
+/** Minimal auth shape needed by lookupSessionByToken — composes with any auth-like object. */
+interface AuthWithDb {
+  __db?: unknown
+}
+
 export async function lookupSessionByToken(
-  auth: SinopebaseAuth,
+  auth: AuthWithDb,
   token: string | null,
 ): Promise<SessionLookup | null> {
   if (!token) return null
