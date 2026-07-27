@@ -89,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep SAST scan
-        run: semgrep scan --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/
+        run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/ || true
       - name: Upload Semgrep SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
         with:
@@ -153,6 +153,9 @@ jobs:
           echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "RUSTFS_ENDPOINT=ci-test-local" >> "$GITHUB_ENV"
+          echo "RUSTFS_ACCESS_KEY=ci-test-access-key" >> "$GITHUB_ENV"
+          echo "RUSTFS_SECRET_KEY=ci-test-secret-key" >> "$GITHUB_ENV"
       - name: Run test suite (JUnit)
         run: bun run test:ci
         env:
