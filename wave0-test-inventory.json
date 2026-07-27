@@ -46,20 +46,44 @@
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 754,
+      "line": 783,
       "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 765,
+      "line": 796,
       "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 803,
+      "line": 834,
       "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 19,
+      "disposition": "Health test env probing — explicitly uses OS-assigned port + config object. Ambient env fallthrough is the tested path."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 20,
+      "disposition": "Health test env probing — explicitly uses OS-assigned port + config object. Ambient env fallthrough is the tested path."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 21,
+      "disposition": "Health test env probing — explicitly uses OS-assigned port + config object. Ambient env fallthrough is the tested path."
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 22,
+      "disposition": "Health test env probing — explicitly uses OS-assigned port + config object. Ambient env fallthrough is the tested path."
     },
     {
       "kind": "ambient-infrastructure",
