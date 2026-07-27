@@ -35,5 +35,6 @@
       "~/*": ["./src/*"]
     },
     "erasableSyntaxOnly": true
-  }
+  },
+  "exclude": ["dist"]
 }

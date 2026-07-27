@@ -42,6 +42,14 @@ jobs:
         run: bun run lint
       - name: ESLint (JS files + security plugin)
         run: bun run lint:eslint
+      - name: Generate ESLint SARIF
+        run: bun run lint:eslint:sarif
+      - name: Upload ESLint SARIF
+        if: hashFiles('eslint-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: eslint-results.sarif
+          category: eslint
       - name: "Validate workflow YAML"
         run: bun run lint:yaml
 
@@ -55,6 +63,7 @@ jobs:
           bun-version: latest
           cache: true
       - run: bun install --frozen-lockfile
+      - run: cd ui && bun install --frozen-lockfile
       - name: "TypeScript typecheck (regression gate — fails only on NEW errors)"
         run: bun run typecheck:ci
 
@@ -81,9 +90,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Semgrep SAST scan
         run: semgrep ci --config .semgrep.yml --sarif --output semgrep-results.sarif || true
-        continue-on-error: true
       - name: Upload Semgrep SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep-results.sarif
           category: semgrep
@@ -155,26 +163,6 @@ jobs:
           path: junit.xml
           reporter: java-junit
 
-  # ─── ESLint SARIF upload (on its own, needs lint) ─────────────────────
-  eslint-sarif:
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-          cache: true
-      - run: bun install --frozen-lockfile
-      - name: Generate ESLint SARIF report
-        run: bun run lint:eslint:sarif
-        continue-on-error: true
-      - name: Upload ESLint SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: eslint-results.sarif
-          category: eslint
-
   # ─── Stage 4: Container (needs Stage 2 + 3) ───────────────────────────
   docker:
     needs: [semgrep, gitleaks, megalinter, test]
@@ -204,7 +192,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
       - name: Upload Trivy SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: success() || failure()
         with:
           sarif_file: trivy-results.sarif
