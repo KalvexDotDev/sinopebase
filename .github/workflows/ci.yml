@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     branches: [master, main]
@@ -53,3 +54,117 @@ jobs:
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
+
+  deploy-staging:
+    needs: [test, docker]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/railwayapp/cli:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Railway Staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        shell: sh
+        run: railway up --detach
+
+  deploy-preview:
+    needs: [test, docker]
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/railwayapp/cli:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Railway preview environment
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        shell: sh
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          echo "Setting up preview environment for PR #${PR_NUMBER}"
+          railway environment new "pr-${PR_NUMBER}" \
+            --copy "${{ vars.RAILWAY_SOURCE_ENV_ID }}" \
+            --service-config "${{ vars.RAILWAY_SERVICE_ID }}" \
+            "source.branch" "${{ github.head_ref }}" || true
+          railway up --environment "pr-${PR_NUMBER}" --detach || railway up --detach
+      - name: Get preview URL
+        id: preview-url
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        shell: sh
+        run: |
+          URL=$(railway status --json 2>/dev/null | jq -r '.url // empty' 2>/dev/null || echo "")
+          echo "url=${URL:-deploying}" >> "$GITHUB_OUTPUT"
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.preview-url.outputs.url }}';
+            const prNumber = context.issue.number;
+            const body = '## Preview Deployed\n\n' +
+              (url !== 'deploying' ? '**Preview URL:** ' + url : 'Preview is being deployed. Check the Railway dashboard for status.') +
+              '\n\n_Environment: `pr-' + prNumber + '` will be cleaned up when this PR is merged or closed._';
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+  cleanup-preview:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/railwayapp/cli:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cleanup Railway preview environment
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        shell: sh
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          echo "Cleaning up preview environment for PR #${PR_NUMBER}"
+          railway environment delete "pr-${PR_NUMBER}" || true
+          echo "::notice::Preview environment pr-${PR_NUMBER} cleaned up"
+
+  smoketest:
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check endpoint
+        run: |
+          echo "Waiting for deployment health check..."
+          sleep 15
+          HEALTH_STATUS=$(curl -sfS -o /dev/null -w "%{http_code}" \
+            --retry 10 --retry-delay 5 --retry-connrefused \
+            "https://${{ vars.RAILWAY_STAGING_URL }}/api/health" 2>/dev/null || echo "000")
+          if [ "$HEALTH_STATUS" = "200" ]; then
+            echo "::notice::Health check passed (HTTP ${HEALTH_STATUS})"
+          else
+            echo "::error::Health check failed (HTTP ${HEALTH_STATUS})"
+            exit 1
+          fi
+      - name: Readiness check endpoint
+        run: |
+          READY_STATUS=$(curl -sfS -o /dev/null -w "%{http_code}" \
+            --retry 6 --retry-delay 5 \
+            "https://${{ vars.RAILWAY_STAGING_URL }}/api/ready" 2>/dev/null || echo "000")
+          if [ "$READY_STATUS" = "200" ]; then
+            echo "::notice::Readiness check passed (HTTP ${READY_STATUS})"
+          else
+            echo "::error::Readiness check failed (HTTP ${READY_STATUS})"
+            exit 1
+          fi
