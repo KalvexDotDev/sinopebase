@@ -162,17 +162,21 @@ jobs:
         run: until wget -q --spider http://localhost:9000/health; do sleep 2; done
 
       - name: Generate CI test keys
+        id: keys
         run: |
-          echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "RUSTFS_ENDPOINT=http://localhost:9000" >> "$GITHUB_ENV"
-          echo "RUSTFS_ACCESS_KEY=rustfsadmin" >> "$GITHUB_ENV"
-          echo "RUSTFS_SECRET_KEY=rustfsadmin" >> "$GITHUB_ENV"
-      - name: Run test suite (JUnit, PostgreSQL-backed, no storage/realtime)
+          echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)" >> "$GITHUB_OUTPUT"
+          echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)" >> "$GITHUB_OUTPUT"
+          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_OUTPUT"
+      - name: Run test suite (JUnit, PostgreSQL-backed)
         run: bun run test:ci
         env:
           TEST_POSTGRES_URL: postgresql://sinopebase:sinopebase@localhost:5432/sinopebase
+          SINOPEBASE_SERVICE_ROLE_KEY: ${{ steps.keys.outputs.SINOPEBASE_SERVICE_ROLE_KEY }}
+          SINOPEBASE_ANON_KEY: ${{ steps.keys.outputs.SINOPEBASE_ANON_KEY }}
+          JWT_SECRET: ${{ steps.keys.outputs.JWT_SECRET }}
+          RUSTFS_ENDPOINT: http://localhost:9000
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
 
       - name: Publish test results (JUnit)
         uses: dorny/test-reporter@v1
