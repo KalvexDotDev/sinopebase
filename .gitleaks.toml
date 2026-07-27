@@ -9,7 +9,6 @@ title = "Sinopebase Gitleaks Config"
   paths = [
     '''README\.md$''',
     '''docs/.*\.md$''',
-    '''\.env\.railway$''',
     '''\.env\.example$''',
     '''CHANGELOG\.md$''',
     '''tests/.*\.test\.ts$''',
