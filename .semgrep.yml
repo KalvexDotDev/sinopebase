@@ -1,8 +1,91 @@
 # Sinopebase Semgrep SAST Configuration
 # Focused on TypeScript security, secrets, and OWASP Top Ten.
+
 rules:
-  - id: sinopebase-no-eval
-    pattern: eval(...)
-    message: "eval() is dangerous and should be avoided"
+  # TypeScript/JavaScript security patterns from semgrep registry
+  - id: ts-security-injection
+    patterns:
+      - pattern-either:
+          - pattern: $FN($REQ.query.$PARAM, ...)
+          - pattern: $FN($REQ.body.$PARAM, ...)
+          - pattern: $FN($REQ.params.$PARAM, ...)
+    message: "Untrusted input flowing to sensitive function — potential injection."
+    severity: WARNING
+    languages: [ts, javascript]
+
+  # Secret detection — hardcoded API keys / tokens
+  - id: no-hardcoded-secrets
+    patterns:
+      - pattern-either:
+          - pattern: $X = "$SECRET"
+          - pattern: const $X = "$SECRET"
+    message: "Potential hardcoded secret. Use environment variables instead."
     severity: ERROR
     languages: [ts, javascript]
+    paths:
+      exclude:
+        - tests/
+        - "*.test.ts"
+        - .env.railway
+
+  # No eval / dynamic code execution
+  - id: no-eval-or-dynamic-execution
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+          - pattern: $X.$FUNC("child_process", ...)
+    message: "Dynamic code execution is dangerous and should be avoided."
+    severity: ERROR
+    languages: [ts, javascript]
+
+  # SQL injection via string concatenation
+  - id: ts-sql-injection-concat
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $DB.query("..." + $VAR + "...", ...)
+          - pattern: |
+              $DB.query(`...${$VAR}...`, ...)
+    message: "Potential SQL injection via string concatenation. Use parameterized queries."
+    severity: ERROR
+    languages: [ts, javascript]
+
+  # Path traversal
+  - id: ts-path-traversal
+    patterns:
+      - pattern-either:
+          - pattern: |
+              require('fs').readFileSync($REQ.params.$P, ...)
+          - pattern: |
+              require('fs').readFileSync($REQ.query.$P, ...)
+          - pattern: |
+              require('fs').readFileSync($REQ.body.$P, ...)
+    message: "Potential path traversal. Validate and sanitize file paths from user input."
+    severity: ERROR
+    languages: [ts, javascript]
+
+  # XSS via unsanitized output
+  - id: ts-xss-response
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $RES.send($REQ.body.$P)
+          - pattern: |
+              $RES.send($REQ.query.$P)
+          - pattern: |
+              $RES.send($REQ.params.$P)
+    message: "Potential XSS — unsanitized user input in response."
+    severity: WARNING
+    languages: [ts, javascript]
+
+paths:
+  include:
+    - src/**/*.ts
+    - tests/**/*.ts
+  exclude:
+    - node_modules/
+    - dist/
+    - ui/
+    - .claude/
+    - "*.d.ts"
