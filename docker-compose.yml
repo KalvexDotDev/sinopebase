@@ -1,35 +1,36 @@
-# Sinopebase development infrastructure
+# Sinopebase local development infrastructure
 # Start with: docker compose up -d
 # Stop with:  docker compose down
 #
-# Production uses Railway-hosted PostgreSQL and Railway Buckets.
-# See .env.railway for production variable configuration.
-# For local dev that mirrors production, set POSTGRES_URL and RUSTFS_*
-# env vars to your Railway services and run `bun run dev` directly.
+# These containers emulate production:
+#   postgres  → Railway PostgreSQL (Sinope-PG-Prod)
+#   rustfs    → Railway Buckets (S3-compatible)
+#   pgbouncer → Railway handles pooling natively
+#
+# To connect to Railway services instead, set these env vars:
+#   POSTGRES_URL, S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET
+# Then run `bun run dev` directly without docker compose.
 
 services:
-  # PostgreSQL 18 — for local dev when not using Railway-hosted PG.
-  # Commented out by default since production uses Railway PostgreSQL.
-  # Uncomment and run `docker compose up -d postgres` for offline dev.
-  # postgres:
-  #   image: postgres:18.4-alpine
-  #   container_name: sinopebase-pg
-  #   environment:
-  #     POSTGRES_USER: sinopebase
-  #     POSTGRES_PASSWORD: sinopebase
-  #     POSTGRES_DB: sinopebase
-  #   ports:
-  #     - '5432:5432'
-  #   volumes:
-  #     - pgdata:/var/lib/postgresql
-  #   healthcheck:
-  #     test: ['CMD-SHELL', 'pg_isready -U sinopebase']
-  #     interval: 2s
-  #     timeout: 3s
-  #     retries: 10
+  # PostgreSQL 18 — local dev database, mirrors Railway Sinope-PG-Prod
+  postgres:
+    image: postgres:18.4-alpine
+    container_name: sinopebase-pg
+    environment:
+      POSTGRES_USER: sinopebase
+      POSTGRES_PASSWORD: sinopebase
+      POSTGRES_DB: sinopebase
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sinopebase']
+      interval: 2s
+      timeout: 3s
+      retries: 10
 
-  # RustFS — S3-compatible object storage for local dev.
-  # Production uses Railway Buckets (S3-compatible).
+  # RustFS — S3-compatible object storage, mirrors Railway Buckets
   rustfs:
     image: rustfs/rustfs:latest
     container_name: sinopebase-storage
@@ -47,22 +48,22 @@ services:
       timeout: 3s
       retries: 10
 
-  # PgBouncer — only needed when running local PG
-  # pgbouncer:
-  #   image: edoburu/pgbouncer:latest
-  #   container_name: sinopebase-pgbouncer
-  #   environment:
-  #     DB_HOST: postgres
-  #     DB_USER: sinopebase
-  #     DB_PASSWORD: sinopebase
-  #     DB_NAME: sinopebase
-  #     MAX_CLIENT_CONN: '100'
-  #     DEFAULT_POOL_SIZE: '25'
-  #   ports:
-  #     - '6432:5432'
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
+  # PgBouncer — connection pooling
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: sinopebase-pgbouncer
+    environment:
+      DB_HOST: postgres
+      DB_USER: sinopebase
+      DB_PASSWORD: sinopebase
+      DB_NAME: sinopebase
+      MAX_CLIENT_CONN: '100'
+      DEFAULT_POOL_SIZE: '25'
+    ports:
+      - '6432:5432'
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
