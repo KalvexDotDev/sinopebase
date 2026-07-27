@@ -12,25 +12,18 @@ FILTER_REGEX_INCLUDE: (src/|tests/)
 FILTER_REGEX_EXCLUDE: (node_modules/|dist/|ui/|\.claude/)
 
 # Linters enabled
-# JS/TS via ESLint
+# TYPESCRIPT_ES removed — @typescript-eslint does not support TS7 yet.
+# TS coverage: Biome (noExplicitAny + correctness) + Semgrep (SAST).
 ENABLE_LINTERS:
   - JAVASCRIPT_ES
-  - TYPESCRIPT_ES
   - COPYPASTE_JSCPD
   - REPOSITORY_GITLEAKS
   - REPOSITORY_SEMGREP
 
-# ── JavaScript / TypeScript ESLint ────────────────────────────
+# ── JavaScript ESLint ──────────────────────────────────────────
 JAVASCRIPT_DEFAULT_STYLE: eslint
-TYPESCRIPT_DEFAULT_STYLE: eslint
 JAVASCRIPT_ES_CONFIG_FILE: eslint.config.mjs
-TYPESCRIPT_ES_CONFIG_FILE: eslint.config.mjs
 JAVASCRIPT_ES_ARGUMENTS: --ext .js,.mjs,.cjs
-TYPESCRIPT_ES_ARGUMENTS: --ext .ts,.tsx
-# NOTE: TYPESCRIPT_ES will fail until @typescript-eslint supports TS7.
-# In the interim, TS linting is covered by Biome (noExplicitAny, correctness)
-# and Semgrep (SAST). Remove this note when TS7 support lands:
-#   https://github.com/typescript-eslint/typescript-eslint/issues/10940
 
 # ── Copy-paste detection ──────────────────────────────────────
 COPYPASTE_JSCPD_CONFIG_FILE: .jscpd.json
