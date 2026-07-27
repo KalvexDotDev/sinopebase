@@ -215,7 +215,6 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      description: Production staging environment — requires human approval
     container:
       image: ghcr.io/railwayapp/cli:latest
       credentials:
@@ -235,7 +234,6 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: preview
-      description: PR preview environment
     container:
       image: ghcr.io/railwayapp/cli:latest
       credentials:
