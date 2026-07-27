@@ -22,11 +22,6 @@ rules:
     message: "Potential hardcoded secret. Use environment variables instead."
     severity: ERROR
     languages: [ts, javascript]
-    paths:
-      exclude:
-        - tests/
-        - "*.test.ts"
-        - .env.railway
 
   # No eval / dynamic code execution
   - id: no-eval-or-dynamic-execution
