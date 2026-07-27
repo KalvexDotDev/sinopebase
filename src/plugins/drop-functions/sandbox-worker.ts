@@ -38,6 +38,11 @@ declare var self: {
 self.onmessage = async (event: MessageEvent<WorkerData>) => {
   const { filePath, serializedReq, ctx } = event.data
 
+  // Strip parent env — Bun Worker env:{} may not fully isolate in all versions
+  for (const key of Object.keys(process.env)) {
+    delete process.env[key]
+  }
+
   try {
     // Cache-busting query param so updated functions aren't served stale
     const importUrl = `file:///${filePath.replace(/\\/g, '/')}?t=${Date.now()}`

@@ -89,12 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep SAST scan
-        run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/ || true
-      - name: Upload Semgrep SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: semgrep-results.sarif
-          category: semgrep
+        run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/
 
   gitleaks:
     needs: [lint, typecheck, jscpd]
