@@ -5,7 +5,7 @@
 # General
 DISABLE_ERRORS: false
 PRINT_ALPACA: false
-GITHUB_COMMENT_REPORTER: true
+GITHUB_COMMENT_REPORTER: false
 
 # Files to scan
 FILTER_REGEX_INCLUDE: (src/|tests/)

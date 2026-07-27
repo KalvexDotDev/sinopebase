@@ -140,6 +140,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9000:9000
+        options: >-
+          server /data --console-address :9001
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -149,14 +162,19 @@ jobs:
           cache: true
       - run: bun install --frozen-lockfile
 
+      - name: Wait for PostgreSQL
+        run: until pg_isready -h localhost -p 5432 -U postgres; do sleep 2; done
+      - name: Wait for MinIO
+        run: until curl -sf http://localhost:9000/minio/health/live; do sleep 2; done
+
       - name: Generate CI test keys
         run: |
           echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "RUSTFS_ENDPOINT=http://localhost:9000" >> "$GITHUB_ENV"
-          echo "RUSTFS_ACCESS_KEY=ci-test-access-key" >> "$GITHUB_ENV"
-          echo "RUSTFS_SECRET_KEY=ci-test-secret-key-min-32-chars!!" >> "$GITHUB_ENV"
+          echo "RUSTFS_ACCESS_KEY=minioadmin" >> "$GITHUB_ENV"
+          echo "RUSTFS_SECRET_KEY=minioadmin" >> "$GITHUB_ENV"
       - name: Run test suite (JUnit, PostgreSQL-backed, no storage/realtime)
         run: bun run test:ci
         env:
