@@ -17,11 +17,6 @@ interface TestResponse {
   error?: unknown
   [key: string]: unknown
 }
-/** Sinopebase application with internal auth hook (not on the public type). */
-interface AppWithAuth extends Sinopebase {
-  getAuth?(): unknown
-}
-
 import { DropFunctionsPlugin } from '~/plugins/drop-functions/plugin'
 import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
 
@@ -123,8 +118,8 @@ describe('DropFunctions — Sandbox execution', () => {
 
     // Register the plugin via app.use() so its routes are wired BEFORE
     // server.listen(), avoiding Elysia's onError(NOT_FOUND) route-lock issue.
-    app.use(async (server, _auth) => {
-      await plugin.register(server, (app as AppWithAuth).getAuth?.())
+    app.use(async (server) => {
+      await plugin.register(server, null)
     })
 
     await app.start()
@@ -176,7 +171,7 @@ describe('DropFunctions — Sandbox execution', () => {
     })
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
-    expect(json.data.isUndefined).toBe(true)
+    expect((json.data as { isUndefined?: boolean }).isUndefined).toBe(true)
   })
 
   it('Response objects pass through', async () => {

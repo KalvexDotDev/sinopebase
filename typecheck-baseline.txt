@@ -206,7 +206,4 @@ tests/plugins/drop-functions/execute.test.ts(140,12): error TS18046: 'json.data'
 tests/plugins/drop-functions/execute.test.ts(180,12): error TS18046: 'json.data' is of type 'unknown'.
 tests/plugins/drop-functions/execute.test.ts(189,12): error TS18046: 'json.data' is of type 'unknown'.
 tests/plugins/drop-functions/execute.test.ts(190,12): error TS18046: 'json.data' is of type 'unknown'.
-tests/plugins/drop-functions/sandbox.test.ts(21,11): error TS2430: Interface 'AppWithAuth' incorrectly extends interface 'Sinopebase'.
-tests/plugins/drop-functions/sandbox.test.ts(124,37): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions> | null | undefined'.
-tests/plugins/drop-functions/sandbox.test.ts(177,12): error TS18046: 'json.data' is of type 'unknown'.
 tests/plugins/mastra/auth-gating.test.ts(118,5): error TS2322: Type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { api: { mastra: { chat: { post: { ...; }; }; }; }; }, { ...; }, { ...; } & { ...; }>' is not assignable to type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
