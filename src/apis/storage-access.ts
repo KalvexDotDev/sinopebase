@@ -1,5 +1,5 @@
-import type { Bucket, FileObject } from '../tools/filesystem/store-interface'
 import type { PostgresRequestContext } from '../core/db-postgres'
+import type { Bucket, FileObject } from '../tools/filesystem/store-interface'
 
 export interface StorageBucketInput {
   name: string
@@ -47,27 +47,15 @@ export interface StorageAccessPolicy {
     paths: string[],
     persist: (allowedPaths: string[]) => Promise<string[]>,
   ): Promise<string[]>
-  authorizeSignedUrl(
-    context: PostgresRequestContext,
-    bucket: string,
-    path: string,
-  ): Promise<void>
-  downloadPublic(
-    bucket: string,
-    path: string,
-    read: () => Promise<Buffer>,
-  ): Promise<Buffer>
+  authorizeSignedUrl(context: PostgresRequestContext, bucket: string, path: string): Promise<void>
+  downloadPublic(bucket: string, path: string, read: () => Promise<Buffer>): Promise<Buffer>
 }
 
 export class StorageAccessError extends Error {
   readonly status: number
   readonly code: string
 
-  constructor(
-    status: number,
-    code: string,
-    message: string,
-  ) {
+  constructor(status: number, code: string, message: string) {
     super(message)
     this.name = 'StorageAccessError'
     this.status = status

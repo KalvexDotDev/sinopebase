@@ -12,12 +12,12 @@
  *   - The app's ensureMetadata() creates the auth.uid() function and RLS policies
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '../../src/core/app'
 import { createClient } from '../../src/sdk/client'
-import { createTestNamespace, reserveLoopbackPort, requirePostgres } from '../harness'
+import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../harness'
 
-const postgresUrl = process.env['TEST_POSTGRES_URL'] ?? process.env['POSTGRES_URL']
+const postgresUrl = process.env.TEST_POSTGRES_URL ?? process.env.POSTGRES_URL
 const describePostgres = postgresUrl ? describe : describe.skip
 
 const namespace = createTestNamespace({ suiteId: 'storage-ownership-rls' })
@@ -70,7 +70,7 @@ describePostgres('Storage ownership RLS', () => {
         body: JSON.stringify({ email: emailA, password: 'password-test-123' }),
       })
     }
-    const sessionA = await respA.json() as { access_token: string; user: { id: string } }
+    const sessionA = (await respA.json()) as { access_token: string; user: { id: string } }
     userAToken = sessionA.access_token
 
     // ── Create User B ──
@@ -87,7 +87,7 @@ describePostgres('Storage ownership RLS', () => {
         body: JSON.stringify({ email: emailB, password: 'password-test-123' }),
       })
     }
-    const sessionB = await respB.json() as { access_token: string; user: { id: string } }
+    const sessionB = (await respB.json()) as { access_token: string; user: { id: string } }
     userBToken = sessionB.access_token
 
     // ── Create test buckets via service-role client ──
@@ -119,18 +119,14 @@ describePostgres('Storage ownership RLS', () => {
       expect(uploadErr).toBeNull()
 
       // User B tries to delete → RLS blocks, empty results
-      const { data: deleteB, error: errB } = await clientB.storage
-        .from(publicBucket)
-        .remove([path])
+      const { data: deleteB, error: errB } = await clientB.storage.from(publicBucket).remove([path])
       expect(errB).toBeNull()
       expect(deleteB).toEqual([])
 
       // User A can delete their own object
-      const { data: deleteA, error: errA } = await clientA.storage
-        .from(publicBucket)
-        .remove([path])
+      const { data: deleteA, error: errA } = await clientA.storage.from(publicBucket).remove([path])
       expect(errA).toBeNull()
-      expect(deleteA!.length).toBe(1)
+      expect(deleteA?.length).toBe(1)
     })
 
     it('User B cannot overwrite (upsert) User A object', async () => {
@@ -153,9 +149,7 @@ describePostgres('Storage ownership RLS', () => {
       expect(upsertErr).not.toBeNull()
 
       // User A's original content is preserved
-      const { data: downloadA } = await clientA.storage
-        .from(publicBucket)
-        .download(path)
+      const { data: downloadA } = await clientA.storage.from(publicBucket).download(path)
       const text = await (downloadA as Blob).text()
       expect(text).toBe('user a content')
 
@@ -176,11 +170,11 @@ describePostgres('Storage ownership RLS', () => {
 
       // User B can read (SELECT allows owner OR public bucket)
       const { data: listB } = await clientB.storage.from(publicBucket).list()
-      expect(listB!.find((f) => f.name === path)).toBeTruthy()
+      expect(listB?.find((f) => f.name === path)).toBeTruthy()
 
       // Anon can read (anon SELECT policy allows public bucket objects)
       const { data: listAnon } = await anonClient.storage.from(publicBucket).list()
-      expect(listAnon!.find((f) => f.name === path)).toBeTruthy()
+      expect(listAnon?.find((f) => f.name === path)).toBeTruthy()
 
       // Cleanup
       await clientA.storage.from(publicBucket).remove([path])
@@ -204,13 +198,11 @@ describePostgres('Storage ownership RLS', () => {
 
       // Read own object → succeeds
       const { data: listA } = await clientA.storage.from(privateBucket).list()
-      expect(listA!.find((f) => f.name === path)).toBeTruthy()
+      expect(listA?.find((f) => f.name === path)).toBeTruthy()
 
       // Delete own object → succeeds
-      const { data: deleteA } = await clientA.storage
-        .from(privateBucket)
-        .remove([path])
-      expect(deleteA!.length).toBe(1)
+      const { data: deleteA } = await clientA.storage.from(privateBucket).remove([path])
+      expect(deleteA?.length).toBe(1)
     })
 
     it('User B cannot read, update, or delete User A objects', async () => {
@@ -226,18 +218,14 @@ describePostgres('Storage ownership RLS', () => {
 
       // User B lists → cannot see User A's object (SELECT policy blocks)
       const { data: listB } = await clientB.storage.from(privateBucket).list()
-      expect(listB!.find((f) => f.name === path)).toBeFalsy()
+      expect(listB?.find((f) => f.name === path)).toBeFalsy()
 
       // User B downloads → fails (SELECT policy blocks)
-      const { error: downloadErr } = await clientB.storage
-        .from(privateBucket)
-        .download(path)
+      const { error: downloadErr } = await clientB.storage.from(privateBucket).download(path)
       expect(downloadErr).not.toBeNull()
 
       // User B deletes → empty results (DELETE policy blocks)
-      const { data: deleteB } = await clientB.storage
-        .from(privateBucket)
-        .remove([path])
+      const { data: deleteB } = await clientB.storage.from(privateBucket).remove([path])
       expect(deleteB).toEqual([])
 
       // User B upserts → fails (UPDATE policy blocks)
@@ -247,9 +235,7 @@ describePostgres('Storage ownership RLS', () => {
       expect(upsertErr).not.toBeNull()
 
       // User A's original content is still intact
-      const { data: downloadA } = await clientA.storage
-        .from(privateBucket)
-        .download(path)
+      const { data: downloadA } = await clientA.storage.from(privateBucket).download(path)
       const text = await (downloadA as Blob).text()
       expect(text).toBe('secret data')
 
@@ -279,16 +265,14 @@ describePostgres('Storage ownership RLS', () => {
 
       // Anon can list objects in public bucket
       const { data: pubList } = await anonClient.storage.from(publicBucket).list()
-      expect(pubList!.find((f) => f.name === pubPath)).toBeTruthy()
+      expect(pubList?.find((f) => f.name === pubPath)).toBeTruthy()
 
       // Anon cannot list objects in private bucket (anon policy restricts to public buckets)
       const { data: privList } = await anonClient.storage.from(privateBucket).list()
-      expect(privList!.find((f) => f.name === privPath)).toBeFalsy()
+      expect(privList?.find((f) => f.name === privPath)).toBeFalsy()
 
       // Anon can download from public bucket
-      const { data: pubDownload } = await anonClient.storage
-        .from(publicBucket)
-        .download(pubPath)
+      const { data: pubDownload } = await anonClient.storage.from(publicBucket).download(pubPath)
       expect(pubDownload).not.toBeNull()
 
       // Anon cannot download from private bucket (object not visible via anon SELECT policy)
@@ -327,10 +311,10 @@ describePostgres('Storage ownership RLS', () => {
         clientA.storage.from(privateBucket).list(),
         clientB.storage.from(privateBucket).list(),
       ])
-      expect(listA.data!.find((f) => f.name === pathA)).toBeTruthy()
-      expect(listA.data!.find((f) => f.name === pathB)).toBeFalsy()
-      expect(listB.data!.find((f) => f.name === pathB)).toBeTruthy()
-      expect(listB.data!.find((f) => f.name === pathA)).toBeFalsy()
+      expect(listA.data?.find((f) => f.name === pathA)).toBeTruthy()
+      expect(listA.data?.find((f) => f.name === pathB)).toBeFalsy()
+      expect(listB.data?.find((f) => f.name === pathB)).toBeTruthy()
+      expect(listB.data?.find((f) => f.name === pathA)).toBeFalsy()
 
       // Cleanup
       await Promise.all([

@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.bitbucket.org/2.0/user response.
  *
  * @example
- * 
+ *
  */
 export class BitbucketProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId, maxSafeJSONInt } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { maxSafeJSONInt, RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 
 export const FieldTypeEditor = 'editor'
 
@@ -61,7 +61,7 @@ export class EditorField implements Field {
     }
 
     if (this.required) {
-      schema['minLength'] = 1
+      schema.minLength = 1
     }
 
     return schema

@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://gitlab.com/api/v4/user response.
  *
  * @example
- * 
+ *
  */
 export class GitlabProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

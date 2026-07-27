@@ -7,8 +7,8 @@
  * external OAuth2 provider (Google, GitHub, etc.).
  */
 
-import { BaseModel } from './db_model'
 import { DateTime } from '~/tools/types/datetime'
+import { BaseModel } from './db_model'
 
 /**
  * ExternalAuth represents an external OAuth2 provider link.

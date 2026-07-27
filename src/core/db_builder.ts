@@ -14,9 +14,7 @@
  * provide the abstraction for compatibility with the PocketBase API.
  */
 
-import type { IDatabase } from './db-interface'
-import type { Filter } from './db-interface'
-import type { SelectOptions } from './db-interface'
+import type { Filter, IDatabase, SelectOptions } from './db-interface'
 
 /**
  * DbQueryType represents the type of database operation.
@@ -70,40 +68,28 @@ export class QueryRouter {
   /**
    * Routes a SELECT query to the concurrent pool.
    */
-  async select(
-    table: string,
-    options: SelectOptions,
-  ): Promise<Record<string, unknown>[]> {
+  async select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]> {
     return this.concurrentDB.select(table, options)
   }
 
   /**
    * Routes a COUNT query to the concurrent pool.
    */
-  async count(
-    table: string,
-    filters?: Filter[],
-  ): Promise<number> {
+  async count(table: string, filters?: Filter[]): Promise<number> {
     return this.concurrentDB.count(table, filters)
   }
 
   /**
    * Routes an INSERT query to the write pool.
    */
-  async insert(
-    table: string,
-    record: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.nonconcurrentDB.insert(table, record)
   }
 
   /**
    * Routes an UPSERT query to the write pool.
    */
-  async upsert(
-    table: string,
-    record: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.nonconcurrentDB.upsert(table, record)
   }
 
@@ -121,10 +107,7 @@ export class QueryRouter {
   /**
    * Routes a DELETE query to the write pool.
    */
-  async delete(
-    table: string,
-    filters: Filter[],
-  ): Promise<Record<string, unknown>[]> {
+  async delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]> {
     return this.nonconcurrentDB.delete(table, filters)
   }
 

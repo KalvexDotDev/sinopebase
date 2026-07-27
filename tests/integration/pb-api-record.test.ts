@@ -4,15 +4,37 @@
  * Tests for record_crud.ts, record_auth.ts, and record_helpers.ts handlers.
  */
 
-import { describe, it, expect } from 'bun:test'
-import { MemoryDatabase } from '../../src/core/db-memory'
-import { Collection } from '../../src/core/collection_model'
-import { createRecordCrudPlugin } from '../../src/apis/record_crud'
+import { describe, expect, it } from 'bun:test'
 import { createRecordAuthPlugin } from '../../src/apis/record_auth'
+import { createRecordCrudPlugin } from '../../src/apis/record_crud'
 import type { RequestAuthInfo } from '../../src/apis/record_helpers'
+import { Collection } from '../../src/core/collection_model'
+import { MemoryDatabase } from '../../src/core/db-memory'
 
 // ---------------------------------------------------------------------------
 // Helpers
+// ---------------------------------------------------------------------------
+
+/** Loose test-response accessor — narrower than `any`. */
+interface TestResponse {
+  items?: unknown
+  page?: unknown
+  perPage?: unknown
+  totalItems?: unknown
+  totalPages?: unknown
+  name?: unknown
+  type?: unknown
+  id?: unknown
+  email?: unknown
+  verified?: unknown
+  role?: unknown
+  code?: unknown
+  message?: unknown
+  data?: unknown
+  token?: unknown
+  record?: unknown
+  [key: string]: unknown
+}
 // ---------------------------------------------------------------------------
 
 function makeAuthResolver(auth: Partial<RequestAuthInfo> = {}) {
@@ -44,7 +66,11 @@ async function request(
   let data: unknown = null
   const text = await response.text()
   if (text) {
-    try { data = JSON.parse(text) } catch { data = text }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
   }
   return { status, data }
 }
@@ -89,24 +115,29 @@ describe('Record CRUD API', () => {
   db.insert('_collections', [articlesCollection.dbExport()])
 
   const auth = makeAuthResolver({ isSuperuser: true })
-  const recordPlugin = createRecordCrudPlugin(db as any, auth)
+  const recordPlugin = createRecordCrudPlugin(db as TestResponse, auth)
 
   it('GET /api/collections/:collection/records — lists records (empty)', async () => {
     const { status, data } = await request(recordPlugin, 'GET', '/api/collections/articles/records')
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.items).toBeInstanceOf(Array)
     expect(result.totalItems).toBe(0)
   })
 
   it('POST /api/collections/:collection/records — creates a record', async () => {
-    const { status, data } = await request(recordPlugin, 'POST', '/api/collections/articles/records', {
-      title: 'Hello World',
-      body: 'My first article',
-    })
+    const { status, data } = await request(
+      recordPlugin,
+      'POST',
+      '/api/collections/articles/records',
+      {
+        title: 'Hello World',
+        body: 'My first article',
+      },
+    )
 
     expect(status).toBe(201)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.title).toBe('Hello World')
     expect(result.body).toBe('My first article')
   })
@@ -116,15 +147,23 @@ describe('Record CRUD API', () => {
       title: 'View Test',
       body: 'Can you see me?',
     })
-    const recordId = (createResp.data as any).id
+    const recordId = (createResp.data as TestResponse).id
 
-    const { status, data } = await request(recordPlugin, 'GET', `/api/collections/articles/records/${recordId}`)
+    const { status, data } = await request(
+      recordPlugin,
+      'GET',
+      `/api/collections/articles/records/${recordId}`,
+    )
     expect(status).toBe(200)
-    expect((data as any).title).toBe('View Test')
+    expect((data as TestResponse).title).toBe('View Test')
   })
 
   it('GET /api/collections/:collection/records/:id — returns 404 for missing', async () => {
-    const { status } = await request(recordPlugin, 'GET', '/api/collections/articles/records/nonexistent')
+    const { status } = await request(
+      recordPlugin,
+      'GET',
+      '/api/collections/articles/records/nonexistent',
+    )
     expect(status).toBe(404)
   })
 
@@ -133,23 +172,32 @@ describe('Record CRUD API', () => {
       title: 'Before',
       body: 'Old content',
     })
-    const recordId = (createResp.data as any).id
+    const recordId = (createResp.data as TestResponse).id
 
-    const { status, data } = await request(recordPlugin, 'PATCH', `/api/collections/articles/records/${recordId}`, {
-      title: 'After',
-    })
+    const { status, data } = await request(
+      recordPlugin,
+      'PATCH',
+      `/api/collections/articles/records/${recordId}`,
+      {
+        title: 'After',
+      },
+    )
     expect(status).toBe(200)
-    expect((data as any).title).toBe('After')
-    expect((data as any).body).toBe('Old content')
+    expect((data as TestResponse).title).toBe('After')
+    expect((data as TestResponse).body).toBe('Old content')
   })
 
   it('DELETE /api/collections/:collection/records/:id — deletes a record', async () => {
     const createResp = await request(recordPlugin, 'POST', '/api/collections/articles/records', {
       title: 'To Delete',
     })
-    const recordId = (createResp.data as any).id
+    const recordId = (createResp.data as TestResponse).id
 
-    const { status } = await request(recordPlugin, 'DELETE', `/api/collections/articles/records/${recordId}`)
+    const { status } = await request(
+      recordPlugin,
+      'DELETE',
+      `/api/collections/articles/records/${recordId}`,
+    )
     expect(status).toBe(204)
   })
 
@@ -173,7 +221,7 @@ describe('Record CRUD with access rules', () => {
     secretCollection.listRule = null
     db2.insert('_collections', [secretCollection.dbExport()])
 
-    const plugin = createRecordCrudPlugin(db2 as any, makeAuthResolver())
+    const plugin = createRecordCrudPlugin(db2 as TestResponse, makeAuthResolver())
     const { status } = await request(plugin, 'GET', '/api/collections/secret/records')
     expect(status).toBe(403)
   })
@@ -188,7 +236,7 @@ describe('Record CRUD with access rules', () => {
     publicCollection.listRule = ''
     db3.insert('_collections', [publicCollection.dbExport()])
 
-    const plugin = createRecordCrudPlugin(db3 as any, makeAuthResolver())
+    const plugin = createRecordCrudPlugin(db3 as TestResponse, makeAuthResolver())
     const { status } = await request(plugin, 'GET', '/api/collections/public_records/records')
     expect(status).toBe(200)
   })
@@ -218,23 +266,39 @@ describe('Record Auth API', () => {
   baseCollection.viewRule = ''
   db.insert('_collections', [baseCollection.dbExport()])
 
-  const authPlugin = createRecordAuthPlugin(db as any, makeAuthResolver(), () => 'test-secret')
+  const authPlugin = createRecordAuthPlugin(
+    db as TestResponse,
+    makeAuthResolver(),
+    () => 'test-secret',
+  )
 
   it('GET /api/collections/:collection/auth-methods — returns auth methods', async () => {
-    const { status, data } = await request(authPlugin as any, 'GET', '/api/collections/users/auth-methods')
+    const { status, data } = await request(
+      authPlugin as TestResponse,
+      'GET',
+      '/api/collections/users/auth-methods',
+    )
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.password).toBeDefined()
     expect(result.password.enabled).toBe(true)
   })
 
   it('returns 404 for non-existent collection', async () => {
-    const { status } = await request(authPlugin as any, 'GET', '/api/collections/nonexistent/auth-methods')
+    const { status } = await request(
+      authPlugin as TestResponse,
+      'GET',
+      '/api/collections/nonexistent/auth-methods',
+    )
     expect(status).toBe(404)
   })
 
   it('returns 400 for non-auth collection', async () => {
-    const { status } = await request(authPlugin as any, 'GET', '/api/collections/pages/auth-methods')
+    const { status } = await request(
+      authPlugin as TestResponse,
+      'GET',
+      '/api/collections/pages/auth-methods',
+    )
     expect(status).toBe(400)
   })
 })

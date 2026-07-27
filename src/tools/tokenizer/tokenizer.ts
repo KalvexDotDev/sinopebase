@@ -13,22 +13,22 @@
 /**
  * Default separator characters (comma).
  */
-const DEFAULT_SEPARATORS: string[] = [","];
+const DEFAULT_SEPARATORS: string[] = [',']
 
 /**
  * Unicode whitespace characters (matching Go's unicode.IsSpace
  * plus U+0085 / U+00A0).
  */
 const WHITESPACE_CHARS = new Set([
-  "\t", // U+0009
-  "\n", // U+000A
-  "\v", // U+000B
-  "\f", // U+000C
-  "\r", // U+000D
-  " ", // U+0020
-  "", // NEL
-  " ", // NBSP
-]);
+  '\t', // U+0009
+  '\n', // U+000A
+  '\v', // U+000B
+  '\f', // U+000C
+  '\r', // U+000D
+  ' ', // U+0020
+  '', // NEL
+  ' ', // NBSP
+])
 
 // ---------------------------------------------------------------------------
 // Tokenizer
@@ -53,16 +53,16 @@ const WHITESPACE_CHARS = new Set([
  *   tk.Scan(); // => "42"
  */
 export class Tokenizer {
-  private readonly input: string;
-  private pos: number;
-  private separators: string[];
-  private keepSeparator = false;
-  private keepEmptyTokens = false;
-  private ignoreParenthesis = false;
+  private readonly input: string
+  private pos: number
+  private separators: string[]
+  private keepSeparator = false
+  private keepEmptyTokens = false
+  private ignoreParenthesis = false
 
   // Cached set of whitespace characters that are NOT separators
   // (used for trimming tokens).
-  private trimCutset: Set<string>;
+  private trimCutset: Set<string>
 
   // -----------------------------------------------------------------------
   // Constructor
@@ -72,10 +72,10 @@ export class Tokenizer {
    * Creates a new Tokenizer for `input` with the default comma separator.
    */
   constructor(input: string) {
-    this.input = input;
-    this.pos = 0;
-    this.separators = [...DEFAULT_SEPARATORS];
-    this.trimCutset = this.buildTrimCutset();
+    this.input = input
+    this.pos = 0
+    this.separators = [...DEFAULT_SEPARATORS]
+    this.trimCutset = this.buildTrimCutset()
   }
 
   // -----------------------------------------------------------------------
@@ -86,8 +86,8 @@ export class Tokenizer {
    * Sets the separator characters. Rebuilds the trim cutset accordingly.
    */
   SetSeparators(...separators: string[]): void {
-    this.separators = separators;
-    this.trimCutset = this.buildTrimCutset();
+    this.separators = separators
+    this.trimCutset = this.buildTrimCutset()
   }
 
   /**
@@ -95,14 +95,14 @@ export class Tokenizer {
    * (default: false).
    */
   SetKeepSeparator(state: boolean): void {
-    this.keepSeparator = state;
+    this.keepSeparator = state
   }
 
   /**
    * When true, empty tokens are included in results (default: false).
    */
   SetKeepEmptyTokens(state: boolean): void {
-    this.keepEmptyTokens = state;
+    this.keepEmptyTokens = state
   }
 
   /**
@@ -110,7 +110,7 @@ export class Tokenizer {
    * grouping delimiters (default: false).
    */
   SetIgnoreParenthesis(state: boolean): void {
-    this.ignoreParenthesis = state;
+    this.ignoreParenthesis = state
   }
 
   // -----------------------------------------------------------------------
@@ -127,28 +127,29 @@ export class Tokenizer {
    */
   Scan(): string | null {
     if (this.pos >= this.input.length) {
-      return null;
+      return null
     }
 
-    const token = this.readToken();
+    const token = this.readToken()
 
-    if (!this.keepEmptyTokens && token === "") {
-      return this.Scan();
+    if (!this.keepEmptyTokens && token === '') {
+      return this.Scan()
     }
 
-    return token;
+    return token
   }
 
   /**
    * Reads the entire input and returns all tokens.
    */
   ScanAll(): string[] {
-    const tokens: string[] = [];
-    let token: string | null;
-    while ((token = this.Scan()) !== null) {
-      tokens.push(token);
+    const tokens: string[] = []
+    let token = this.Scan()
+    while (token !== null) {
+      tokens.push(token)
+      token = this.Scan()
     }
-    return tokens;
+    return tokens
   }
 
   // -----------------------------------------------------------------------
@@ -166,9 +167,9 @@ export class Tokenizer {
    *   // => ["a", "b", "(c, d)"]
    */
   static Tokenize(input: string, separators: string[] = DEFAULT_SEPARATORS): string[] {
-    const tk = new Tokenizer(input);
-    tk.SetSeparators(...separators);
-    return tk.ScanAll();
+    const tk = new Tokenizer(input)
+    tk.SetSeparators(...separators)
+    return tk.ScanAll()
   }
 
   // -----------------------------------------------------------------------
@@ -179,34 +180,30 @@ export class Tokenizer {
    * Reads a single token from the current position.
    */
   private readToken(): string {
-    let result = "";
-    let parenthesis = 0;
-    let quoteCh: string | null = null;
-    let prevCh: string | null = null;
+    let result = ''
+    let parenthesis = 0
+    let quoteCh: string | null = null
+    let prevCh: string | null = null
 
     while (this.pos < this.input.length) {
-      const ch = this.input[this.pos]!;
+      const ch = this.input[this.pos]
+      if (ch === undefined) break
 
       // Escape prevents the next character from being treated as a
       // quote/parenthesis delimiter (the backslash itself is preserved
       // in the output).
-      const isEscaped = prevCh === "\\";
+      const isEscaped = prevCh === '\\'
 
       if (!isEscaped) {
-        if (!this.ignoreParenthesis && ch === "(" && quoteCh === null) {
-          parenthesis++;
-        } else if (
-          !this.ignoreParenthesis &&
-          ch === ")" &&
-          parenthesis > 0 &&
-          quoteCh === null
-        ) {
-          parenthesis--;
+        if (!this.ignoreParenthesis && ch === '(' && quoteCh === null) {
+          parenthesis++
+        } else if (!this.ignoreParenthesis && ch === ')' && parenthesis > 0 && quoteCh === null) {
+          parenthesis--
         } else if (isQuoteRune(ch)) {
           if (quoteCh === ch) {
-            quoteCh = null; // closing quote
+            quoteCh = null // closing quote
           } else if (quoteCh === null) {
-            quoteCh = ch; // opening quote
+            quoteCh = ch // opening quote
           }
         }
       }
@@ -214,35 +211,33 @@ export class Tokenizer {
       // Separator check – always performed regardless of escape status
       // (matches the Go behaviour where separators are NOT escapable).
       if (this.isSeparator(ch) && parenthesis === 0 && quoteCh === null) {
-        this.pos++;
+        this.pos++
         if (this.keepSeparator) {
-          result += ch;
+          result += ch
         }
-        break;
+        break
       }
 
-      prevCh = ch;
-      result += ch;
-      this.pos++;
+      prevCh = ch
+      result += ch
+      this.pos++
     }
 
     if (parenthesis > 0 || quoteCh !== null) {
-      throw new Error(
-        `Unbalanced parenthesis or quoted expression: "${result}"`,
-      );
+      throw new Error(`Unbalanced parenthesis or quoted expression: "${result}"`)
     }
 
     // Trim whitespace that is not a separator from both ends.
-    result = this.trimToken(result);
+    result = this.trimToken(result)
 
-    return result;
+    return result
   }
 
   /**
    * Returns true if `ch` is one of the configured separator characters.
    */
   private isSeparator(ch: string): boolean {
-    return this.separators.includes(ch);
+    return this.separators.includes(ch)
   }
 
   /**
@@ -250,26 +245,30 @@ export class Tokenizer {
    * as separators.  These characters will be trimmed from tokens.
    */
   private buildTrimCutset(): Set<string> {
-    const s = new Set(WHITESPACE_CHARS);
+    const s = new Set(WHITESPACE_CHARS)
     for (const sep of this.separators) {
-      s.delete(sep);
+      s.delete(sep)
     }
-    return s;
+    return s
   }
 
   /**
    * Strips leading and trailing characters that are in `trimCutset`.
    */
   private trimToken(token: string): string {
-    let start = 0;
-    while (start < token.length && this.trimCutset.has(token[start]!)) {
-      start++;
+    let start = 0
+    while (start < token.length) {
+      const ch = token[start]
+      if (ch === undefined || !this.trimCutset.has(ch)) break
+      start++
     }
-    let end = token.length - 1;
-    while (end >= start && this.trimCutset.has(token[end]!)) {
-      end--;
+    let end = token.length - 1
+    while (end >= start) {
+      const ch = token[end]
+      if (ch === undefined || !this.trimCutset.has(ch)) break
+      end--
     }
-    return token.slice(start, end + 1);
+    return token.slice(start, end + 1)
   }
 }
 
@@ -278,5 +277,5 @@ export class Tokenizer {
 // ---------------------------------------------------------------------------
 
 function isQuoteRune(ch: string): boolean {
-  return ch === "'" || ch === '"' || ch === "`";
+  return ch === "'" || ch === '"' || ch === '`'
 }

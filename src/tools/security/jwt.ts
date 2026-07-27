@@ -8,7 +8,7 @@
  * All tokens use HS256 (HMAC with SHA-256) symmetric signing.
  */
 
-import { SignJWT, jwtVerify, decodeJwt } from 'jose';
+import { decodeJwt, jwtVerify, SignJWT } from 'jose'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -18,7 +18,7 @@ import { SignJWT, jwtVerify, decodeJwt } from 'jose';
  * Convert a string key to a Uint8Array for use with jose.
  */
 function keyToBytes(key: string): Uint8Array {
-  return new TextEncoder().encode(key);
+  return new TextEncoder().encode(key)
 }
 
 // ---------------------------------------------------------------------------
@@ -44,20 +44,20 @@ export async function NewJWT(
   signingKey: string,
   durationMs: number,
 ): Promise<string> {
-  const exp = Math.floor(Date.now() / 1000) + Math.floor(durationMs / 1000);
+  const exp = Math.floor(Date.now() / 1000) + Math.floor(durationMs / 1000)
 
   // Build claims: start with `exp`, merge payload on top
   // (matches Go's `claims["exp"] = ...; for k,v := range payload { claims[k] = v }`)
   const claims: Record<string, unknown> = {
     exp,
     ...payload,
-  };
+  }
 
   const jwt = await new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
-    .sign(keyToBytes(signingKey));
+    .sign(keyToBytes(signingKey))
 
-  return jwt;
+  return jwt
 }
 
 /**
@@ -76,13 +76,9 @@ export async function ParseJWT(
   token: string,
   verificationKey: string,
 ): Promise<Record<string, unknown>> {
-  const { payload } = await jwtVerify(
-    token,
-    keyToBytes(verificationKey),
-    { algorithms: ['HS256'] },
-  );
+  const { payload } = await jwtVerify(token, keyToBytes(verificationKey), { algorithms: ['HS256'] })
 
-  return payload as unknown as Record<string, unknown>;
+  return payload as unknown as Record<string, unknown>
 }
 
 /**
@@ -99,28 +95,26 @@ export async function ParseJWT(
  * @returns      The decoded payload claims.
  * @throws       If the token is malformed or claim validation fails.
  */
-export function ParseUnverifiedJWT(
-  token: string,
-): Record<string, unknown> {
-  const payload = decodeJwt(token);
+export function ParseUnverifiedJWT(token: string): Record<string, unknown> {
+  const payload = decodeJwt(token)
 
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000)
 
   // Verify `exp` (expiration)
   if (typeof payload.exp === 'number' && payload.exp < now) {
-    throw new Error('token has expired');
+    throw new Error('token has expired')
   }
 
   // Verify `nbf` (not before)
   if (typeof payload.nbf === 'number' && payload.nbf > now) {
-    throw new Error('token is not valid yet (nbf)');
+    throw new Error('token is not valid yet (nbf)')
   }
 
   // Verify `iat` (issued at) — must not be in the future
   // Uses a 1-second tolerance for clock skew
   if (typeof payload.iat === 'number' && payload.iat > now + 1) {
-    throw new Error('token issued in the future');
+    throw new Error('token issued in the future')
   }
 
-  return payload as unknown as Record<string, unknown>;
+  return payload as unknown as Record<string, unknown>
 }

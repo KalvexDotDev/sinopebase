@@ -13,9 +13,9 @@
  * ```
  */
 
-import { Job } from "./job.ts";
-import { newSchedule, newMoment } from "./schedule.ts";
-import { fireAndForget } from "../routine/routine.ts";
+import { fireAndForget } from '../routine/routine.ts'
+import { Job } from './job.ts'
+import { newMoment, newSchedule } from './schedule.ts'
 
 /**
  * Crontab-like scheduler for repeating tasks.
@@ -25,27 +25,27 @@ import { fireAndForget } from "../routine/routine.ts";
  */
 export class Cron {
   /** IANA timezone string (default "UTC"). */
-  #timezone: string;
+  #timezone: string
 
   /** Interval handle (setInterval return value) when running. */
-  #ticker: ReturnType<typeof setInterval> | null = null;
+  #ticker: ReturnType<typeof setInterval> | null = null
 
   /** Start-up timer handle (setTimeout) for aligning with the next boundary. */
-  #startTimer: ReturnType<typeof setTimeout> | null = null;
+  #startTimer: ReturnType<typeof setTimeout> | null = null
 
   /** Registered jobs. */
-  #jobs: Job[] = [];
+  #jobs: Job[] = []
 
   /** Tick interval in milliseconds (default 60 000). */
-  #intervalMs: number;
+  #intervalMs: number
 
   /**
    * Creates a new Cron with a default tick interval of 1 minute and UTC
    * timezone.
    */
   constructor() {
-    this.#intervalMs = 60_000;
-    this.#timezone = "UTC";
+    this.#intervalMs = 60_000
+    this.#timezone = 'UTC'
   }
 
   // -----------------------------------------------------------------------
@@ -61,10 +61,10 @@ export class Cron {
    * @param ms Interval in milliseconds (usually >= 60 000).
    */
   setInterval(ms: number): void {
-    const wasStarted = this.#ticker !== null;
-    this.#intervalMs = ms;
+    const wasStarted = this.#ticker !== null
+    this.#intervalMs = ms
     if (wasStarted) {
-      this.start();
+      this.start()
     }
   }
 
@@ -72,7 +72,7 @@ export class Cron {
    * Returns the current tick interval in milliseconds.
    */
   getInterval(): number {
-    return this.#intervalMs;
+    return this.#intervalMs
   }
 
   /**
@@ -81,21 +81,21 @@ export class Cron {
    * @param tz IANA timezone string (e.g. "UTC", "America/New_York").
    */
   setTimezone(tz: string): void {
-    this.#timezone = tz;
+    this.#timezone = tz
   }
 
   /**
    * Returns the current IANA timezone string.
    */
   getTimezone(): string {
-    return this.#timezone;
+    return this.#timezone
   }
 
   /**
    * Returns a shallow copy of the currently registered jobs.
    */
   getJobs(): Job[] {
-    return [...this.#jobs];
+    return [...this.#jobs]
   }
 
   // -----------------------------------------------------------------------
@@ -113,15 +113,15 @@ export class Cron {
    * @throws {Error} If `fn` is null/undefined or the expression is invalid.
    */
   add(jobId: string, cronExpr: string, fn: () => void): void {
-    if (typeof fn !== "function") {
-      throw new Error("Failed to add cron job: fn must be a function");
+    if (typeof fn !== 'function') {
+      throw new Error('Failed to add cron job: fn must be a function')
     }
-    const schedule = newSchedule(cronExpr);
+    const schedule = newSchedule(cronExpr)
 
     // Remove existing job with the same id.
-    this.#jobs = this.#jobs.filter((j) => j.id !== jobId);
+    this.#jobs = this.#jobs.filter((j) => j.id !== jobId)
 
-    this.#jobs.push(new Job(jobId, schedule, fn));
+    this.#jobs.push(new Job(jobId, schedule, fn))
   }
 
   /**
@@ -130,24 +130,24 @@ export class Cron {
    * @deprecated Use [[add]] which already throws on failure.
    */
   mustAdd(jobId: string, cronExpr: string, fn: () => void): void {
-    return this.add(jobId, cronExpr, fn);
+    this.add(jobId, cronExpr, fn)
   }
 
   /**
    * Removes a single cron job by its id.
    */
   remove(jobId: string): void {
-    this.#jobs = this.#jobs.filter((j) => j.id !== jobId);
+    this.#jobs = this.#jobs.filter((j) => j.id !== jobId)
   }
 
   /** Removes all registered cron jobs. */
   removeAll(): void {
-    this.#jobs = [];
+    this.#jobs = []
   }
 
   /** Returns the total number of registered cron jobs. */
   get total(): number {
-    return this.#jobs.length;
+    return this.#jobs.length
   }
 
   // -----------------------------------------------------------------------
@@ -163,23 +163,23 @@ export class Cron {
    * Calling `start()` on an already-running cron restarts it.
    */
   start(): void {
-    this.stop();
+    this.stop()
 
-    const now = Date.now();
-    const nextBoundary = Math.ceil(now / this.#intervalMs) * this.#intervalMs;
-    const delay = nextBoundary - now;
+    const now = Date.now()
+    const nextBoundary = Math.ceil(now / this.#intervalMs) * this.#intervalMs
+    const delay = nextBoundary - now
 
     this.#startTimer = setTimeout(() => {
-      this.#startTimer = null;
+      this.#startTimer = null
 
       // Run due jobs immediately on the boundary.
-      this.#runDue();
+      this.#runDue()
 
       // Then set up the periodic ticker.
       this.#ticker = setInterval(() => {
-        this.#runDue();
-      }, this.#intervalMs);
-    }, delay);
+        this.#runDue()
+      }, this.#intervalMs)
+    }, delay)
   }
 
   /**
@@ -189,23 +189,23 @@ export class Cron {
    */
   stop(): void {
     if (this.#startTimer !== null) {
-      clearTimeout(this.#startTimer);
-      this.#startTimer = null;
+      clearTimeout(this.#startTimer)
+      this.#startTimer = null
     }
     if (this.#ticker !== null) {
-      clearInterval(this.#ticker);
-      this.#ticker = null;
+      clearInterval(this.#ticker)
+      this.#ticker = null
     }
   }
 
   /** Returns `true` if the cron ticker is currently running. */
   get hasStarted(): boolean {
-    return this.#ticker !== null || this.#startTimer !== null;
+    return this.#ticker !== null || this.#startTimer !== null
   }
 
   /** Returns `true` if the periodic ticker has fired at least once. */
   get isRunning(): boolean {
-    return this.#ticker !== null;
+    return this.#ticker !== null
   }
 
   // -----------------------------------------------------------------------
@@ -217,11 +217,11 @@ export class Cron {
    * due ones in the background.
    */
   #runDue(): void {
-    const moment = newMoment(new Date(), this.#timezone);
+    const moment = newMoment(new Date(), this.#timezone)
 
     for (const job of this.#jobs) {
       if (job.schedule.isDue(moment)) {
-        fireAndForget(() => job.run());
+        fireAndForget(() => job.run())
       }
     }
   }

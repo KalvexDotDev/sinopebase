@@ -12,11 +12,7 @@ export class ValidationError extends Error {
   readonly code: string
   readonly params?: Record<string, unknown>
 
-  constructor(
-    code: string,
-    message: string,
-    params?: Record<string, unknown>,
-  ) {
+  constructor(code: string, message: string, params?: Record<string, unknown>) {
     super(message)
     this.name = 'ValidationError'
     this.code = code
@@ -37,9 +33,7 @@ export class ValidationError extends Error {
 export class ValidationErrors extends Error {
   readonly errors: Record<string, ValidationError>
 
-  constructor(
-    errors: Record<string, ValidationError>,
-  ) {
+  constructor(errors: Record<string, ValidationError>) {
     super('Validation failed')
     this.name = 'ValidationErrors'
     this.errors = errors
@@ -94,7 +88,7 @@ export function JoinValidationErrors(errA: Error | null, errB: Error | null): Er
  */
 export function cutStr(str: string, max: number): string {
   if (str.length > max) {
-    return str.slice(0, max) + '...'
+    return `${str.slice(0, max)}...`
   }
   return str
 }

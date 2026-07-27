@@ -4,15 +4,13 @@ import { MemoryDatabase } from '../core/db-memory'
 import { MemoryDatabaseAdapter } from '../core/db-memory-adapter'
 import { mountPostgrestRoutes } from './postgrest'
 
-async function head(
-  app: Elysia,
-  path: string,
-  headers: Record<string, string> = {},
-) {
-  return app.handle(new Request(`http://localhost${path}`, {
-    method: 'HEAD',
-    headers,
-  }))
+async function head(app: Elysia, path: string, headers: Record<string, string> = {}) {
+  return app.handle(
+    new Request(`http://localhost${path}`, {
+      method: 'HEAD',
+      headers,
+    }),
+  )
 }
 
 describe('PostgREST HEAD count responses', () => {
@@ -28,11 +26,9 @@ describe('PostgREST HEAD count responses', () => {
     const app = new Elysia()
     mountPostgrestRoutes(app, db)
 
-    const response = await head(
-      app,
-      '/rest/v1/items?status=eq.active&tenant_id=eq.tenant-1',
-      { prefer: 'count=exact' },
-    )
+    const response = await head(app, '/rest/v1/items?status=eq.active&tenant_id=eq.tenant-1', {
+      prefer: 'count=exact',
+    })
 
     expect(response.status).toBe(200)
     expect(response.headers.get('content-range')).toBe('*/2')
@@ -65,9 +61,7 @@ describe('PostgREST HEAD count responses', () => {
     expect(response.headers.get('content-range')).toBe('*/7')
     expect(await response.text()).toBe('')
     expect(capturedTable).toBe('items')
-    expect(capturedFilters).toEqual([
-      { column: 'tenant_id', operator: 'eq', value: 'tenant-1' },
-    ])
+    expect(capturedFilters).toEqual([{ column: 'tenant_id', operator: 'eq', value: 'tenant-1' }])
     expect(selectCalled).toBe(false)
   })
 })

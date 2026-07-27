@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { BaseModel } from '~/core/base_model.ts'
 import { DateTime } from '~/tools/types/datetime.ts'
 

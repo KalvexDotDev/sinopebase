@@ -5,10 +5,10 @@
  * Layer 1 -- imports Layer 0 (~/tools/...).
  */
 
-import { Store } from "~/tools/store/store";
-import { ToChunks } from "~/tools/list/list";
-import type { Client } from "./client";
-import type { Message } from "./message";
+import { ToChunks } from '~/tools/list/list'
+import { Store } from '~/tools/store/store'
+import type { Client } from './client'
+import type { Message } from './message'
 
 /**
  * Broker manages subscription clients.
@@ -20,14 +20,14 @@ import type { Message } from "./message";
  * message broadcasting for the application layer.
  */
 export class Broker {
-  readonly #store = new Store<string, Client>();
+  readonly #store = new Store<string, Client>()
 
   /**
    * Returns a shallow copy of all registered clients indexed by their
    * connection id.
    */
   clients(): Map<string, Client> {
-    return this.#store.getAll();
+    return this.#store.getAll()
   }
 
   /**
@@ -37,14 +37,14 @@ export class Broker {
    * blocking the event loop.
    */
   chunkedClients(chunkSize: number): Client[][] {
-    return ToChunks([...this.#store.values()], chunkSize);
+    return ToChunks([...this.#store.values()], chunkSize)
   }
 
   /**
    * Returns the total number of registered clients.
    */
   totalClients(): number {
-    return this.#store.length;
+    return this.#store.length
   }
 
   /**
@@ -53,11 +53,11 @@ export class Broker {
    * Throws if no client is found for that id.
    */
   clientById(clientId: string): Client {
-    const client = this.#store.get(clientId);
+    const client = this.#store.get(clientId)
     if (!client) {
-      throw new Error(`no client associated with connection id "${clientId}"`);
+      throw new Error(`no client associated with connection id "${clientId}"`)
     }
-    return client;
+    return client
   }
 
   /**
@@ -66,7 +66,7 @@ export class Broker {
    * If a client with the same id already exists it will be replaced.
    */
   register(client: Client): void {
-    this.#store.set(client.id(), client);
+    this.#store.set(client.id(), client)
   }
 
   /**
@@ -76,10 +76,10 @@ export class Broker {
    * exist this method is a no-op.
    */
   unregister(clientId: string): void {
-    const client = this.#store.get(clientId);
-    if (!client) return;
-    client.discard();
-    this.#store.remove(clientId);
+    const client = this.#store.get(clientId)
+    if (!client) return
+    client.discard()
+    this.#store.remove(clientId)
   }
 
   /**
@@ -89,9 +89,9 @@ export class Broker {
    */
   broadcast(topic: string, message: Message): void {
     for (const client of this.#store.values()) {
-      if (client.isDiscarded()) continue;
-      if (topic === "" || client.hasSubscription(topic)) {
-        client.send(message);
+      if (client.isDiscarded()) continue
+      if (topic === '' || client.hasSubscription(topic)) {
+        client.send(message)
       }
     }
   }
@@ -103,9 +103,9 @@ export class Broker {
    */
   broadcastTo(clientIds: string[], message: Message): void {
     for (const id of clientIds) {
-      const client = this.#store.get(id);
-      if (!client || client.isDiscarded()) continue;
-      client.send(message);
+      const client = this.#store.get(id)
+      if (!client || client.isDiscarded()) continue
+      client.send(message)
     }
   }
 }

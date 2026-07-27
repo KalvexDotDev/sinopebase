@@ -12,10 +12,7 @@ export interface AuthClient {
     options?: { data?: Record<string, unknown> }
   }): Promise<AuthResponse>
 
-  signInWithPassword(credentials: {
-    email: string
-    password: string
-  }): Promise<AuthResponse>
+  signInWithPassword(credentials: { email: string; password: string }): Promise<AuthResponse>
 
   signOut(options?: { scope?: 'local' | 'global' | 'others' }): Promise<{ error: AuthError | null }>
 
@@ -23,9 +20,9 @@ export interface AuthClient {
 
   refreshSession(): Promise<AuthResponse>
 
-  onAuthStateChange(
-    callback: (event: AuthChangeEvent, session: Session | null) => void,
-  ): { data: { subscription: { unsubscribe: () => void } } }
+  onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): {
+    data: { subscription: { unsubscribe: () => void } }
+  }
 }
 
 export interface User {

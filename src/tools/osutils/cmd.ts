@@ -27,8 +27,8 @@
  * @returns The absolute path to the executable, or null if not found.
  */
 export async function FindCommand(name: string): Promise<string | null> {
-  const result = Bun.which(name);
-  return result ?? null;
+  const result = Bun.which(name)
+  return result ?? null
 }
 
 /**
@@ -38,6 +38,6 @@ export async function FindCommand(name: string): Promise<string | null> {
  * @returns The absolute path to the executable, or null if not found.
  */
 export function FindCommandSync(name: string): string | null {
-  const result = Bun.which(name);
-  return result ?? null;
+  const result = Bun.which(name)
+  return result ?? null
 }

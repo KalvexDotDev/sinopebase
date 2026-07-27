@@ -80,7 +80,9 @@ function ipv4ToNum(ip: string): number | null {
   if (parts.length !== 4) return null
   const nums = parts.map((p) => Number.parseInt(p, 10))
   if (nums.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return null
-  return ((nums[0]! << 24) | (nums[1]! << 16) | (nums[2]! << 8) | nums[3]!) >>> 0
+  const [a, b, c, d] = nums
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return null
+  return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0
 }
 
 // ---------------------------------------------------------------------------
@@ -93,10 +95,7 @@ class RateClient {
   start: number
   interval: number
 
-  constructor(
-    maxAllowed: number,
-    intervalInSec: number,
-  ) {
+  constructor(maxAllowed: number, intervalInSec: number) {
     this.maxAllowed = maxAllowed
     this.available = maxAllowed
     this.start = Math.floor(Date.now() / 1000)
@@ -242,11 +241,7 @@ export function resetRateLimiters(): void {
  * @param windowSec    Window duration in seconds.
  * @param label        Optional label for the rate limiter (used as the store key).
  */
-export function rateLimit(
-  maxRequests: number,
-  windowSec: number,
-  label?: string,
-) {
+export function rateLimit(maxRequests: number, windowSec: number, label?: string) {
   const key = label ?? `__rl_${maxRequests}_${windowSec}__`
 
   // Get or create the limiter in the global store
@@ -255,10 +250,7 @@ export function rateLimit(
 
   ensureCleanup()
 
-  return async (ctx: {
-    request: Request
-    set: { status?: number }
-  }): Promise<void> => {
+  return async (ctx: { request: Request; set: { status?: number } }): Promise<void> => {
     // Determine client IP from headers or remote address
     const ip =
       ctx.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
@@ -266,10 +258,9 @@ export function rateLimit(
       '127.0.0.1'
 
     if (!limiter.isAllowed(ip)) {
-      throw new TooManyRequestsError(
-        'You have made too many requests. Please try again later.',
-        { retryAfterSec: windowSec },
-      )
+      throw new TooManyRequestsError('You have made too many requests. Please try again later.', {
+        retryAfterSec: windowSec,
+      })
     }
   }
 }
@@ -281,10 +272,7 @@ export function rateLimit(
  * @param collectionParam  Route parameter name (default `"collection"`).
  * @param baseTags         Additional tags to include in the limiter key.
  */
-export function collectionPathRateLimit(
-  collectionParam = 'collection',
-  ...baseTags: string[]
-) {
+export function collectionPathRateLimit(collectionParam = 'collection', ...baseTags: string[]) {
   return async (ctx: {
     request: Request
     params: Record<string, string>

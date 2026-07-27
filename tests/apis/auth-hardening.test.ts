@@ -12,17 +12,24 @@
  * - Malformed/expired/wrong-issuer/audience tokens rejected
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import {
-  generateAccessToken,
-  verifyAccessToken,
-  generateRefreshToken,
-  verifyRefreshToken,
   ACCESS_TOKEN_TTL,
+  generateAccessToken,
+  generateRefreshToken,
   REFRESH_TOKEN_TTL,
+  verifyAccessToken,
+  verifyRefreshToken,
 } from '~/apis/auth-jwt'
-import { generateSessionId, generateTokenId, generateFamilyId, getTokenKid, isTokenExpired, getTokenSessionId } from '~/apis/auth-utils'
 import { authStore } from '~/apis/auth-store'
+import {
+  generateFamilyId,
+  generateSessionId,
+  generateTokenId,
+  getTokenKid,
+  getTokenSessionId,
+  isTokenExpired,
+} from '~/apis/auth-utils'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,7 +77,9 @@ describe('JWT — access token claims', () => {
   it('contains all required claims', async () => {
     const { accessToken, sessionId } = await createTokens()
     const parts = accessToken.split('.')
-    const payload = JSON.parse(atob(parts[1]!))
+    const segment = parts[1]
+    if (!segment) throw new Error('JWT missing payload segment')
+    const payload = JSON.parse(atob(segment))
 
     expect(payload).toHaveProperty('iss', 'sinopebase')
     expect(payload).toHaveProperty('aud', 'authenticated')
@@ -89,7 +98,9 @@ describe('JWT — access token claims', () => {
   it('expires after ACCESS_TOKEN_TTL (1 hour)', async () => {
     const { accessToken } = await createTokens()
     const parts = accessToken.split('.')
-    const payload = JSON.parse(atob(parts[1]!))
+    const segment = parts[1]
+    if (!segment) throw new Error('JWT missing payload segment')
+    const payload = JSON.parse(atob(segment))
     const lifetime = payload.exp - payload.iat
     expect(lifetime).toBe(ACCESS_TOKEN_TTL)
   })
@@ -110,7 +121,9 @@ describe('JWT — refresh token claims', () => {
     const refreshToken = await generateRefreshToken(mockUser.id, sessionId, tokenId, familyId)
 
     const parts = refreshToken.split('.')
-    const payload = JSON.parse(atob(parts[1]!))
+    const segment = parts[1]
+    if (!segment) throw new Error('JWT missing payload segment')
+    const payload = JSON.parse(atob(segment))
 
     expect(payload).toHaveProperty('sub', mockUser.id)
     expect(payload).toHaveProperty('sid', sessionId)
@@ -131,7 +144,9 @@ describe('JWT — refresh token claims', () => {
     const refreshToken = await generateRefreshToken(mockUser.id, sessionId, tokenId, familyId)
 
     const parts = refreshToken.split('.')
-    const payload = JSON.parse(atob(parts[1]!))
+    const segment = parts[1]
+    if (!segment) throw new Error('JWT missing payload segment')
+    const payload = JSON.parse(atob(segment))
     const lifetime = payload.exp - payload.iat
     expect(lifetime).toBe(REFRESH_TOKEN_TTL)
   })
@@ -317,7 +332,7 @@ describe('Token verification — rejection cases', () => {
   it('rejects token with wrong issuer', async () => {
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const badToken = await new SignJWT({ sub: 'x', role: 'authenticated' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -333,7 +348,7 @@ describe('Token verification — rejection cases', () => {
   it('rejects token with wrong audience', async () => {
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const badToken = await new SignJWT({ sub: 'x', role: 'authenticated' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -349,7 +364,7 @@ describe('Token verification — rejection cases', () => {
   it('rejects expired token', async () => {
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const expiredToken = await new SignJWT({ sub: 'x', role: 'authenticated' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -386,7 +401,7 @@ describe('Auth utilities', () => {
   it('isTokenExpired returns true for expired token', async () => {
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const expiredToken = await new SignJWT({ sub: 'x' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -401,7 +416,7 @@ describe('Auth utilities', () => {
     // Just-expired token — should pass with leeway
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const justExpiredToken = await new SignJWT({ sub: 'x' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -427,22 +442,16 @@ describe('Auth utilities', () => {
 
   it('generateSessionId returns valid UUID', () => {
     const id = generateSessionId()
-    expect(id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    )
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   })
 
   it('generateTokenId returns valid UUID', () => {
     const id = generateTokenId()
-    expect(id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    )
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   })
 
   it('generateFamilyId returns valid UUID', () => {
     const id = generateFamilyId()
-    expect(id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    )
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   })
 })

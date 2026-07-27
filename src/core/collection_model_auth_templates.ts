@@ -6,7 +6,7 @@
  * Layer 2 — imports from ~/core/collection_model_auth_options.
  */
 
-import { EmailTemplate } from '~/core/collection_model_auth_options.ts'
+import type { EmailTemplate } from '~/core/collection_model_auth_options.ts'
 
 // ---------------------------------------------------------------------------
 // Placeholder constants
@@ -28,13 +28,20 @@ export const EmailPlaceholderAlertInfo = '{ALERT_INFO}'
  * Asks the user to verify their email address by clicking a link.
  */
 export const defaultVerificationTemplate: EmailTemplate = {
-  subject: 'Verify your ' + EmailPlaceholderAppName + ' email',
-  body: `<html>
+  subject: `Verify your ${EmailPlaceholderAppName} email`,
+  body:
+    `<html>
 <body>
   <p>Hello,</p>
-  <p>Thank you for registering with ` + EmailPlaceholderAppName + `.</p>
+  <p>Thank you for registering with ` +
+    EmailPlaceholderAppName +
+    `.</p>
   <p>
-    <a href="` + EmailPlaceholderAppUrl + `/_/#/auth/confirm-verification/` + EmailPlaceholderToken + `"
+    <a href="` +
+    EmailPlaceholderAppUrl +
+    `/_/#/auth/confirm-verification/` +
+    EmailPlaceholderToken +
+    `"
        style="display:inline-block;padding:12px 24px;background-color:#4CAF50;color:#ffffff;text-decoration:none;border-radius:4px;">
       Verify email
     </a>
@@ -42,7 +49,9 @@ export const defaultVerificationTemplate: EmailTemplate = {
   <p>If you didn't register, please ignore this email.</p>
   <p>
     Thanks,<br>
-    ` + EmailPlaceholderAppName + ` team
+    ` +
+    EmailPlaceholderAppName +
+    ` team
   </p>
 </body>
 </html>`,
@@ -53,13 +62,20 @@ export const defaultVerificationTemplate: EmailTemplate = {
  * Provides a link to reset the user's password.
  */
 export const defaultResetPasswordTemplate: EmailTemplate = {
-  subject: 'Reset your ' + EmailPlaceholderAppName + ' password',
-  body: `<html>
+  subject: `Reset your ${EmailPlaceholderAppName} password`,
+  body:
+    `<html>
 <body>
   <p>Hello,</p>
-  <p>Click the button below to reset your ` + EmailPlaceholderAppName + ` password.</p>
+  <p>Click the button below to reset your ` +
+    EmailPlaceholderAppName +
+    ` password.</p>
   <p>
-    <a href="` + EmailPlaceholderAppUrl + `/_/#/auth/confirm-password-reset/` + EmailPlaceholderToken + `"
+    <a href="` +
+    EmailPlaceholderAppUrl +
+    `/_/#/auth/confirm-password-reset/` +
+    EmailPlaceholderToken +
+    `"
        style="display:inline-block;padding:12px 24px;background-color:#2196F3;color:#ffffff;text-decoration:none;border-radius:4px;">
       Reset password
     </a>
@@ -67,7 +83,9 @@ export const defaultResetPasswordTemplate: EmailTemplate = {
   <p>If you didn't request a password reset, please ignore this email.</p>
   <p>
     Thanks,<br>
-    ` + EmailPlaceholderAppName + ` team
+    ` +
+    EmailPlaceholderAppName +
+    ` team
   </p>
 </body>
 </html>`,
@@ -78,13 +96,20 @@ export const defaultResetPasswordTemplate: EmailTemplate = {
  * Confirms the user's new email address.
  */
 export const defaultConfirmEmailChangeTemplate: EmailTemplate = {
-  subject: 'Confirm your ' + EmailPlaceholderAppName + ' new email address',
-  body: `<html>
+  subject: `Confirm your ${EmailPlaceholderAppName} new email address`,
+  body:
+    `<html>
 <body>
   <p>Hello,</p>
-  <p>Click the button below to confirm your new email address for ` + EmailPlaceholderAppName + `.</p>
+  <p>Click the button below to confirm your new email address for ` +
+    EmailPlaceholderAppName +
+    `.</p>
   <p>
-    <a href="` + EmailPlaceholderAppUrl + `/_/#/auth/confirm-email-change/` + EmailPlaceholderToken + `"
+    <a href="` +
+    EmailPlaceholderAppUrl +
+    `/_/#/auth/confirm-email-change/` +
+    EmailPlaceholderToken +
+    `"
        style="display:inline-block;padding:12px 24px;background-color:#FF9800;color:#ffffff;text-decoration:none;border-radius:4px;">
       Confirm email change
     </a>
@@ -92,7 +117,9 @@ export const defaultConfirmEmailChangeTemplate: EmailTemplate = {
   <p>If you didn't request an email change, please ignore this email.</p>
   <p>
     Thanks,<br>
-    ` + EmailPlaceholderAppName + ` team
+    ` +
+    EmailPlaceholderAppName +
+    ` team
   </p>
 </body>
 </html>`,
@@ -103,17 +130,24 @@ export const defaultConfirmEmailChangeTemplate: EmailTemplate = {
  * Delivers a one-time password code.
  */
 export const defaultOtpTemplate: EmailTemplate = {
-  subject: 'OTP for ' + EmailPlaceholderAppName,
-  body: `<html>
+  subject: `OTP for ${EmailPlaceholderAppName}`,
+  body:
+    `<html>
 <body>
-  <p>Your one-time password for ` + EmailPlaceholderAppName + ` is:</p>
+  <p>Your one-time password for ` +
+    EmailPlaceholderAppName +
+    ` is:</p>
   <p style="font-size:24px;font-weight:bold;text-align:center;letter-spacing:4px;">
-    <strong>` + EmailPlaceholderOtp + `</strong>
+    <strong>` +
+    EmailPlaceholderOtp +
+    `</strong>
   </p>
   <p>If you didn't request this OTP, please ignore this email.</p>
   <p>
     Thanks,<br>
-    ` + EmailPlaceholderAppName + ` team
+    ` +
+    EmailPlaceholderAppName +
+    ` team
   </p>
 </body>
 </html>`,
@@ -125,16 +159,23 @@ export const defaultOtpTemplate: EmailTemplate = {
  */
 export const defaultAuthAlertTemplate: EmailTemplate = {
   subject: 'Login from a new location',
-  body: `<html>
+  body:
+    `<html>
 <body>
   <p>Hello,</p>
-  <p>We detected a login to your ` + EmailPlaceholderAppName + ` account from a new device or location:</p>
-  <p><em>` + EmailPlaceholderAlertInfo + `</em></p>
+  <p>We detected a login to your ` +
+    EmailPlaceholderAppName +
+    ` account from a new device or location:</p>
+  <p><em>` +
+    EmailPlaceholderAlertInfo +
+    `</em></p>
   <p><strong>If this wasn't you, please change your password immediately.</strong></p>
   <p>If this was you, you can disregard this email.</p>
   <p>
     Thanks,<br>
-    ` + EmailPlaceholderAppName + ` team
+    ` +
+    EmailPlaceholderAppName +
+    ` team
   </p>
 </body>
 </html>`,

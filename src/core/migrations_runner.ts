@@ -26,10 +26,7 @@ export class MigrationRunner {
   private db: IDatabase
   private tableName: string
 
-  constructor(
-    db: IDatabase,
-    tableName = '_migrations',
-  ) {
+  constructor(db: IDatabase, tableName = '_migrations') {
     this.db = db
     this.tableName = tableName
   }
@@ -67,7 +64,7 @@ export class MigrationRunner {
 
     const rows = await this.db.select(this.tableName, {})
     for (const row of rows) {
-      const name = row['name'] as string
+      const name = row.name as string
       if (name) {
         this.applied.add(name)
       }

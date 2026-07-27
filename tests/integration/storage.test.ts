@@ -5,11 +5,18 @@
  * These drive implementation of MinIO-backed /storage/v1 endpoints.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { uniqueId } from './setup'
-import { createClient, type SinopebaseClient } from '../../src/sdk/client'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '../../src/core/app'
-import { reserveLoopbackPort, requirePostgres, requireRustFS, requireAnonKey, requireServiceRoleKey, createTestNamespace } from '../harness'
+import { createClient, type SinopebaseClient } from '../../src/sdk/client'
+import {
+  createTestNamespace,
+  requireAnonKey,
+  requirePostgres,
+  requireRustFS,
+  requireServiceRoleKey,
+  reserveLoopbackPort,
+} from '../harness'
+import { uniqueId } from './setup'
 
 let client: SinopebaseClient
 let server: Sinopebase
@@ -29,10 +36,7 @@ beforeAll(async () => {
   })
   await portReservation.release()
   await server.start()
-  client = createClient(
-    portReservation.origin,
-    requireAnonKey(),
-  )
+  client = createClient(portReservation.origin, requireAnonKey())
 
   // Provision the test bucket via the service-role client so the bucket
   // exists in both the storage metadata schema (storage.buckets) and the
@@ -55,29 +59,24 @@ describe('Storage', () => {
     const file = new Blob([testContent], { type: 'text/plain' })
 
     // Upload
-    const { data: uploadData, error: uploadError } = await client
-      .storage
+    const { data: uploadData, error: uploadError } = await client.storage
       .from(testBucket)
       .upload(testPath, file, { upsert: true })
 
     expect(uploadError).toBeNull()
     expect(uploadData).not.toBeNull()
-    expect(uploadData!.path).toBe(testPath)
+    expect(uploadData?.path).toBe(testPath)
 
     // List
-    const { data: listData, error: listError } = await client
-      .storage
-      .from(testBucket)
-      .list()
+    const { data: listData, error: listError } = await client.storage.from(testBucket).list()
 
     expect(listError).toBeNull()
     expect(listData).not.toBeNull()
-    const found = listData!.find((f) => f.name === testPath)
+    const found = listData?.find((f) => f.name === testPath)
     expect(found).toBeTruthy()
 
     // Download
-    const { data: downloadData, error: downloadError } = await client
-      .storage
+    const { data: downloadData, error: downloadError } = await client.storage
       .from(testBucket)
       .download(testPath)
 
@@ -87,30 +86,23 @@ describe('Storage', () => {
     expect(downloadedText).toBe(testContent)
 
     // Remove
-    const { data: removeData, error: removeError } = await client
-      .storage
+    const { data: removeData, error: removeError } = await client.storage
       .from(testBucket)
       .remove([testPath])
 
     expect(removeError).toBeNull()
     expect(removeData).not.toBeNull()
-    expect(removeData!.some((r) => r.path === testPath)).toBe(true)
+    expect(removeData?.some((r) => r.path === testPath)).toBe(true)
 
     // Verify gone
-    const { data: afterRemove } = await client
-      .storage
-      .from(testBucket)
-      .list()
+    const { data: afterRemove } = await client.storage.from(testBucket).list()
 
-    const stillThere = afterRemove!.find((f) => f.name === testPath)
+    const stillThere = afterRemove?.find((f) => f.name === testPath)
     expect(stillThere).toBeFalsy()
   })
 
   it('getPublicUrl() — returns accessible URL', async () => {
-    const { data } = client
-      .storage
-      .from(testBucket)
-      .getPublicUrl('test-file.txt')
+    const { data } = client.storage.from(testBucket).getPublicUrl('test-file.txt')
 
     expect(data.publicUrl).toContain(testBucket)
     expect(data.publicUrl).toContain('test-file.txt')

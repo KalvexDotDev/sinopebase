@@ -10,16 +10,31 @@ import type { PostgrestError } from './client'
 export interface StorageClient {
   from(bucket: string): StorageBucket
   listBuckets(): Promise<{ data: Bucket[] | null; error: PostgrestError | null }>
-  createBucket(name: string, options?: { public?: boolean }): Promise<{ data: string; error: PostgrestError | null }>
+  createBucket(
+    name: string,
+    options?: { public?: boolean },
+  ): Promise<{ data: string; error: PostgrestError | null }>
 }
 
 export interface StorageBucket {
-  upload(path: string, file: File | Blob | Buffer, options?: UploadOptions): Promise<{ data: { path: string } | null; error: PostgrestError | null }>
+  upload(
+    path: string,
+    file: File | Blob | Buffer,
+    options?: UploadOptions,
+  ): Promise<{ data: { path: string } | null; error: PostgrestError | null }>
   download(path: string): Promise<{ data: Blob | null; error: PostgrestError | null }>
-  remove(paths: string | string[]): Promise<{ data: { path: string }[] | null; error: PostgrestError | null }>
-  list(path?: string, options?: ListOptions): Promise<{ data: FileObject[] | null; error: PostgrestError | null }>
+  remove(
+    paths: string | string[],
+  ): Promise<{ data: { path: string }[] | null; error: PostgrestError | null }>
+  list(
+    path?: string,
+    options?: ListOptions,
+  ): Promise<{ data: FileObject[] | null; error: PostgrestError | null }>
   getPublicUrl(path: string): { data: { publicUrl: string } }
-  createSignedUrl(path: string, expiresIn: number): Promise<{ data: { signedUrl: string } | null; error: PostgrestError | null }>
+  createSignedUrl(
+    path: string,
+    expiresIn: number,
+  ): Promise<{ data: { signedUrl: string } | null; error: PostgrestError | null }>
 }
 
 export interface Bucket {

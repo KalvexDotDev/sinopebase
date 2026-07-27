@@ -5,8 +5,8 @@
  * Layer 1 -- depends on BaseProvider.
  */
 
-import { BaseProvider } from '~/tools/auth/base_provider.ts'
 import type { AuthUser } from '~/tools/auth/auth.ts'
+import { BaseProvider } from '~/tools/auth/base_provider.ts'
 
 /**
  * GoogleProvider implements OAuth2 authentication via Google's APIs.
@@ -41,11 +41,11 @@ export class GoogleProvider extends BaseProvider {
   override MapUser(rawUser: unknown): AuthUser {
     const data = rawUser as Record<string, unknown>
     return {
-      Id: (data['sub'] as string) ?? '',
-      Name: (data['name'] as string) ?? '',
-      Username: (data['email'] as string) ?? '',
-      Email: (data['email'] as string) ?? '',
-      AvatarUrl: (data['picture'] as string) ?? '',
+      Id: (data.sub as string) ?? '',
+      Name: (data.name as string) ?? '',
+      Username: (data.email as string) ?? '',
+      Email: (data.email as string) ?? '',
+      AvatarUrl: (data.picture as string) ?? '',
       RawUser: rawUser,
     }
   }

@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://discord.com/api/users/@me response.
  *
  * @example
- * 
+ *
  */
 export class DiscordProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

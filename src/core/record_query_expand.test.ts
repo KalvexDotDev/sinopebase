@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { normalizeExpands } from '~/core/record_query_expand.ts'
 
 describe('normalizeExpands', () => {

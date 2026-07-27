@@ -13,12 +13,17 @@
  * - Unjoined channel broadcast rejection
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { pollUntil } from './setup'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { Sinopebase } from '../../src/core/app'
 import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import type { RealtimeChannel } from '../../src/sdk/realtime'
-import { Sinopebase } from '../../src/core/app'
-import { reserveLoopbackPort, requirePostgres, requireAnonKey, requireServiceRoleKey } from '../harness'
+import {
+  requireAnonKey,
+  requirePostgres,
+  requireServiceRoleKey,
+  reserveLoopbackPort,
+} from '../harness'
+import { pollUntil } from './setup'
 
 let client: SinopebaseClient
 let server: Sinopebase
@@ -56,7 +61,7 @@ async function rawRealtimeSocket(
 ): Promise<{ ws: WebSocket; messages: unknown[]; close: () => void }> {
   const messages: unknown[] = []
   const ws = new WebSocket(
-    baseUrl.replace(/^http/, 'ws') + `/realtime/v1/websocket?apikey=${apiKey}&vsn=2.0.0`,
+    `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${apiKey}&vsn=2.0.0`,
   )
   ws.onmessage = (event) => {
     try {
@@ -72,7 +77,9 @@ async function rawRealtimeSocket(
   return {
     ws,
     messages,
-    close: () => { ws.close() },
+    close: () => {
+      ws.close()
+    },
   }
 }
 
@@ -140,7 +147,7 @@ describe('Realtime', () => {
       // SDK client unwraps the Phoenix envelope: the callback receives the
       // broadcast envelope { type, event, payload: <user-data> } directly.
       const received = messages[0] as Record<string, unknown>
-      expect(received['payload']).toEqual(testPayload)
+      expect(received.payload).toEqual(testPayload)
 
       channel.unsubscribe()
     })
@@ -154,26 +161,31 @@ describe('Realtime', () => {
 
       try {
         // Subscribe to all changes on the 'todos' table
-        ws.send(JSON.stringify(['1', '1', topic, 'phx_join', {
-          config: {
-            broadcast: { ack: false, self: false },
-            presence: { enabled: false },
-            postgres_changes: [
-              { event: 'INSERT', schema: 'public', table: 'todos', filter: null },
-              { event: 'UPDATE', schema: 'public', table: 'todos', filter: null },
-              { event: 'DELETE', schema: 'public', table: 'todos', filter: null },
-            ],
-          },
-        }]))
+        ws.send(
+          JSON.stringify([
+            '1',
+            '1',
+            topic,
+            'phx_join',
+            {
+              config: {
+                broadcast: { ack: false, self: false },
+                presence: { enabled: false },
+                postgres_changes: [
+                  { event: 'INSERT', schema: 'public', table: 'todos', filter: null },
+                  { event: 'UPDATE', schema: 'public', table: 'todos', filter: null },
+                  { event: 'DELETE', schema: 'public', table: 'todos', filter: null },
+                ],
+              },
+            },
+          ]),
+        )
 
         // Wait for phx_reply confirming the subscription
-        const reply = await waitForMessage<PhoenixV2Message>(
-          messages,
-          (m) => {
-            const msg = m as PhoenixV2Message
-            return Array.isArray(msg) && msg[2] === topic && msg[3] === 'phx_reply'
-          },
-        )
+        const reply = await waitForMessage<PhoenixV2Message>(messages, (m) => {
+          const msg = m as PhoenixV2Message
+          return Array.isArray(msg) && msg[2] === topic && msg[3] === 'phx_reply'
+        })
         expect(reply[4]).toMatchObject({
           status: 'ok',
           response: {
@@ -197,13 +209,10 @@ describe('Realtime', () => {
         })
         expect(insertResp.status).toBe(201)
 
-        const insertMsg = await waitForMessage<PhoenixV2Message>(
-          messages,
-          (m) => {
-            const msg = m as PhoenixV2Message
-            return Array.isArray(msg) && msg[2] === topic && msg[3] === 'postgres_changes'
-          },
-        )
+        const insertMsg = await waitForMessage<PhoenixV2Message>(messages, (m) => {
+          const msg = m as PhoenixV2Message
+          return Array.isArray(msg) && msg[2] === topic && msg[3] === 'postgres_changes'
+        })
         expect(insertMsg[4]).toMatchObject({
           ids: expect.any(Array),
           data: {
@@ -225,21 +234,26 @@ describe('Realtime', () => {
       const { ws, messages, close } = await rawRealtimeSocket(origin, 'definitely-not-a-valid-key')
 
       try {
-        ws.send(JSON.stringify(['1', '1', 'realtime:evil', 'phx_join', {
-          config: {
-            broadcast: { ack: false, self: false },
-            presence: { enabled: false },
-            postgres_changes: [],
-          },
-        }]))
-
-        const reply = await waitForMessage<PhoenixV2Message>(
-          messages,
-          (m) => {
-            const msg = m as PhoenixV2Message
-            return Array.isArray(msg) && msg[2] === 'realtime:evil' && msg[3] === 'phx_reply'
-          },
+        ws.send(
+          JSON.stringify([
+            '1',
+            '1',
+            'realtime:evil',
+            'phx_join',
+            {
+              config: {
+                broadcast: { ack: false, self: false },
+                presence: { enabled: false },
+                postgres_changes: [],
+              },
+            },
+          ]),
         )
+
+        const reply = await waitForMessage<PhoenixV2Message>(messages, (m) => {
+          const msg = m as PhoenixV2Message
+          return Array.isArray(msg) && msg[2] === 'realtime:evil' && msg[3] === 'phx_reply'
+        })
         expect(reply[4]).toMatchObject({
           status: 'error',
           response: { reason: 'unauthorized' },
@@ -255,19 +269,24 @@ describe('Realtime', () => {
 
       try {
         // Send broadcast WITHOUT joining first
-        ws.send(JSON.stringify(['1', '1', topic, 'broadcast', {
-          type: 'broadcast',
-          event: 'test',
-          payload: { msg: 'hello' },
-        }]))
-
-        const reply = await waitForMessage<PhoenixV2Message>(
-          messages,
-          (m) => {
-            const msg = m as PhoenixV2Message
-            return Array.isArray(msg) && msg[1] === '1' && msg[2] === topic && msg[3] === 'phx_reply'
-          },
+        ws.send(
+          JSON.stringify([
+            '1',
+            '1',
+            topic,
+            'broadcast',
+            {
+              type: 'broadcast',
+              event: 'test',
+              payload: { msg: 'hello' },
+            },
+          ]),
         )
+
+        const reply = await waitForMessage<PhoenixV2Message>(messages, (m) => {
+          const msg = m as PhoenixV2Message
+          return Array.isArray(msg) && msg[1] === '1' && msg[2] === topic && msg[3] === 'phx_reply'
+        })
         expect(reply[4]).toMatchObject({
           status: 'error',
           response: { reason: 'you must join the channel before broadcasting' },
@@ -283,34 +302,40 @@ describe('Realtime', () => {
 
       try {
         // Join the channel first
-        ws.send(JSON.stringify(['1', '1', topic, 'phx_join', {
-          config: {
-            broadcast: { ack: false, self: false },
-            presence: { enabled: false },
-            postgres_changes: [],
-          },
-        }]))
-
-        const joinReply = await waitForMessage<PhoenixV2Message>(
-          messages,
-          (m) => {
-            const msg = m as PhoenixV2Message
-            return Array.isArray(msg) && msg[2] === topic && msg[3] === 'phx_reply'
-          },
+        ws.send(
+          JSON.stringify([
+            '1',
+            '1',
+            topic,
+            'phx_join',
+            {
+              config: {
+                broadcast: { ack: false, self: false },
+                presence: { enabled: false },
+                postgres_changes: [],
+              },
+            },
+          ]),
         )
+
+        const joinReply = await waitForMessage<PhoenixV2Message>(messages, (m) => {
+          const msg = m as PhoenixV2Message
+          return Array.isArray(msg) && msg[2] === topic && msg[3] === 'phx_reply'
+        })
         expect(joinReply[4]).toMatchObject({ status: 'ok' })
 
         // Send a broadcast payload exceeding the default 100 KB limit
-        const oversized = { type: 'broadcast', event: 'big', payload: { data: 'x'.repeat(120_000) } }
+        const oversized = {
+          type: 'broadcast',
+          event: 'big',
+          payload: { data: 'x'.repeat(120_000) },
+        }
         ws.send(JSON.stringify(['1', '2', topic, 'broadcast', oversized]))
 
-        const errorReply = await waitForMessage<PhoenixV2Message>(
-          messages,
-          (m) => {
-            const msg = m as PhoenixV2Message
-            return Array.isArray(msg) && msg[1] === '2' && msg[2] === topic && msg[3] === 'phx_reply'
-          },
-        )
+        const errorReply = await waitForMessage<PhoenixV2Message>(messages, (m) => {
+          const msg = m as PhoenixV2Message
+          return Array.isArray(msg) && msg[1] === '2' && msg[2] === topic && msg[3] === 'phx_reply'
+        })
         expect(errorReply[4]).toMatchObject({
           status: 'error',
           response: { reason: 'broadcast payload exceeds size limit' },

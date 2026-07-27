@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'bun:test'
-import { Collection, FieldsList, CollectionTypeBase, CollectionTypeAuth, CollectionTypeView } from '~/core/collection_model.ts'
+import { describe, expect, it } from 'bun:test'
+import {
+  Collection,
+  CollectionTypeAuth,
+  CollectionTypeBase,
+  CollectionTypeView,
+  FieldsList,
+} from '~/core/collection_model.ts'
 import { CollectionAuthOptions, TokenConfig } from '~/core/collection_model_auth_options.ts'
 
 // Register field types for FieldsList.fromJSON to work
@@ -13,17 +19,41 @@ describe('FieldsList', () => {
 
   it('adds fields', () => {
     const fl = new FieldsList()
-    fl.add({ id: 'f1', name: 'title', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} })
-    fl.add({ id: 'f2', name: 'body', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} })
+    fl.add({
+      id: 'f1',
+      name: 'title',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    })
+    fl.add({
+      id: 'f2',
+      name: 'body',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    })
     expect(fl.length).toBe(2)
   })
 
   it('getByName finds a field', () => {
     const fl = new FieldsList()
-    fl.add({ id: 'f1', name: 'title', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} })
+    fl.add({
+      id: 'f1',
+      name: 'title',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    })
     const f = fl.getByName('title')
     expect(f).toBeTruthy()
-    expect(f!.id).toBe('f1')
+    expect(f?.id).toBe('f1')
   })
 
   it('getByName returns undefined for missing name', () => {
@@ -33,15 +63,31 @@ describe('FieldsList', () => {
 
   it('getById finds a field', () => {
     const fl = new FieldsList()
-    fl.add({ id: 'f1', name: 'title', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} })
+    fl.add({
+      id: 'f1',
+      name: 'title',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    })
     const f = fl.getById('f1')
     expect(f).toBeTruthy()
-    expect(f!.name).toBe('title')
+    expect(f?.name).toBe('title')
   })
 
   it('remove removes a field by id', () => {
     const fl = new FieldsList()
-    const field = { id: 'f1', name: 'title', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} }
+    const field = {
+      id: 'f1',
+      name: 'title',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    }
     fl.add(field)
     expect(fl.length).toBe(1)
 
@@ -51,17 +97,41 @@ describe('FieldsList', () => {
 
   it('getById finds a field', () => {
     const fl = new FieldsList()
-    const field = { id: 'f1', name: 'title', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} }
+    const field = {
+      id: 'f1',
+      name: 'title',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    }
     fl.add(field)
     const found = fl.getById('f1')
     expect(found).toBeTruthy()
-    expect(found!.name).toBe('title')
+    expect(found?.name).toBe('title')
   })
 
   it('fieldNames returns all names', () => {
     const fl = new FieldsList()
-    fl.add({ id: 'f1', name: 'a', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} })
-    fl.add({ id: 'f2', name: 'b', type: 'text', system: false, hidden: false, columnType: 'TEXT', settingsSchema: {} })
+    fl.add({
+      id: 'f1',
+      name: 'a',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    })
+    fl.add({
+      id: 'f2',
+      name: 'b',
+      type: 'text',
+      system: false,
+      hidden: false,
+      columnType: 'TEXT',
+      settingsSchema: {},
+    })
     expect(fl.fieldNames()).toEqual(['a', 'b'])
   })
 })
@@ -133,25 +203,25 @@ describe('Collection', () => {
     const c = Collection.createBase('test')
     c.id = 'col1'
     const exported = c.dbExport()
-    expect(exported['id']).toBe('col1')
-    expect(exported['name']).toBe('test')
-    expect(exported['type']).toBe(CollectionTypeBase)
-    expect(typeof exported['indexes']).toBe('string')
-    expect(typeof exported['fields']).toBe('string')
-    expect(typeof exported['options']).toBe('string')
+    expect(exported.id).toBe('col1')
+    expect(exported.name).toBe('test')
+    expect(exported.type).toBe(CollectionTypeBase)
+    expect(typeof exported.indexes).toBe('string')
+    expect(typeof exported.fields).toBe('string')
+    expect(typeof exported.options).toBe('string')
   })
 
   it('toJSON redacts auth secrets', () => {
     const c = Collection.createAuth('users')
     c.id = 'col1'
     const json = c.toJSON()
-    expect(json['id']).toBe('col1')
-    expect(json['name']).toBe('users')
-    expect(json['type']).toBe(CollectionTypeAuth)
-    expect(json['options']).toBeTruthy()
-    if (json['options'] && typeof json['options'] === 'object') {
-      const opts = json['options'] as Record<string, unknown>
-      expect(opts['authToken']).toBeTruthy()
+    expect(json.id).toBe('col1')
+    expect(json.name).toBe('users')
+    expect(json.type).toBe(CollectionTypeAuth)
+    expect(json.options).toBeTruthy()
+    if (json.options && typeof json.options === 'object') {
+      const opts = json.options as Record<string, unknown>
+      expect(opts.authToken).toBeTruthy()
     }
   })
 
@@ -165,7 +235,15 @@ describe('Collection', () => {
       listRule: '',
       indexes: ['CREATE INDEX idx_name ON posts (name)'],
       fields: [
-        { id: 'f1', name: 'title', type: 'text', system: true, hidden: false, columnType: 'TEXT', settingsSchema: {} },
+        {
+          id: 'f1',
+          name: 'title',
+          type: 'text',
+          system: true,
+          hidden: false,
+          columnType: 'TEXT',
+          settingsSchema: {},
+        },
       ],
     })
     expect(c.id).toBe('c1')

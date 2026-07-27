@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'bun:test'
-import { CollectionValidator, isValidCollectionName } from '~/core/collection_validate.ts'
+import { describe, expect, it } from 'bun:test'
 import { Collection } from '~/core/collection_model.ts'
+import { CollectionValidator, isValidCollectionName } from '~/core/collection_validate.ts'
+import type { Filter } from '~/core/db-interface'
 import { MemoryDatabase } from '~/core/db-memory.ts'
 
 // Create an adapter to make MemoryDatabase compatible with IDatabase
@@ -8,9 +9,13 @@ function createTestDb(): import('~/core/db-interface.ts').IDatabase {
   const mem = new MemoryDatabase()
   // Wrap MemoryDatabase to match IDatabase interface
   return {
-    createTable: async (table: string) => { mem.createTable(table) },
+    createTable: async (table: string) => {
+      mem.createTable(table)
+    },
     hasTable: async (table: string) => mem.hasTable(table),
-    dropTable: async (table: string) => { mem.dropTable(table) },
+    dropTable: async (table: string) => {
+      mem.dropTable(table)
+    },
     insert: async (table: string, record: Record<string, unknown>) => {
       const rows = mem.insert(table, [record])
       return rows[0] ?? record
@@ -19,20 +24,33 @@ function createTestDb(): import('~/core/db-interface.ts').IDatabase {
       const rows = mem.upsert(table, [record])
       return rows[0] ?? record
     },
-    select: async (table: string, options: { filters: { column: string; operator: string; value: unknown }[] }) => {
-      const result = mem.select(table, { filters: options.filters as any })
+    select: async (
+      table: string,
+      options: { filters: { column: string; operator: string; value: unknown }[] },
+    ) => {
+      const result = mem.select(table, { filters: options.filters as Filter[] })
       return result.rows
     },
-    update: async (table: string, filters: { column: string; operator: string; value: unknown }[], data: Record<string, unknown>) => {
-      const result = mem.update(table, filters as any, data)
+    update: async (
+      table: string,
+      filters: { column: string; operator: string; value: unknown }[],
+      data: Record<string, unknown>,
+    ) => {
+      const result = mem.update(table, filters as Filter[], data)
       return result
     },
-    delete: async (table: string, filters: { column: string; operator: string; value: unknown }[]) => {
-      const result = mem.delete(table, filters as any)
+    delete: async (
+      table: string,
+      filters: { column: string; operator: string; value: unknown }[],
+    ) => {
+      const result = mem.delete(table, filters as Filter[])
       return result
     },
-    count: async (table: string, filters?: { column: string; operator: string; value: unknown }[]) => {
-      return mem.count(table, filters as any ?? [])
+    count: async (
+      table: string,
+      filters?: { column: string; operator: string; value: unknown }[],
+    ) => {
+      return mem.count(table, (filters as Filter[]) ?? [])
     },
   }
 }
@@ -84,7 +102,7 @@ describe('CollectionValidator', () => {
   it('rejects invalid type', async () => {
     const db = createTestDb()
     const c = Collection.createBase('test')
-    ;(c as any).type = 'invalid'
+    ;(c as Filter[]).type = 'invalid'
     const validator = new CollectionValidator(c, null, db)
     const errors = await validator.validate()
     expect(errors.some((e) => e.includes('type'))).toBe(true)

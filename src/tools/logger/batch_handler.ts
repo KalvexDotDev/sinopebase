@@ -32,7 +32,7 @@
  *   handler.dispose()
  */
 
-import type { LogEntry, Logger, LogLevel } from "./log";
+import type { LogEntry, Logger, LogLevel } from './log'
 
 // --------------------------------------------------
 // Types
@@ -48,14 +48,14 @@ export interface BatchLogHandlerOptions {
    * Called when either the batch size threshold is reached
    * or the flush interval timer fires.
    */
-  writeFunc: (logs: LogEntry[]) => Promise<void> | void;
+  writeFunc: (logs: LogEntry[]) => Promise<void> | void
 
   /**
    * Optional function invoked before adding a log entry to the batch queue.
    *
    * Return false to skip adding the entry into the batch queue.
    */
-  beforeAddFunc?: ((log: LogEntry) => boolean) | null;
+  beforeAddFunc?: ((log: LogEntry) => boolean) | null
 
   /**
    * Minimum log level to accept.
@@ -63,14 +63,14 @@ export interface BatchLogHandlerOptions {
    * Entries with a level below this value are discarded immediately.
    * Defaults to LogLevel.Info (0).
    */
-  level?: number;
+  level?: number
 
   /**
    * Maximum number of log entries to accumulate before auto-flushing.
    *
    * Defaults to 100 (matching PocketBase's default).
    */
-  batchSize?: number;
+  batchSize?: number
 
   /**
    * Interval in milliseconds at which the batch is flushed automatically.
@@ -78,7 +78,7 @@ export interface BatchLogHandlerOptions {
    * Set to 0 to disable timer-based flushing.
    * Defaults to 5000 (5 seconds).
    */
-  flushInterval?: number;
+  flushInterval?: number
 }
 
 // --------------------------------------------------
@@ -95,21 +95,21 @@ export interface BatchLogHandlerOptions {
 export class BatchLogHandler implements Logger {
   /** The resolved options (with defaults applied). */
   private options: {
-    level: number;
-    batchSize: number;
-    flushInterval: number;
-    writeFunc: (logs: LogEntry[]) => Promise<void> | void;
-    beforeAddFunc: ((log: LogEntry) => boolean) | null;
-  };
+    level: number
+    batchSize: number
+    flushInterval: number
+    writeFunc: (logs: LogEntry[]) => Promise<void> | void
+    beforeAddFunc: ((log: LogEntry) => boolean) | null
+  }
 
   /** Accumulated log entries awaiting a flush. */
-  private logs: LogEntry[] = [];
+  private logs: LogEntry[] = []
 
   /** Whether a flush operation is currently in progress. */
-  private flushing = false;
+  private flushing = false
 
   /** Timer handle for interval-based flushing. */
-  private timerId: ReturnType<typeof setInterval> | null = null;
+  private timerId: ReturnType<typeof setInterval> | null = null
 
   /**
    * Creates a new BatchLogHandler.
@@ -119,9 +119,7 @@ export class BatchLogHandler implements Logger {
    */
   constructor(options: BatchLogHandlerOptions) {
     if (!options.writeFunc) {
-      throw new Error(
-        "[BatchLogHandler] options.writeFunc must be provided",
-      );
+      throw new Error('[BatchLogHandler] options.writeFunc must be provided')
     }
 
     this.options = {
@@ -130,7 +128,7 @@ export class BatchLogHandler implements Logger {
       flushInterval: options.flushInterval ?? 5000,
       writeFunc: options.writeFunc,
       beforeAddFunc: options.beforeAddFunc ?? null,
-    };
+    }
 
     // Start the timer-based flush if enabled
     if (this.options.flushInterval > 0) {
@@ -138,8 +136,8 @@ export class BatchLogHandler implements Logger {
         // Fire-and-forget: the promise is handled internally
         this.flush().catch(() => {
           /* flush errors are surfaced via the writeFunc */
-        });
-      }, this.options.flushInterval);
+        })
+      }, this.options.flushInterval)
     }
   }
 
@@ -157,14 +155,10 @@ export class BatchLogHandler implements Logger {
    * @param message - The log message.
    * @param data    - Optional structured key-value data.
    */
-  Write(
-    level: number,
-    message: string,
-    data?: Record<string, unknown>,
-  ): void {
+  Write(level: number, message: string, data?: Record<string, unknown>): void {
     // Level filtering
     if (level < this.options.level) {
-      return;
+      return
     }
 
     const entry: LogEntry = {
@@ -172,22 +166,22 @@ export class BatchLogHandler implements Logger {
       level: level as LogLevel,
       message,
       data,
-    };
+    }
 
     // Pre-add filtering
     if (this.options.beforeAddFunc !== null) {
       if (!this.options.beforeAddFunc(entry)) {
-        return;
+        return
       }
     }
 
-    this.logs.push(entry);
+    this.logs.push(entry)
 
     // Auto-flush if batch size threshold is reached
     if (this.logs.length >= this.options.batchSize) {
       this.flush().catch(() => {
         /* flush errors are surfaced via the writeFunc */
-      });
+      })
     }
   }
 
@@ -202,7 +196,7 @@ export class BatchLogHandler implements Logger {
    * @returns true if entries at this level are accepted.
    */
   Enabled(level: number): boolean {
-    return level >= this.options.level;
+    return level >= this.options.level
   }
 
   /**
@@ -211,7 +205,7 @@ export class BatchLogHandler implements Logger {
    * @param level - The new minimum level.
    */
   SetLevel(level: number): void {
-    this.options.level = level;
+    this.options.level = level
   }
 
   /**
@@ -221,7 +215,7 @@ export class BatchLogHandler implements Logger {
    * are passed to the writeFunc callback.
    */
   async WriteAll(): Promise<void> {
-    await this.flush();
+    await this.flush()
   }
 
   /**
@@ -232,12 +226,12 @@ export class BatchLogHandler implements Logger {
    */
   async dispose(): Promise<void> {
     if (this.timerId !== null) {
-      clearInterval(this.timerId);
-      this.timerId = null;
+      clearInterval(this.timerId)
+      this.timerId = null
     }
 
     // Final flush
-    await this.flush();
+    await this.flush()
   }
 
   // --------------------------------------------------
@@ -253,22 +247,22 @@ export class BatchLogHandler implements Logger {
    */
   private async flush(): Promise<void> {
     if (this.flushing) {
-      return;
+      return
     }
 
     if (this.logs.length === 0) {
-      return;
+      return
     }
 
-    this.flushing = true;
+    this.flushing = true
 
     // Atomically drain the queue
-    const batch = this.logs.splice(0);
+    const batch = this.logs.splice(0)
 
     try {
-      await this.options.writeFunc(batch);
+      await this.options.writeFunc(batch)
     } finally {
-      this.flushing = false;
+      this.flushing = false
     }
   }
 }

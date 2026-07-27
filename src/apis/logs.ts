@@ -55,24 +55,21 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
 
     try {
       const q = query as Record<string, string>
-      const page = Math.max(1, parseInt(q['page'] ?? '1', 10) || 1)
+      const page = Math.max(1, parseInt(q.page ?? '1', 10) || 1)
       const perPage = Math.min(
         200,
-        Math.max(
-          1,
-          parseInt(q['perPage'] ?? q['per_page'] ?? '30', 10) || 30,
-        ),
+        Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30),
       )
 
       const rows = await selectRows(db, '_logs')
 
       const logs = rows.map((r) => ({
-        id: String(r['id'] ?? ''),
-        level: Number(r['level'] ?? 0),
-        message: String(r['message'] ?? ''),
-        data: (r['data'] as Record<string, unknown>) ?? {},
-        created: String(r['created'] ?? ''),
-        updated: String(r['updated'] ?? ''),
+        id: String(r.id ?? ''),
+        level: Number(r.level ?? 0),
+        message: String(r.message ?? ''),
+        data: (r.data as Record<string, unknown>) ?? {},
+        created: String(r.created ?? ''),
+        updated: String(r.updated ?? ''),
       }))
 
       const totalItems = logs.length
@@ -108,7 +105,7 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
 
       const stats: Record<string, number> = {}
       for (const row of rows) {
-        const created = String(row['created'] ?? '').slice(0, 10)
+        const created = String(row.created ?? '').slice(0, 10)
         stats[created] = (stats[created] ?? 0) + 1
       }
 
@@ -141,14 +138,18 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
         return { code: 404, message: 'Log not found.' }
       }
 
-      const row = rows[0]!
+      const row = rows[0]
+      if (!row) {
+        set.status = 404
+        return { code: 404, message: 'Log not found.' }
+      }
       return {
-        id: String(row['id'] ?? ''),
-        level: Number(row['level'] ?? 0),
-        message: String(row['message'] ?? ''),
-        data: (row['data'] as Record<string, unknown>) ?? {},
-        created: String(row['created'] ?? ''),
-        updated: String(row['updated'] ?? ''),
+        id: String(row.id ?? ''),
+        level: Number(row.level ?? 0),
+        message: String(row.message ?? ''),
+        data: (row.data as Record<string, unknown>) ?? {},
+        created: String(row.created ?? ''),
+        updated: String(row.updated ?? ''),
       }
     } catch (err) {
       set.status = 400

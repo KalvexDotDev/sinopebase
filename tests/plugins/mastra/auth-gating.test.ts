@@ -6,7 +6,7 @@
 //   2. HTTP auth gating via Elysia fetch() with mocked session lookup
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, beforeAll, mock } from 'bun:test'
+import { beforeAll, describe, expect, it, mock } from 'bun:test'
 
 // ---------------------------------------------------------------------------
 // Mock lookupSessionByToken — must run before any import of auth-better
@@ -26,7 +26,7 @@ const MOCK_SESSION = {
 const VALID_TOKEN = 'sinopebase-valid-test-token'
 
 mock.module('~/tools/auth-better', () => ({
-  lookupSessionByToken: async (_auth: any, token: string | null) => {
+  lookupSessionByToken: async (_auth: unknown, token: string | null) => {
     if (token === VALID_TOKEN) return MOCK_SESSION
     return null
   },
@@ -37,12 +37,12 @@ mock.module('~/tools/auth-better', () => ({
 // ---------------------------------------------------------------------------
 
 import { Elysia } from 'elysia'
+import type { AuthContext } from '~/plugins/mastra/plugin'
 import {
   createAuthMiddleware,
-  withRequestContext,
   getCurrentRequestContext,
+  withRequestContext,
 } from '~/plugins/mastra/plugin'
-import type { AuthContext } from '~/plugins/mastra/plugin'
 
 // ---------------------------------------------------------------------------
 // Group 1 — AsyncLocalStorage request-scoped context
@@ -115,9 +115,10 @@ describe('Mastra Auth — HTTP gating', () => {
     // validateAIRequest delegates to the mocked lookupSessionByToken.
     app = new Elysia()
       .use(createAuthMiddleware({}, true))
-      .post('/api/mastra/chat', async ({ request, set }) => {
-        const authCtx = (request as Record<string, unknown>)
-          .__authContext as AuthContext | undefined
+      .post('/api/mastra/chat', async ({ request, set: _set }) => {
+        const authCtx = (request as Record<string, unknown>).__authContext as
+          | AuthContext
+          | undefined
 
         const doHandle = async () => ({
           id: 'resp-1',
@@ -146,7 +147,7 @@ describe('Mastra Auth — HTTP gating', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer this-is-bogus',
+          Authorization: 'Bearer this-is-bogus',
         },
         body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello' }] }),
       }),
@@ -160,7 +161,7 @@ describe('Mastra Auth — HTTP gating', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${VALID_TOKEN}`,
+          Authorization: `Bearer ${VALID_TOKEN}`,
         },
         body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello' }] }),
       }),

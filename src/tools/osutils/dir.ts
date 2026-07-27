@@ -11,8 +11,8 @@
  *   console.log(bytes) // 1024000
  */
 
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 
 // --------------------------------------------------
 // Public API
@@ -28,26 +28,26 @@ import { join } from "node:path";
  * @throws If the path does not exist or cannot be read.
  */
 export async function DirSize(path: string): Promise<number> {
-  let totalSize = 0;
+  let totalSize = 0
 
-  const entries = await readdir(path, { withFileTypes: true });
+  const entries = await readdir(path, { withFileTypes: true })
 
   for (const entry of entries) {
-    const fullPath = join(path, entry.name);
+    const fullPath = join(path, entry.name)
 
     if (entry.isSymbolicLink()) {
       // Skip symlinks to match Go behavior
-      continue;
+      continue
     }
 
     if (entry.isFile()) {
-      const file = Bun.file(fullPath);
-      totalSize += file.size ?? 0;
+      const file = Bun.file(fullPath)
+      totalSize += file.size ?? 0
     } else if (entry.isDirectory()) {
-      totalSize += await DirSize(fullPath);
+      totalSize += await DirSize(fullPath)
     }
     // Other entry types (sockets, pipes) are skipped
   }
 
-  return totalSize;
+  return totalSize
 }

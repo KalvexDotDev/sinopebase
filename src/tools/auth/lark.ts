@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://open.feishu.cn/open-apis/authen/v1/user_info response.
  *
  * @example
- * 
+ *
  */
 export class LarkProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

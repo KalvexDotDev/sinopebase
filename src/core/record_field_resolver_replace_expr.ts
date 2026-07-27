@@ -28,11 +28,7 @@ export class ReplaceWithExpression {
   old: string
   new_: string
 
-  constructor(
-    placeholder: string,
-    old: string,
-    new_: string,
-  ) {
+  constructor(placeholder: string, old: string, new_: string) {
     this.placeholder = placeholder
     this.old = old
     this.new_ = new_
@@ -46,9 +42,9 @@ export class ReplaceWithExpression {
    */
   build(): string {
     if (!this.placeholder || !this.old || !this.new_) {
-      return '0=1';
+      return '0=1'
     }
 
-    return this.old.split(this.placeholder).join(this.new_);
+    return this.old.split(this.placeholder).join(this.new_)
   }
 }

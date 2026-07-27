@@ -64,10 +64,10 @@ function redact(ctx: Record<string, unknown>): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 
 const COLORS: Record<LogLevel, string> = {
-  debug: '\x1b[36m',   // cyan
-  info: '\x1b[32m',    // green
-  warn: '\x1b[33m',    // yellow
-  error: '\x1b[31m',   // red
+  debug: '\x1b[36m', // cyan
+  info: '\x1b[32m', // green
+  warn: '\x1b[33m', // yellow
+  error: '\x1b[31m', // red
 }
 const RESET = '\x1b[0m'
 const DIM = '\x1b[2m'
@@ -77,7 +77,7 @@ const DIM = '\x1b[2m'
 // ---------------------------------------------------------------------------
 
 function isProduction(): boolean {
-  return process.env['NODE_ENV'] === 'production'
+  return process.env.NODE_ENV === 'production'
 }
 
 // ---------------------------------------------------------------------------
@@ -91,10 +91,7 @@ const requestStorage = new AsyncLocalStorage<Record<string, unknown>>()
  * The context is automatically merged into every log entry emitted
  * while the function executes.
  */
-export function withRequestContext<T>(
-  ctx: Record<string, unknown>,
-  fn: () => T,
-): T {
+export function withRequestContext<T>(ctx: Record<string, unknown>, fn: () => T): T {
   return requestStorage.run(ctx, fn)
 }
 
@@ -142,23 +139,21 @@ function writeEntry(level: LogLevel, msg: string, ctx?: Record<string, unknown>)
 
   if (isProduction()) {
     // JSON lines to stdout (info/debug) or stderr (warn/error)
-    const line = JSON.stringify(safe) + '\n'
+    const line = `${JSON.stringify(safe)}\n`
     const dest = level === 'warn' || level === 'error' ? process.stderr : process.stdout
     dest.write(line)
   } else {
     // Pretty-print with colors
     const color = COLORS[level] ?? ''
     const label = level.toUpperCase().padEnd(5)
-    const timestamp = safe['ts'] as string
+    const timestamp = safe.ts as string
 
     // Build clean output: only show context keys that are not the built-in fields
     const rest: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(safe)) {
       if (k !== 'level' && k !== 'msg' && k !== 'ts') rest[k] = v
     }
-    const extra = Object.keys(rest).length > 0
-      ? ` ${DIM}${JSON.stringify(rest)}${RESET}`
-      : ''
+    const extra = Object.keys(rest).length > 0 ? ` ${DIM}${JSON.stringify(rest)}${RESET}` : ''
 
     const dest = level === 'error' ? process.stderr : process.stdout
     dest.write(`${color}[${timestamp}] [${label}] ${msg}${RESET}${extra}\n`)

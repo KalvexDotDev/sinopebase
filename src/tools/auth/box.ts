@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.box.com/2.0/users/me response.
  *
  * @example
- * 
+ *
  */
 export class BoxProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

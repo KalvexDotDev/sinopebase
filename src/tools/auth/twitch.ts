@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.twitch.tv/helix/users response.
  *
  * @example
- * 
+ *
  */
 export class TwitchProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

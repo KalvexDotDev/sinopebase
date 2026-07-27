@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://www.patreon.com/api/oauth2/v2/identity response.
  *
  * @example
- * 
+ *
  */
 export class PatreonProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

@@ -5,9 +5,9 @@
  * Layer 2 — imports from ~/core/* and ~/tools/*.
  */
 
-import type { IDatabase } from '~/core/db-interface.ts'
 import type { Collection } from '~/core/collection_model.ts'
-import { Record as RecordModel } from '~/core/record_model.ts'
+import type { IDatabase } from '~/core/db-interface.ts'
+import type { Record as RecordModel } from '~/core/record_model.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -96,18 +96,40 @@ async function expandRecordsInternal(
     return
   }
 
-  const mainCollection = records[0]!.collection
+  const mainCollection = records[0]?.collection
   const parts = expandPath.split('.')
-  const currentPart = parts[0]!
+  const currentPart = parts[0]
+  if (!currentPart) return
   const remainingParts = parts.slice(1).join('.')
 
   // Check for indirect expand (via _via_ syntax)
   const indirectMatch = currentPart.match(/^(\w+)_via_(\w+)$/)
 
   if (indirectMatch) {
-    await expandIndirectRelation(db, records, currentPart, indirectMatch[1]!, indirectMatch[2]!, mainCollection, remainingParts, fetchFunc, recursionLevel)
+    const viaRel = indirectMatch[1]
+    const viaFk = indirectMatch[2]
+    if (!viaRel || !viaFk) return
+    await expandIndirectRelation(
+      db,
+      records,
+      currentPart,
+      viaRel,
+      viaFk,
+      mainCollection,
+      remainingParts,
+      fetchFunc,
+      recursionLevel,
+    )
   } else {
-    await expandDirectRelation(db, records, currentPart, mainCollection, remainingParts, fetchFunc, recursionLevel)
+    await expandDirectRelation(
+      db,
+      records,
+      currentPart,
+      mainCollection,
+      remainingParts,
+      fetchFunc,
+      recursionLevel,
+    )
   }
 }
 
@@ -124,12 +146,14 @@ async function expandDirectRelation(
   recursionLevel: number = 1,
 ): Promise<void> {
   const field = mainCollection.fields.getByName(fieldName)
-  if (!field || field.type !== 'relation') {
-    throw new Error(`couldn't find relation field "${fieldName}" in collection "${mainCollection.name}"`)
+  if (field?.type !== 'relation') {
+    throw new Error(
+      `couldn't find relation field "${fieldName}" in collection "${mainCollection.name}"`,
+    )
   }
 
   const relField = field as Record<string, unknown>
-  const relCollectionId = String(relField['collectionId'] ?? '')
+  const _relCollectionId = String(relField.collectionId ?? '')
 
   // We need a function to resolve the collection by id
   // For now, this is a stub — the actual collection resolution needs access to the app or collection cache
@@ -172,13 +196,15 @@ async function expandDirectRelation(
 
     if (validRels.length === 0) continue
 
-    const isMultiple = relField['maxSelect'] !== 1
+    const isMultiple = relField.maxSelect !== 1
     const expandData = record.expandData()
 
     if (isMultiple) {
       expandData[fieldName] = validRels
     } else {
-      expandData[fieldName] = validRels[0]!
+      const firstRel = validRels[0]
+      if (!firstRel) continue
+      expandData[fieldName] = firstRel
     }
 
     record.setExpand(expandData)
@@ -238,7 +264,9 @@ export function normalizeExpands(paths: string[]): string[] {
   const normalized: string[] = []
   for (const p of paths) {
     if (p == null) continue
-    const cleaned = String(p).replace(/\s+/g, '').replace(/^\.+|\.+$/g, '')
+    const cleaned = String(p)
+      .replace(/\s+/g, '')
+      .replace(/^\.+|\.+$/g, '')
     if (cleaned) {
       normalized.push(cleaned)
     }
@@ -255,13 +283,15 @@ export function normalizeExpands(paths: string[]): string[] {
     for (let j = 0; j < unique.length; j++) {
       if (i === j) continue
       // If unique[j] is a prefix of unique[i], then unique[i] is subsumed
-      if (unique[j] !== undefined && unique[i] !== undefined && unique[i]!.startsWith(unique[j]! + '.')) {
+      const uj = unique[j]
+      if (uj && unique[i]?.startsWith(`${uj}.`)) {
         subsumed = true
         break
       }
     }
     if (!subsumed) {
-      result.push(unique[i]!)
+      const ui = unique[i]
+      if (ui !== undefined) result.push(ui)
     }
   }
 

@@ -25,11 +25,11 @@
  */
 export interface RunResult {
   /** Standard output content. */
-  stdout: string;
+  stdout: string
   /** Standard error content. */
-  stderr: string;
+  stderr: string
   /** Process exit code (0 for success). */
-  exitCode: number;
+  exitCode: number
 }
 
 // --------------------------------------------------
@@ -44,24 +44,21 @@ export interface RunResult {
  * @returns A RunResult with captured stdout, stderr, and exit code.
  * @throws If the command cannot be spawned (e.g. not found).
  */
-export async function RunCommand(
-  cmd: string,
-  args: string[] = [],
-): Promise<RunResult> {
+export async function RunCommand(cmd: string, args: string[] = []): Promise<RunResult> {
   const proc = Bun.spawn([cmd, ...args], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
 
   const [stdoutBuffer, stderrBuffer] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
-  ]);
+  ])
 
-  const exited = await proc.exited;
+  const exited = await proc.exited
 
   return {
     stdout: stdoutBuffer,
     stderr: stderrBuffer,
     exitCode: exited,
-  };
+  }
 }

@@ -16,55 +16,74 @@
 import type { Hook } from '~/tools/hook/hook'
 import type { TaggedHook } from '~/tools/hook/tagged'
 import type { Store } from '~/tools/store/store'
+import type { Model } from './db_model'
 import type { IDatabase } from './db-interface'
+
+/** Minimal interface for the better-auth instance held by the app. */
+interface AuthInstance {
+  api: {
+    signUpEmail(args: { body: Record<string, unknown> }): Promise<unknown>
+    signInEmail(args: { body: Record<string, unknown> }): Promise<unknown>
+    signOut(args: { headers: Headers }): Promise<unknown>
+    getSession(args: { headers: Headers }): Promise<unknown>
+  }
+  __db?: {
+    selectFrom(table: string): {
+      select(columns: string): {
+        where(col: string, op: string, val: unknown): { execute(): Promise<unknown[]> }
+      }
+    }
+  }
+  [key: string]: unknown
+}
+
 import type {
-  BootstrapEvent,
-  ServeEvent,
-  TerminateEvent,
   BackupEvent,
-  ModelEvent,
-  ModelErrorEvent,
-  RecordEvent,
-  RecordErrorEvent,
-  RecordEnrichEvent,
-  CollectionEvent,
+  BatchRequestEvent,
+  BootstrapEvent,
+  CollectionCreateEvent,
+  CollectionDeleteEvent,
   CollectionErrorEvent,
+  CollectionEvent,
+  CollectionRequestEvent,
+  CollectionsImportRequestEvent,
+  CollectionsListEvent,
+  CollectionUpdateEvent,
+  FileDownloadRequestEvent,
+  FileTokenRequestEvent,
   MailerEvent,
   MailerRecordEvent,
+  ModelErrorEvent,
+  ModelEvent,
   RealtimeConnectEvent,
   RealtimeMessageEvent,
   RealtimeSubscribeEvent,
-  SettingsListEvent,
-  SettingsUpdateEvent,
-  SettingsReloadEvent,
-  RecordsListEvent,
-  RecordViewEvent,
-  RecordCreateEvent,
-  RecordUpdateEvent,
-  RecordDeleteEvent,
   RecordAuthEvent,
-  RecordAuthWithPasswordEvent,
-  RecordAuthWithOAuth2Event,
   RecordAuthRefreshEvent,
-  RecordRequestPasswordResetEvent,
-  RecordConfirmPasswordResetEvent,
-  RecordRequestVerificationEvent,
-  RecordConfirmVerificationEvent,
-  RecordRequestEmailChangeEvent,
-  RecordConfirmEmailChangeEvent,
-  RecordCreateOTPRequestEvent,
+  RecordAuthWithOAuth2Event,
   RecordAuthWithOTPRequestEvent,
-  CollectionsListEvent,
-  CollectionRequestEvent,
-  CollectionCreateEvent,
-  CollectionUpdateEvent,
-  CollectionDeleteEvent,
-  CollectionsImportRequestEvent,
-  FileTokenRequestEvent,
-  FileDownloadRequestEvent,
-  BatchRequestEvent,
+  RecordAuthWithPasswordEvent,
+  RecordConfirmEmailChangeEvent,
+  RecordConfirmPasswordResetEvent,
+  RecordConfirmVerificationEvent,
+  RecordCreateEvent,
+  RecordCreateOTPRequestEvent,
+  RecordDeleteEvent,
+  RecordEnrichEvent,
+  RecordErrorEvent,
+  RecordEvent,
+  RecordRequestEmailChangeEvent,
+  RecordRequestPasswordResetEvent,
+  RecordRequestVerificationEvent,
+  RecordsListEvent,
+  RecordUpdateEvent,
+  RecordViewEvent,
+  ServeEvent,
+  SettingsListEvent,
+  SettingsReloadEvent,
+  SettingsUpdateEvent,
+  TerminateEvent,
 } from './events'
-import type { Model } from './db_model'
 
 // ---------------------------------------------------------------------------
 // App interface — the backbone of Sinopebase
@@ -257,10 +276,7 @@ export interface App {
   ): Promise<unknown[]>
 
   /** FindAllRecords finds all records with optional expressions. */
-  findAllRecords(
-    collectionModelOrIdentifier: unknown,
-    ...exprs: unknown[]
-  ): Promise<unknown[]>
+  findAllRecords(collectionModelOrIdentifier: unknown, ...exprs: unknown[]): Promise<unknown[]>
 
   /** FindFirstRecordByData finds the first record matching a key-value pair. */
   findFirstRecordByData(
@@ -287,22 +303,13 @@ export interface App {
   ): Promise<unknown>
 
   /** CountRecords returns the total number of records in a collection. */
-  countRecords(
-    collectionModelOrIdentifier: unknown,
-    ...exprs: unknown[]
-  ): Promise<number>
+  countRecords(collectionModelOrIdentifier: unknown, ...exprs: unknown[]): Promise<number>
 
   /** FindAuthRecordByToken finds the auth record associated with a JWT. */
-  findAuthRecordByToken(
-    token: string,
-    ...validTypes: string[]
-  ): Promise<unknown>
+  findAuthRecordByToken(token: string, ...validTypes: string[]): Promise<unknown>
 
   /** FindAuthRecordByEmail finds the auth record by email. */
-  findAuthRecordByEmail(
-    collectionModelOrIdentifier: unknown,
-    email: string,
-  ): Promise<unknown>
+  findAuthRecordByEmail(collectionModelOrIdentifier: unknown, email: string): Promise<unknown>
 
   /** CanAccessRecord checks if a record can be accessed by a request. */
   canAccessRecord(
@@ -441,8 +448,12 @@ export interface App {
   onRecordAuthWithPasswordRequest(...tags: string[]): TaggedHook<RecordAuthWithPasswordEvent>
   onRecordAuthWithOAuth2Request(...tags: string[]): TaggedHook<RecordAuthWithOAuth2Event>
   onRecordAuthRefreshRequest(...tags: string[]): TaggedHook<RecordAuthRefreshEvent>
-  onRecordRequestPasswordResetRequest(...tags: string[]): TaggedHook<RecordRequestPasswordResetEvent>
-  onRecordConfirmPasswordResetRequest(...tags: string[]): TaggedHook<RecordConfirmPasswordResetEvent>
+  onRecordRequestPasswordResetRequest(
+    ...tags: string[]
+  ): TaggedHook<RecordRequestPasswordResetEvent>
+  onRecordConfirmPasswordResetRequest(
+    ...tags: string[]
+  ): TaggedHook<RecordConfirmPasswordResetEvent>
   onRecordRequestVerificationRequest(...tags: string[]): TaggedHook<RecordRequestVerificationEvent>
   onRecordConfirmVerificationRequest(...tags: string[]): TaggedHook<RecordConfirmVerificationEvent>
   onRecordRequestEmailChangeRequest(...tags: string[]): TaggedHook<RecordRequestEmailChangeEvent>
@@ -478,34 +489,31 @@ export interface App {
   onBatchRequest(): Hook<BatchRequestEvent>
 }
 
+import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { Elysia } from 'elysia'
-import {
-  createRealtimeHub,
-  createRealtimeWebSocketHandler,
-} from '../apis/realtime'
+import { Cron } from '~/tools/cron/cron'
+import { ApiError } from '../apis/api_error_aliases'
 import { authPlugin, createAuthPlugin } from '../apis/auth'
 import { verifyAccessToken } from '../apis/auth-jwt'
+import { createStoragePlugin } from '../apis/file'
+import { rateLimit, resetRateLimiters } from '../apis/middlewares_rate_limit'
+import { mountPostgrestRoutes } from '../apis/postgrest'
+import { createRealtimeHub, createRealtimeWebSocketHandler } from '../apis/realtime'
+import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
 import { createAuth, lookupSessionByToken } from '../tools/auth-better'
+import { LocalFileStore } from '../tools/filesystem/store'
 import type { IFileStore } from '../tools/filesystem/store-interface'
+import { S3FileStore } from '../tools/filesystem/store-s3'
+import { detectMode, type ValidatedConfig } from './config'
 import { MemoryDatabaseAdapter } from './db-memory-adapter'
 import {
   PostgresDatabase,
   type Filter as PostgresFilter,
   type PostgresRequestContext,
 } from './db-postgres'
-import { mountPostgrestRoutes } from '../apis/postgrest'
-import { LocalFileStore } from '../tools/filesystem/store'
-import { S3FileStore } from '../tools/filesystem/store-s3'
-import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
-import { createStoragePlugin } from '../apis/file'
-import { type ValidatedConfig, detectMode } from './config'
-import { rateLimit, resetRateLimiters } from '../apis/middlewares_rate_limit'
-import { ApiError } from '../apis/api_error_aliases'
-import { resolve, join } from 'node:path'
-import { mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { logger, generateRequestId } from './logger'
-import { Cron } from '~/tools/cron/cron'
+import { generateRequestId, logger } from './logger'
 
 export interface AppConfig {
   /** PostgreSQL connection URL (empty string = use in-memory db) */
@@ -570,7 +578,7 @@ export class Sinopebase {
   private pendingServer: Elysia | null = null
   private database: IDatabase | null = null
   private fileStore: IFileStore | null = null
-  private auth: any = null
+  private auth: AuthInstance | null = null
   private lifecycle: Promise<void> = Promise.resolve()
   /** Cached secrets — validated once at startup, never read from process.env thereafter. */
   private cachedServiceRoleKey = ''
@@ -582,7 +590,7 @@ export class Sinopebase {
    * but BEFORE the server starts listening, so Elysia's route resolution
    * includes plugin routes from the first request.
    */
-  private pendingPlugins: Array<(server: Elysia, auth: any) => Promise<void>> = []
+  private pendingPlugins: Array<(server: Elysia, auth: AuthInstance) => Promise<void>> = []
 
   /** Cron scheduler for periodic backups. */
   private backupCron: Cron | null = null
@@ -603,7 +611,8 @@ export class Sinopebase {
       backupDir: './backups',
       ...config,
     }
-    this.resolvedBackupDir = resolve(this.dataDir(), this.config.backupDir!)
+    const backupDir = this.config.backupDir
+    this.resolvedBackupDir = resolve(this.dataDir(), backupDir ?? 'backups')
   }
 
   /**
@@ -625,7 +634,7 @@ export class Sinopebase {
    * await app.start()
    * ```
    */
-  use(register: (server: Elysia, auth: any) => Promise<void>): this {
+  use(register: (server: Elysia, auth: AuthInstance) => Promise<void>): this {
     this.pendingPlugins.push(register)
     return this
   }
@@ -671,39 +680,39 @@ export class Sinopebase {
 
     // Set JWT secret from config if provided
     if (this.config.jwtSecret) {
-      process.env['JWT_SECRET'] = this.config.jwtSecret
+      process.env.JWT_SECRET = this.config.jwtSecret
     }
 
     // Set env vars from config for downstream consumers
     if (this.config.serviceRoleKey) {
-      process.env['SINOPEBASE_SERVICE_ROLE_KEY'] = this.config.serviceRoleKey
+      process.env.SINOPEBASE_SERVICE_ROLE_KEY = this.config.serviceRoleKey
     }
     if (this.config.anonKey) {
-      process.env['SINOPEBASE_ANON_KEY'] = this.config.anonKey
+      process.env.SINOPEBASE_ANON_KEY = this.config.anonKey
     }
 
     // Production fail-closed: validate infrastructure requirements before connecting
     if (this.mode === 'production') {
-      const pgUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
+      const pgUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
       if (!pgUrl) {
         throw new Error(
           'Production mode requires POSTGRES_URL. ' +
-          'Set NODE_ENV=development or SINOPEBASE_PRODUCTION=false to use the in-memory database.',
+            'Set NODE_ENV=development or SINOPEBASE_PRODUCTION=false to use the in-memory database.',
         )
       }
-      const s3CheckEndpoint = this.config.minioEndpoint || process.env['RUSTFS_ENDPOINT'] || ''
-      const s3CheckKey = this.config.minioAccessKey || process.env['RUSTFS_ACCESS_KEY'] || ''
-      const s3CheckSecret = this.config.minioSecretKey || process.env['RUSTFS_SECRET_KEY'] || ''
+      const s3CheckEndpoint = this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
+      const s3CheckKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
+      const s3CheckSecret = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
       if (!s3CheckEndpoint || !s3CheckKey || !s3CheckSecret) {
         throw new Error(
           'Production mode requires S3/MinIO configuration. ' +
-          'Set RUSTFS_ENDPOINT, RUSTFS_ACCESS_KEY, and RUSTFS_SECRET_KEY.',
+            'Set RUSTFS_ENDPOINT, RUSTFS_ACCESS_KEY, and RUSTFS_SECRET_KEY.',
         )
       }
     }
 
     // Initialize database: PostgreSQL or in-memory fallback
-    const postgresUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
+    const postgresUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
     if (postgresUrl) {
       const pg = new PostgresDatabase({
         postgresUrl,
@@ -716,53 +725,64 @@ export class Sinopebase {
       // when PostgreSQL is configured. These keys bypass all authentication.
       // In local dev (no POSTGRES_URL) the defaults are acceptable.
       {
-        const serviceKey = process.env['SINOPEBASE_SERVICE_ROLE_KEY']
-        const anonKey = process.env['SINOPEBASE_ANON_KEY']
-        const jwtSecret = process.env['JWT_SECRET'] || this.config.jwtSecret || ''
+        const serviceKey = process.env.SINOPEBASE_SERVICE_ROLE_KEY
+        const anonKey = process.env.SINOPEBASE_ANON_KEY
+        const jwtSecret = process.env.JWT_SECRET || this.config.jwtSecret || ''
         const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 
         if (!serviceKey || serviceKey === 'test-service-role-key') {
           throw new Error(
             'SINOPEBASE_SERVICE_ROLE_KEY is unset or using the "test-service-role-key" default. ' +
-            'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
+              'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
           )
         }
         if (!anonKey || anonKey === 'test-anon-key') {
           throw new Error(
             'SINOPEBASE_ANON_KEY is unset or using the "test-anon-key" default. ' +
-            'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
+              'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
           )
         }
         if (!jwtSecret || jwtSecret === JWT_DEV_FALLBACK) {
           if (this.mode === 'production') {
             throw new Error(
               'JWT_SECRET is unset or using the dev fallback. ' +
-              'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
+                'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
             )
           }
-          logger.warn('JWT_SECRET is using the dev fallback in PostgreSQL mode. Set JWT_SECRET to a cryptographically random value in production.')
+          logger.warn(
+            'JWT_SECRET is using the dev fallback in PostgreSQL mode. Set JWT_SECRET to a cryptographically random value in production.',
+          )
         }
 
         // Cache validated secrets — never read from process.env per-request.
-        this.cachedServiceRoleKey = serviceKey!
-        this.cachedAnonKey = anonKey!
+        // Guards above ensure serviceKey / anonKey are non-empty strings.
+        if (!serviceKey) throw new Error('SINOPEBASE_SERVICE_ROLE_KEY is required')
+        if (!anonKey) throw new Error('SINOPEBASE_ANON_KEY is required')
+        this.cachedServiceRoleKey = serviceKey
+        this.cachedAnonKey = anonKey
         this.cachedJwtSecret = jwtSecret || JWT_DEV_FALLBACK
-        process.env['JWT_SECRET'] = this.cachedJwtSecret
-        process.env['SINOPEBASE_SERVICE_ROLE_KEY'] = serviceKey!
-        process.env['SINOPEBASE_ANON_KEY'] = anonKey!
+        process.env.JWT_SECRET = this.cachedJwtSecret
+        process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceKey
+        process.env.SINOPEBASE_ANON_KEY = anonKey
       }
 
       // Initialize better-auth with PostgreSQL
       try {
         const pool = pg.getPool()
         this.auth = await createAuth(pool, {
-        jwtSecret: this.config.jwtSecret,
-        oauthProviders: this.config.oauthProviders,
-        extraOrigins: this.config.extraOrigins,
-      })
-        logger.info('Auth', { provider: 'better-auth', backend: 'PostgreSQL', status: 'initialized' })
+          jwtSecret: this.config.jwtSecret,
+          oauthProviders: this.config.oauthProviders,
+          extraOrigins: this.config.extraOrigins,
+        })
+        logger.info('Auth', {
+          provider: 'better-auth',
+          backend: 'PostgreSQL',
+          status: 'initialized',
+        })
       } catch (err) {
-        logger.warn('Auth: better-auth init failed, falling back to in-memory', { error: (err as Error).message })
+        logger.warn('Auth: better-auth init failed, falling back to in-memory', {
+          error: (err as Error).message,
+        })
         this.auth = null
       }
 
@@ -782,9 +802,9 @@ export class Sinopebase {
     }
 
     // Initialize storage: RustFS/S3 or local fallback
-    const s3Endpoint = this.config.minioEndpoint || process.env['RUSTFS_ENDPOINT'] || ''
-    const s3AccessKey = this.config.minioAccessKey || process.env['RUSTFS_ACCESS_KEY'] || ''
-    const s3SecretKey = this.config.minioSecretKey || process.env['RUSTFS_SECRET_KEY'] || ''
+    const s3Endpoint = this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
+    const s3AccessKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
+    const s3SecretKey = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
     if (s3Endpoint && s3AccessKey && s3SecretKey) {
       // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
       // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
@@ -878,7 +898,10 @@ export class Sinopebase {
         }
 
         const reportedError = error as Error
-        logger.error('PANIC RECOVER', { message: reportedError.message, stack: (reportedError.stack ?? '').slice(0, 2048) })
+        logger.error('PANIC RECOVER', {
+          message: reportedError.message,
+          stack: (reportedError.stack ?? '').slice(0, 2048),
+        })
         set.status = 500
         return { message: 'Internal server error', code: '500' }
       })
@@ -889,7 +912,7 @@ export class Sinopebase {
         set.headers['referrer-policy'] = 'strict-origin-when-cross-origin'
       })
 
-      // ── Request ID and response logging ──
+    // ── Request ID and response logging ──
     const requestMeta = new WeakMap<Request, { startTime: number; requestId: string }>()
     server
       .onRequest(({ request, set }) => {
@@ -916,16 +939,14 @@ export class Sinopebase {
         }
       })
 
-      // ── Rate limiting ──
-    const rlHandler = rateLimit(
-      this.config.rateLimitMax ?? 100,
-      this.config.rateLimitWindow ?? 60,
-    )
-    server.onRequest(async ({ request, set }) => {
-      const url = new URL(request.url)
-      if (url.pathname === '/api/health' || url.pathname === '/api/ready') return
-      await rlHandler({ request, set })
-    })
+    // ── Rate limiting ──
+    const rlHandler = rateLimit(this.config.rateLimitMax ?? 100, this.config.rateLimitWindow ?? 60)
+    server
+      .onRequest(async ({ request, set }) => {
+        const url = new URL(request.url)
+        if (url.pathname === '/api/health' || url.pathname === '/api/ready') return
+        await rlHandler({ request, set })
+      })
 
       // Health check (liveness — always returns 200 if the process is up)
       .get('/api/health', () => ({
@@ -991,11 +1012,12 @@ export class Sinopebase {
           // Allow anon key for read-only REST access and for storage paths
           // (where RLS policies at the DB layer enforce per-bucket permissions).
           // Keys are cached at startup — never read from process.env per-request.
-          if (token === this.cachedAnonKey && (
-            url.pathname.startsWith('/storage/v1/')
-            || request.method === 'GET'
-            || request.method === 'HEAD'
-          )) {
+          if (
+            token === this.cachedAnonKey &&
+            (url.pathname.startsWith('/storage/v1/') ||
+              request.method === 'GET' ||
+              request.method === 'HEAD')
+          ) {
             postgrestContexts.set(request, { role: 'anon' })
             return
           }
@@ -1030,7 +1052,7 @@ export class Sinopebase {
         }
       })
 
-      // ── PostgREST routes ──
+    // ── PostgREST routes ──
     mountPostgrestRoutes(
       server,
       this.database,
@@ -1039,12 +1061,15 @@ export class Sinopebase {
     )
 
     // ── Storage — /storage/v1/* ──
-    server.use(createStoragePlugin(this.fileStore, {
-      resolveContext: (request) => postgrestContexts.get(request),
-      access: this.database instanceof PostgresDatabase
-        ? new PostgresStorageAccessPolicy(this.database)
-        : undefined,
-    }))
+    server.use(
+      createStoragePlugin(this.fileStore, {
+        resolveContext: (request) => postgrestContexts.get(request),
+        access:
+          this.database instanceof PostgresDatabase
+            ? new PostgresStorageAccessPolicy(this.database)
+            : undefined,
+      }),
+    )
 
     // ── Admin UI — serve built Svelte SPA from /_/ ──
     this.mountAdminUI(server)
@@ -1059,7 +1084,7 @@ export class Sinopebase {
       // GET /api/admin/backups — list available backups
       .get('/api/admin/backups', async ({ set, request }) => {
         const ctx = postgrestContexts.get(request)
-        if (!ctx || ctx.role !== 'service_role') {
+        if (ctx?.role !== 'service_role') {
           set.status = 403
           return { code: 403, message: 'Only service_role can list backups.' }
         }
@@ -1069,14 +1094,17 @@ export class Sinopebase {
           return backups.map((b) => ({ name: b.name, size: b.size, modified: b.modified }))
         } catch (err) {
           set.status = 500
-          return { code: 500, message: `Failed to list backups: ${err instanceof Error ? err.message : String(err)}` }
+          return {
+            code: 500,
+            message: `Failed to list backups: ${err instanceof Error ? err.message : String(err)}`,
+          }
         }
       })
 
       // POST /api/admin/backup — create a backup
       .post('/api/admin/backup', async ({ body, set, request }) => {
         const ctx = postgrestContexts.get(request)
-        if (!ctx || ctx.role !== 'service_role') {
+        if (ctx?.role !== 'service_role') {
           set.status = 403
           return { code: 403, message: 'Only service_role can create backups.' }
         }
@@ -1088,14 +1116,17 @@ export class Sinopebase {
           return { message: `Backup "${name}" created.`, name }
         } catch (err) {
           set.status = 500
-          return { code: 500, message: `Failed to create backup: ${err instanceof Error ? err.message : String(err)}` }
+          return {
+            code: 500,
+            message: `Failed to create backup: ${err instanceof Error ? err.message : String(err)}`,
+          }
         }
       })
 
       // POST /api/admin/restore — restore a backup
       .post('/api/admin/restore', async ({ body, set, request }) => {
         const ctx = postgrestContexts.get(request)
-        if (!ctx || ctx.role !== 'service_role') {
+        if (ctx?.role !== 'service_role') {
           set.status = 403
           return { code: 403, message: 'Only service_role can restore backups.' }
         }
@@ -1110,14 +1141,25 @@ export class Sinopebase {
           return { message: `Backup "${data.name}" restored.` }
         } catch (err) {
           set.status = 500
-          return { code: 500, message: `Failed to restore backup: ${err instanceof Error ? err.message : String(err)}` }
+          return {
+            code: 500,
+            message: `Failed to restore backup: ${err instanceof Error ? err.message : String(err)}`,
+          }
         }
       })
 
     // ── Plugins ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
-    const mastraPlugin = new MastraPlugin({ openaiApiKey: process.env['OPENAI_API_KEY'], requireAuth: this.config.mastraRequireAuth ?? true })
-    await mastraPlugin.register(server, this.auth ?? undefined, this.database ?? undefined, this.fileStore ?? undefined)
+    const mastraPlugin = new MastraPlugin({
+      openaiApiKey: process.env.OPENAI_API_KEY,
+      requireAuth: this.config.mastraRequireAuth ?? true,
+    })
+    await mastraPlugin.register(
+      server,
+      this.auth ?? undefined,
+      this.database ?? undefined,
+      this.fileStore ?? undefined,
+    )
     const { MetricsPlugin } = await import('../plugins/metrics/plugin')
     await new MetricsPlugin().register(server)
 
@@ -1173,15 +1215,19 @@ export class Sinopebase {
     const { join } = await import('node:path')
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const backupName = name + '_' + timestamp
+    const backupName = `${name}_${timestamp}`
     const destDir = join(this.resolvedBackupDir, backupName)
-    if (!existsSync(destDir)) { await mkdir(destDir, { recursive: true }) }
+    if (!existsSync(destDir)) {
+      await mkdir(destDir, { recursive: true })
+    }
 
     if (this.database instanceof PostgresDatabase) {
       const pgPath = join(destDir, 'postgres.sql')
       const { pgDump: d } = await import('./backup')
-      const pgUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
-      if (pgUrl) { await d(pgUrl, pgPath) }
+      const pgUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
+      if (pgUrl) {
+        await d(pgUrl, pgPath)
+      }
     }
 
     if (this.fileStore) {
@@ -1190,7 +1236,12 @@ export class Sinopebase {
       await b(this.fileStore, fsDir)
     }
 
-    const m = { name: backupName, createdAt: new Date().toISOString(), hasPostgres: this.database instanceof PostgresDatabase, hasFileStore: !!this.fileStore }
+    const m = {
+      name: backupName,
+      createdAt: new Date().toISOString(),
+      hasPostgres: this.database instanceof PostgresDatabase,
+      hasFileStore: !!this.fileStore,
+    }
     await Bun.write(join(destDir, 'backup.json'), JSON.stringify(m, null, 2))
     logger.info('Backup created', { name: backupName })
   }
@@ -1200,19 +1251,27 @@ export class Sinopebase {
     const { join } = await import('node:path')
 
     const destDir = join(this.resolvedBackupDir, name)
-    if (!existsSync(destDir)) { throw new Error('Backup not found: ' + name) }
+    if (!existsSync(destDir)) {
+      throw new Error(`Backup not found: ${name}`)
+    }
 
     const mp = join(destDir, 'backup.json')
-    if (!existsSync(mp)) { throw new Error('Invalid backup: missing backup.json') }
+    if (!existsSync(mp)) {
+      throw new Error('Invalid backup: missing backup.json')
+    }
     const manifest = JSON.parse(await Bun.file(mp).text())
 
     if (manifest.hasPostgres && this.database instanceof PostgresDatabase) {
       const pgPath = join(destDir, 'postgres.sql')
       if (existsSync(pgPath)) {
         const { pgRestore: r, verifyBackup: v } = await import('./backup')
-        if (!(await v(pgPath))) { throw new Error('Invalid PostgreSQL backup file') }
-        const pgUrl = this.config.postgresUrl || process.env['POSTGRES_URL'] || ''
-        if (pgUrl) { await r(pgUrl, pgPath) }
+        if (!(await v(pgPath))) {
+          throw new Error('Invalid PostgreSQL backup file')
+        }
+        const pgUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
+        if (pgUrl) {
+          await r(pgUrl, pgPath)
+        }
       }
     }
 
@@ -1232,7 +1291,7 @@ export class Sinopebase {
     this.cancelScheduledBackup()
     const cron = new Cron()
     cron.add('backup', cronExpression, () => {
-      const backupName = 'scheduled-' + new Date().toISOString().replace(/[:.]/g, '-')
+      const backupName = `scheduled-${new Date().toISOString().replace(/[:.]/g, '-')}`
       this.createBackup(backupName).catch((err) => {
         logger.error('Scheduled backup failed', { error: (err as Error).message })
       })
@@ -1320,18 +1379,17 @@ export class Sinopebase {
     return {
       postgresUrl: this.config.postgresUrl || '',
       jwtSecret: this.config.jwtSecret || '',
-      serviceRoleKey:
-        this.config.serviceRoleKey || process.env['SINOPEBASE_SERVICE_ROLE_KEY'] || '',
-      anonKey: this.config.anonKey || process.env['SINOPEBASE_ANON_KEY'] || '',
+      serviceRoleKey: this.config.serviceRoleKey || process.env.SINOPEBASE_SERVICE_ROLE_KEY || '',
+      anonKey: this.config.anonKey || process.env.SINOPEBASE_ANON_KEY || '',
       port: this.config.port ?? 8090,
       host: this.config.host ?? '0.0.0.0',
       tls: this.config.tls,
-      s3Endpoint: this.config.minioEndpoint || process.env['RUSTFS_ENDPOINT'] || undefined,
-      s3AccessKey: this.config.minioAccessKey || process.env['RUSTFS_ACCESS_KEY'] || undefined,
-      s3SecretKey: this.config.minioSecretKey || process.env['RUSTFS_SECRET_KEY'] || undefined,
+      s3Endpoint: this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || undefined,
+      s3AccessKey: this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || undefined,
+      s3SecretKey: this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || undefined,
       oauthProviders: this.config.oauthProviders ?? [],
       extraOrigins: this.config.extraOrigins ?? [],
-      openaiApiKey: process.env['OPENAI_API_KEY'],
+      openaiApiKey: process.env.OPENAI_API_KEY,
       mastraRequireAuth: this.config.mastraRequireAuth ?? true,
       dataDir: this.config.dataDir ?? './pb_data',
       trustedProxies: this.config.trustedProxies ?? [],
@@ -1353,25 +1411,41 @@ export class Sinopebase {
 
         // Path-traversal guard: resolve and verify the path stays within distPath.
         const resolved = resolve(distPath, requested)
-        if (!resolved.startsWith(distPath + '/') && !resolved.startsWith(distPath + '\\')) {
-          set.status = 403; return 'Forbidden'
+        if (!resolved.startsWith(`${distPath}/`) && !resolved.startsWith(`${distPath}\\`)) {
+          set.status = 403
+          return 'Forbidden'
         }
 
         const file = Bun.file(resolved)
         if (await file.exists()) {
           const ext = requested.split('.').pop() || ''
-          const mime: Record<string, string> = { html: 'text/html', css: 'text/css', js: 'application/javascript', mjs: 'application/javascript', json: 'application/json', png: 'image/png', svg: 'image/svg+xml', ico: 'image/x-icon' }
+          const mime: Record<string, string> = {
+            html: 'text/html',
+            css: 'text/css',
+            js: 'application/javascript',
+            mjs: 'application/javascript',
+            json: 'application/json',
+            png: 'image/png',
+            svg: 'image/svg+xml',
+            ico: 'image/x-icon',
+          }
           set.headers['Content-Type'] = mime[ext] || 'application/octet-stream'
-          return new Response(await file.arrayBuffer(), { headers: { 'Content-Type': set.headers['Content-Type'] as string } })
+          return new Response(await file.arrayBuffer(), {
+            headers: { 'Content-Type': set.headers['Content-Type'] as string },
+          })
         }
 
         // SPA fallback
         const index = Bun.file(resolve(distPath, 'index.html'))
         if (await index.exists()) {
           set.headers['Content-Type'] = 'text/html'
-          return new Response(await index.arrayBuffer(), { headers: { 'Content-Type': 'text/html' } })
+          return new Response(await index.arrayBuffer(), {
+            headers: { 'Content-Type': 'text/html' },
+          })
         }
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
 
       set.headers['Content-Type'] = 'text/html'
       return ADMIN_PLACEHOLDER
@@ -1379,7 +1453,9 @@ export class Sinopebase {
   }
 
   /** Expose the better-auth instance (null if in-memory mode). */
-  getAuth(): any { return this.auth }
+  getAuth(): AuthInstance | null {
+    return this.auth
+  }
 
   /**
    * Create required tables in the in-memory database.
@@ -1390,16 +1466,12 @@ export class Sinopebase {
   }
 }
 
-function realtimeVisibilityFilters(
-  row: Record<string, unknown>,
-): PostgresFilter[] {
-  if (row['id'] !== undefined && row['id'] !== null) {
-    return [{ column: 'id', operator: 'eq', value: row['id'] }]
+function realtimeVisibilityFilters(row: Record<string, unknown>): PostgresFilter[] {
+  if (row.id !== undefined && row.id !== null) {
+    return [{ column: 'id', operator: 'eq', value: row.id }]
   }
 
   return Object.entries(row)
-    .filter(([, value]) =>
-      value === null || ['string', 'number', 'boolean'].includes(typeof value)
-    )
+    .filter(([, value]) => value === null || ['string', 'number', 'boolean'].includes(typeof value))
     .map(([column, value]) => ({ column, operator: 'eq', value }))
 }

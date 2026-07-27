@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.linear.app/graphql response.
  *
  * @example
- * 
+ *
  */
 export class LinearProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

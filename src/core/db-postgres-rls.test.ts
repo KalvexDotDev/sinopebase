@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { reserveLoopbackPort } from '../../tests/harness'
 import { Sinopebase } from './app'
 import { PostgresDatabase } from './db-postgres'
-import { reserveLoopbackPort } from '../../tests/harness'
 
-const postgresUrl = process.env['TEST_POSTGRES_URL'] ?? process.env['POSTGRES_URL']
+const postgresUrl = process.env.TEST_POSTGRES_URL ?? process.env.POSTGRES_URL
 const describePostgres = postgresUrl ? describe : describe.skip
 
 const memberA = '11111111-1111-4111-8111-111111111111'
@@ -18,7 +18,8 @@ describePostgres('PostgreSQL request RLS context', () => {
 
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
-    db = new PostgresDatabase({ postgresUrl: postgresUrl! })
+    if (!postgresUrl) throw new Error('TEST_POSTGRES_URL required')
+    db = new PostgresDatabase({ postgresUrl })
     await db.connect()
 
     const pool = db.getPool()
@@ -82,7 +83,8 @@ describePostgres('PostgreSQL request RLS context', () => {
       END
       $$;
     `)
-    await pool.query(`
+    await pool.query(
+      `
       INSERT INTO sinopebase_rls_context_test (id, user_id, body, is_public)
       VALUES
         ('member-a', $1, 'A private', false),
@@ -93,26 +95,35 @@ describePostgres('PostgreSQL request RLS context', () => {
         SET user_id = EXCLUDED.user_id,
             body = EXCLUDED.body,
             is_public = EXCLUDED.is_public
-    `, [memberA, memberB, serviceSeedUser])
+    `,
+      [memberA, memberB, serviceSeedUser],
+    )
 
-    app = new Sinopebase({ postgresUrl: postgresUrl!, port: portReservation.port })
+    if (!postgresUrl) throw new Error('TEST_POSTGRES_URL required')
+    app = new Sinopebase({ postgresUrl, port: portReservation.port })
     await portReservation.release()
     await app.start()
     baseUrl = portReservation.origin
     const appDb = app.getDatabase() as PostgresDatabase
-    await appDb.getPool().query(`
+    await appDb.getPool().query(
+      `
       INSERT INTO "user" (
         "id", "email", "emailVerified", "name", "role", "createdAt", "updatedAt"
       ) VALUES ($1, 'rls-member-a@sinopebase.test', true, 'RLS member A', 'user', now(), now())
       ON CONFLICT ("id") DO UPDATE SET "updatedAt" = now()
-    `, [memberA])
-    await appDb.getPool().query(`
+    `,
+      [memberA],
+    )
+    await appDb.getPool().query(
+      `
       INSERT INTO "session" (
         "id", "userId", "token", "expiresAt", "createdAt", "updatedAt"
       ) VALUES ('sinopebase-rls-session-a', $1, $2, now() + interval '1 day', now(), now())
       ON CONFLICT ("id") DO UPDATE
         SET "token" = EXCLUDED."token", "expiresAt" = EXCLUDED."expiresAt", "updatedAt" = now()
-    `, [memberA, memberAToken])
+    `,
+      [memberA, memberAToken],
+    )
   })
 
   afterAll(async () => {
@@ -125,38 +136,37 @@ describePostgres('PostgreSQL request RLS context', () => {
       (requestDb) => requestDb.select('sinopebase_rls_context_test'),
     )
 
-    expect(rows.map((row) => row['id'])).toEqual(['member-a'])
+    expect(rows.map((row) => row.id)).toEqual(['member-a'])
   })
 
   it('authenticated member cannot update another member row', async () => {
     const rows = await db.withRequestContext(
       { role: 'authenticated', userId: memberA },
-      (requestDb) => requestDb.update(
-        'sinopebase_rls_context_test',
-        [{ column: 'id', operator: 'eq', value: 'member-b' }],
-        { body: 'cross-tenant write' },
-      ),
+      (requestDb) =>
+        requestDb.update(
+          'sinopebase_rls_context_test',
+          [{ column: 'id', operator: 'eq', value: 'member-b' }],
+          { body: 'cross-tenant write' },
+        ),
     )
 
     expect(rows).toEqual([])
   })
 
   it('anonymous reads execute as anon and see only public rows', async () => {
-    const rows = await db.withRequestContext(
-      { role: 'anon' },
-      (requestDb) => requestDb.select('sinopebase_rls_context_test'),
+    const rows = await db.withRequestContext({ role: 'anon' }, (requestDb) =>
+      requestDb.select('sinopebase_rls_context_test'),
     )
 
-    expect(rows.map((row) => row['id'])).toEqual(['public'])
+    expect(rows.map((row) => row.id)).toEqual(['public'])
   })
 
   it('service role explicitly bypasses RLS', async () => {
-    const rows = await db.withRequestContext(
-      { role: 'service_role' },
-      (requestDb) => requestDb.select('sinopebase_rls_context_test', [], [{ column: 'id' }]),
+    const rows = await db.withRequestContext({ role: 'service_role' }, (requestDb) =>
+      requestDb.select('sinopebase_rls_context_test', [], [{ column: 'id' }]),
     )
 
-    expect(rows.map((row) => row['id'])).toEqual([
+    expect(rows.map((row) => row.id)).toEqual([
       'member-a',
       'member-b',
       'public',
@@ -166,35 +176,29 @@ describePostgres('PostgreSQL request RLS context', () => {
 
   it('keeps concurrent member identities isolated between pooled requests', async () => {
     const [rowsA, rowsB] = await Promise.all([
-      db.withRequestContext(
-        { role: 'authenticated', userId: memberA },
-        (requestDb) => requestDb.select('sinopebase_rls_context_test'),
+      db.withRequestContext({ role: 'authenticated', userId: memberA }, (requestDb) =>
+        requestDb.select('sinopebase_rls_context_test'),
       ),
-      db.withRequestContext(
-        { role: 'authenticated', userId: memberB },
-        (requestDb) => requestDb.select(
-          'sinopebase_rls_context_test',
-          [],
-          [{ column: 'id' }],
-        ),
+      db.withRequestContext({ role: 'authenticated', userId: memberB }, (requestDb) =>
+        requestDb.select('sinopebase_rls_context_test', [], [{ column: 'id' }]),
       ),
     ])
 
-    expect(rowsA.map((row) => row['id'])).toEqual(['member-a'])
-    expect(rowsB.map((row) => row['id'])).toEqual(['member-b', 'public'])
+    expect(rowsA.map((row) => row.id)).toEqual(['member-a'])
+    expect(rowsB.map((row) => row.id)).toEqual(['member-b', 'public'])
   })
 
   it('applies verified HTTP auth, anon, and service contexts to PostgREST', async () => {
-    const request = (token: string) => fetch(
-      `${baseUrl}/rest/v1/sinopebase_rls_context_test?order=id.asc`,
-      { headers: { authorization: `Bearer ${token}` } },
-    ).then((response) => response.json())
+    const request = (token: string) =>
+      fetch(`${baseUrl}/rest/v1/sinopebase_rls_context_test?order=id.asc`, {
+        headers: { authorization: `Bearer ${token}` },
+      }).then((response) => response.json())
 
-    const [memberRows, anonRows, serviceRows] = await Promise.all([
+    const [memberRows, anonRows, serviceRows] = (await Promise.all([
       request(memberAToken),
-      request(process.env['SINOPEBASE_ANON_KEY'] ?? 'test-anon-key'),
-      request(process.env['SINOPEBASE_SERVICE_ROLE_KEY'] ?? 'test-service-role-key'),
-    ]) as Array<Array<{ id: string }>>
+      request(process.env.SINOPEBASE_ANON_KEY ?? 'test-anon-key'),
+      request(process.env.SINOPEBASE_SERVICE_ROLE_KEY ?? 'test-service-role-key'),
+    ])) as Array<Array<{ id: string }>>
 
     expect(memberRows.map((row) => row.id)).toEqual(['member-a'])
     expect(anonRows.map((row) => row.id)).toEqual(['public'])
@@ -217,41 +221,35 @@ describePostgres('PostgreSQL request RLS context', () => {
       body: JSON.stringify({ email, password }),
     })
     if (authResponse.status === 400) {
-      authResponse = await fetch(
-        `${baseUrl}/auth/v1/token?grant_type=password`,
-        {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({ email, password }),
-        },
-      )
+      authResponse = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ email, password }),
+      })
     }
 
     expect(authResponse.ok).toBe(true)
-    const session = await authResponse.json() as {
+    const session = (await authResponse.json()) as {
       access_token: string
       user: { id: string }
     }
     expect(session.user.id).toMatch(/^[0-9a-f-]{36}$/i)
 
     const rowId = 'signup-service-membership'
-    const serviceResponse = await fetch(
-      `${baseUrl}/rest/v1/sinopebase_rls_context_test`,
-      {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${process.env['SINOPEBASE_SERVICE_ROLE_KEY'] ?? 'test-service-role-key'}`,
-          'content-type': 'application/json',
-          prefer: 'resolution=merge-duplicates,return=representation',
-        },
-        body: JSON.stringify({
-          id: rowId,
-          user_id: session.user.id,
-          body: 'service-created membership',
-          is_public: false,
-        }),
+    const serviceResponse = await fetch(`${baseUrl}/rest/v1/sinopebase_rls_context_test`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${process.env.SINOPEBASE_SERVICE_ROLE_KEY ?? 'test-service-role-key'}`,
+        'content-type': 'application/json',
+        prefer: 'resolution=merge-duplicates,return=representation',
       },
-    )
+      body: JSON.stringify({
+        id: rowId,
+        user_id: session.user.id,
+        body: 'service-created membership',
+        is_public: false,
+      }),
+    })
     expect(serviceResponse.ok).toBe(true)
 
     const memberResponse = await fetch(
@@ -265,18 +263,16 @@ describePostgres('PostgreSQL request RLS context', () => {
   })
 
   it('applies the same RLS context to PostgREST HEAD counts', async () => {
-    const count = (token: string) => fetch(
-      `${baseUrl}/rest/v1/sinopebase_rls_context_test`,
-      {
+    const count = (token: string) =>
+      fetch(`${baseUrl}/rest/v1/sinopebase_rls_context_test`, {
         method: 'HEAD',
         headers: { authorization: `Bearer ${token}` },
-      },
-    ).then((response) => response.headers.get('content-range'))
+      }).then((response) => response.headers.get('content-range'))
 
     const [memberCount, anonCount, serviceCount] = await Promise.all([
       count(memberAToken),
-      count(process.env['SINOPEBASE_ANON_KEY'] ?? 'test-anon-key'),
-      count(process.env['SINOPEBASE_SERVICE_ROLE_KEY'] ?? 'test-service-role-key'),
+      count(process.env.SINOPEBASE_ANON_KEY ?? 'test-anon-key'),
+      count(process.env.SINOPEBASE_SERVICE_ROLE_KEY ?? 'test-service-role-key'),
     ])
 
     expect(memberCount).toBe('*/1')

@@ -5,9 +5,9 @@
  * Layer 1 -- imports from Layer 0 tools.
  */
 
-import { Tokenizer } from "~/tools/tokenizer/tokenizer.ts";
-import { initModifier } from "./modifiers.ts";
-import type { Modifier } from "./modifiers.ts";
+import { Tokenizer } from '~/tools/tokenizer/tokenizer.ts'
+import type { Modifier } from './modifiers.ts'
+import { initModifier } from './modifiers.ts'
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -15,13 +15,13 @@ import type { Modifier } from "./modifiers.ts";
 
 interface FieldRule {
   /** Raw path as provided by the user (e.g. "a.b.c" or "-password"). */
-  raw: string;
+  raw: string
   /** True when this is an exclusion rule (starts with "-"). */
-  exclude: boolean;
+  exclude: boolean
   /** Path minus the exclusion prefix. */
-  path: string;
+  path: string
   /** Optional modifier to apply. */
-  modifier: Modifier | null;
+  modifier: Modifier | null
 }
 
 // ---------------------------------------------------------------------------
@@ -55,20 +55,20 @@ interface FieldRule {
  * ```
  */
 export function Pick(data: unknown, rawFields: string): unknown {
-  const rules = parseFields(rawFields);
+  const rules = parseFields(rawFields)
 
   // Deep-clone via JSON to invoke any custom serializers (matching Go behaviour)
-  let decoded: unknown;
+  let decoded: unknown
   try {
-    const encoded = JSON.stringify(data);
-    decoded = JSON.parse(encoded);
+    const encoded = JSON.stringify(data)
+    decoded = JSON.parse(encoded)
   } catch {
-    decoded = data;
+    decoded = data
   }
 
-  applyRules(decoded, rules);
+  applyRules(decoded, rules)
 
-  return decoded;
+  return decoded
 }
 
 // ---------------------------------------------------------------------------
@@ -83,42 +83,42 @@ export function Pick(data: unknown, rawFields: string): unknown {
  *   field  ::= "-"? path (":" modifier)?
  */
 export function parseFields(rawFields: string): FieldRule[] {
-  const rules: FieldRule[] = [];
+  const rules: FieldRule[] = []
 
-  if (rawFields.trim() === "") {
-    return rules;
+  if (rawFields.trim() === '') {
+    return rules
   }
 
-  const t = new Tokenizer(rawFields);
-  const fields = t.ScanAll();
+  const t = new Tokenizer(rawFields)
+  const fields = t.ScanAll()
 
   for (const f of fields) {
-    const trimmed = f.trim();
-    if (trimmed === "") continue;
+    const trimmed = f.trim()
+    if (trimmed === '') continue
 
-    const isExclusion = trimmed.startsWith("-");
-    const fieldBody = isExclusion ? trimmed.slice(1) : trimmed;
+    const isExclusion = trimmed.startsWith('-')
+    const fieldBody = isExclusion ? trimmed.slice(1) : trimmed
 
-    const colonIdx = fieldBody.indexOf(":");
-    let path: string;
-    let modifier: Modifier | null = null;
+    const colonIdx = fieldBody.indexOf(':')
+    let path: string
+    let modifier: Modifier | null = null
 
     if (colonIdx !== -1) {
-      path = fieldBody.slice(0, colonIdx);
-      const modStr = fieldBody.slice(colonIdx + 1);
-      if (modStr !== "") {
-        modifier = initModifier(modStr);
+      path = fieldBody.slice(0, colonIdx)
+      const modStr = fieldBody.slice(colonIdx + 1)
+      if (modStr !== '') {
+        modifier = initModifier(modStr)
       }
     } else {
-      path = fieldBody;
+      path = fieldBody
     }
 
-    if (path === "") continue;
+    if (path === '') continue
 
-    rules.push({ raw: trimmed, exclude: isExclusion, path, modifier });
+    rules.push({ raw: trimmed, exclude: isExclusion, path, modifier })
   }
 
-  return rules;
+  return rules
 }
 
 // ---------------------------------------------------------------------------
@@ -129,16 +129,16 @@ export function parseFields(rawFields: string): FieldRule[] {
  * Apply the parsed field rules to `data` in-place.
  */
 function applyRules(data: unknown, rules: FieldRule[]): void {
-  if (data === null || data === undefined || rules.length === 0) return;
+  if (data === null || data === undefined || rules.length === 0) return
 
   if (Array.isArray(data)) {
     for (const item of data) {
-      if (typeof item === "object" && item !== null) {
-        applyRulesToMap(item as Record<string, unknown>, rules);
+      if (typeof item === 'object' && item !== null) {
+        applyRulesToMap(item as Record<string, unknown>, rules)
       }
     }
-  } else if (typeof data === "object") {
-    applyRulesToMap(data as Record<string, unknown>, rules);
+  } else if (typeof data === 'object') {
+    applyRulesToMap(data as Record<string, unknown>, rules)
   }
 }
 
@@ -156,52 +156,49 @@ function applyRules(data: unknown, rules: FieldRule[]): void {
  * 3. Build a per-key action plan from the combined include/exclude info.
  * 4. Apply the plan to each data key (keep, delete, or recurse).
  */
-function applyRulesToMap(
-  data: Record<string, unknown>,
-  rules: FieldRule[],
-): void {
+function applyRulesToMap(data: Record<string, unknown>, rules: FieldRule[]): void {
   // Separate rule types
-  const rootInclusions = new Map<string, { modifier: Modifier | null; remainder: string[] }>();
-  const rootExclusions = new Set<string>();
-  const exclusionSubPaths = new Map<string, string[]>();
-  let hasWildcard = false;
-  let wildcardMod: Modifier | null = null;
+  const rootInclusions = new Map<string, { modifier: Modifier | null; remainder: string[] }>()
+  const rootExclusions = new Set<string>()
+  const exclusionSubPaths = new Map<string, string[]>()
+  let hasWildcard = false
+  let wildcardMod: Modifier | null = null
 
   for (const rule of rules) {
     if (rule.exclude) {
       // Exclusion
-      const dotIdx = rule.path.indexOf(".");
+      const dotIdx = rule.path.indexOf('.')
       if (dotIdx === -1) {
         // Flat exclusion: the root key is excluded entirely
-        rootExclusions.add(rule.path);
+        rootExclusions.add(rule.path)
       } else {
         // Nested exclusion: only a sub-path is excluded; the root key may
         // still be included (e.g. by wildcard).  Track the sub-path for
         // when we recurse.
-        const root = rule.path.slice(0, dotIdx);
-        const remainder = rule.path.slice(dotIdx + 1);
+        const root = rule.path.slice(0, dotIdx)
+        const remainder = rule.path.slice(dotIdx + 1)
         // Do NOT add to rootExclusions – that would delete the parent key.
         // Instead we only track it for recursion.
-        const existing = exclusionSubPaths.get(root) ?? [];
-        existing.push(remainder);
-        exclusionSubPaths.set(root, existing);
+        const existing = exclusionSubPaths.get(root) ?? []
+        existing.push(remainder)
+        exclusionSubPaths.set(root, existing)
       }
-    } else if (rule.path === "*") {
-      hasWildcard = true;
-      wildcardMod = rule.modifier;
+    } else if (rule.path === '*') {
+      hasWildcard = true
+      wildcardMod = rule.modifier
     } else {
       // Inclusion
-      const dotIdx = rule.path.indexOf(".");
+      const dotIdx = rule.path.indexOf('.')
       if (dotIdx === -1) {
-        rootInclusions.set(rule.path, { modifier: rule.modifier, remainder: [] });
+        rootInclusions.set(rule.path, { modifier: rule.modifier, remainder: [] })
       } else {
-        const root = rule.path.slice(0, dotIdx);
-        const remainder = rule.path.slice(dotIdx + 1);
-        const existing = rootInclusions.get(root);
+        const root = rule.path.slice(0, dotIdx)
+        const remainder = rule.path.slice(dotIdx + 1)
+        const existing = rootInclusions.get(root)
         if (existing) {
-          existing.remainder.push(remainder);
+          existing.remainder.push(remainder)
         } else {
-          rootInclusions.set(root, { modifier: null, remainder: [remainder] });
+          rootInclusions.set(root, { modifier: null, remainder: [remainder] })
         }
       }
     }
@@ -211,7 +208,7 @@ function applyRulesToMap(
   if (hasWildcard) {
     for (const key of Object.keys(data)) {
       if (!rootInclusions.has(key) && !rootExclusions.has(key)) {
-        rootInclusions.set(key, { modifier: wildcardMod, remainder: [] });
+        rootInclusions.set(key, { modifier: wildcardMod, remainder: [] })
       }
     }
   }
@@ -220,12 +217,14 @@ function applyRulesToMap(
   // (But if only exclusions were specified, keep everything except those)
   if (!hasWildcard && rootInclusions.size === 0) {
     // Check if there were any explicit non-exclusion rules
-    const hasNonWildcardInclusion = rules.some((r) => !r.exclude && r.path !== "*" && !r.path.startsWith("-"));
-    if (!hasNonWildcardInclusion && rules.some((r) => r.exclude || r.path === "*")) {
+    const hasNonWildcardInclusion = rules.some(
+      (r) => !r.exclude && r.path !== '*' && !r.path.startsWith('-'),
+    )
+    if (!hasNonWildcardInclusion && rules.some((r) => r.exclude || r.path === '*')) {
       // Only exclusions/wildcard specified — keep all except those excluded
       for (const key of Object.keys(data)) {
         if (!rootExclusions.has(key)) {
-          rootInclusions.set(key, { modifier: null, remainder: [] });
+          rootInclusions.set(key, { modifier: null, remainder: [] })
         }
       }
     }
@@ -235,44 +234,44 @@ function applyRulesToMap(
   for (const key of Object.keys(data)) {
     if (rootExclusions.has(key) && !rootInclusions.has(key)) {
       // Excluded and not re-included — delete
-      delete data[key];
-      continue;
+      delete data[key]
+      continue
     }
 
-    const inclusion = rootInclusions.get(key);
+    const inclusion = rootInclusions.get(key)
     if (!inclusion) {
       // Not in inclusion set — delete
-      delete data[key];
-      continue;
+      delete data[key]
+      continue
     }
 
     // Apply modifier if this is a direct-field inclusion
     if (inclusion.remainder.length === 0 && inclusion.modifier) {
-      data[key] = inclusion.modifier.modify(data[key]);
+      data[key] = inclusion.modifier.modify(data[key])
     }
 
     // Determine whether we need to recurse into this key:
     //   - When inclusion has sub-path remainders
     //   - When there are sub-exclusions for this key
-    const hasRemainder = inclusion.remainder.length > 0;
-    const hasSubExclusions = exclusionSubPaths.has(key);
+    const hasRemainder = inclusion.remainder.length > 0
+    const hasSubExclusions = exclusionSubPaths.has(key)
 
     if (hasRemainder || hasSubExclusions) {
-      const child = data[key];
-      if (typeof child === "object" && child !== null) {
+      const child = data[key]
+      if (typeof child === 'object' && child !== null) {
         // Build sub-rules
-        const subRules: FieldRule[] = [];
+        const subRules: FieldRule[] = []
 
         // If we have sub-exclusions but no inclusion remainders, the key was
         // included by wildcard — we need to pass a wildcard rule down so that
         // all sub-keys are kept (minus the exclusions).
         if (!hasRemainder && hasSubExclusions) {
           subRules.push({
-            raw: "*",
+            raw: '*',
             exclude: false,
-            path: "*",
+            path: '*',
             modifier: null,
-          });
+          })
         }
 
         for (const rem of inclusion.remainder) {
@@ -281,11 +280,11 @@ function applyRulesToMap(
             exclude: false,
             path: rem,
             modifier: null,
-          });
+          })
         }
 
         // Add sub-exclusions
-        const subExclusions = exclusionSubPaths.get(key);
+        const subExclusions = exclusionSubPaths.get(key)
         if (subExclusions) {
           for (const sub of subExclusions) {
             subRules.push({
@@ -293,14 +292,14 @@ function applyRulesToMap(
               exclude: true,
               path: sub,
               modifier: null,
-            });
+            })
           }
         }
 
-        applyRulesToMap(child as Record<string, unknown>, subRules);
+        applyRulesToMap(child as Record<string, unknown>, subRules)
       } else if (hasRemainder) {
         // Path leads to a non-object with sub-path expectations — delete
-        delete data[key];
+        delete data[key]
       }
     }
   }

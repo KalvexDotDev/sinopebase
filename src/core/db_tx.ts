@@ -9,9 +9,7 @@
  * interface scoped to a transaction.
  */
 
-import type { IDatabase } from './db-interface'
-import type { Filter } from './db-interface'
-import type { SelectOptions } from './db-interface'
+import type { Filter, IDatabase, SelectOptions } from './db-interface'
 
 // ---------------------------------------------------------------------------
 // Transaction types
@@ -54,20 +52,14 @@ export class TxWrapper {
   /**
    * Selects rows within the transaction scope.
    */
-  async select(
-    table: string,
-    options: SelectOptions,
-  ): Promise<Record<string, unknown>[]> {
+  async select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]> {
     return this.db.select(table, options)
   }
 
   /**
    * Counts rows within the transaction scope.
    */
-  async count(
-    table: string,
-    filters?: Filter[],
-  ): Promise<number> {
+  async count(table: string, filters?: Filter[]): Promise<number> {
     return this.db.count(table, filters)
   }
 
@@ -85,10 +77,7 @@ export class TxWrapper {
   /**
    * Queues an insert operation for the transaction.
    */
-  async insert(
-    table: string,
-    record: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     const result = await this.db.insert(table, record)
     return result
   }
@@ -96,10 +85,7 @@ export class TxWrapper {
   /**
    * Queues an upsert operation for the transaction.
    */
-  async upsert(
-    table: string,
-    record: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.db.upsert(table, record)
   }
 
@@ -117,10 +103,7 @@ export class TxWrapper {
   /**
    * Queues a delete operation for the transaction.
    */
-  async delete(
-    table: string,
-    filters: Filter[],
-  ): Promise<Record<string, unknown>[]> {
+  async delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]> {
     return this.db.delete(table, filters)
   }
 }
@@ -144,13 +127,8 @@ export async function runInTransaction<T>(
   fn: (txWrapper: TxWrapper) => Promise<T>,
 ): Promise<T> {
   const txWrapper = new TxWrapper(db)
-
-  try {
-    const result = await fn(txWrapper)
-    return result
-  } catch (error) {
-    throw error
-  }
+  const result = await fn(txWrapper)
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -173,11 +151,6 @@ export async function runInDualTransaction<T>(
 ): Promise<T> {
   const mainTx = new TxWrapper(mainDB)
   const auxTx = new TxWrapper(auxDB)
-
-  try {
-    const result = await fn({ main: mainTx, aux: auxTx })
-    return result
-  } catch (error) {
-    throw error
-  }
+  const result = await fn({ main: mainTx, aux: auxTx })
+  return result
 }

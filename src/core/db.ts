@@ -8,7 +8,6 @@
 import { Kysely, PostgresDialect, sql } from 'kysely'
 import { Pool } from 'pg'
 
-
 // ---------------------------------------------------------------------------
 // Database interface (mirrors PocketBase's DB interface)
 // ---------------------------------------------------------------------------

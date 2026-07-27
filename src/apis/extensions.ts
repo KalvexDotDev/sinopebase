@@ -18,8 +18,8 @@
 
 import { Elysia } from 'elysia'
 import type { App } from '~/core/app'
-import { skipSuccessActivityLog, securityHeaders } from './middlewares'
 import type { UIExtension } from '~/core/events'
+import { securityHeaders, skipSuccessActivityLog } from './middlewares'
 
 // ---------------------------------------------------------------------------
 // Default CSP (same as serve.ts)
@@ -47,10 +47,9 @@ function extensionHeaders(ctx: {
   params: Record<string, string>
 }): void {
   // Don't cache the root index page, but cache static assets
-  const path = ctx.params['path'] ?? ''
+  const path = ctx.params.path ?? ''
   if (path && !ctx.set.headers['cache-control']) {
-    ctx.set.headers['cache-control'] =
-      'max-age=1209600, stale-while-revalidate=86400'
+    ctx.set.headers['cache-control'] = 'max-age=1209600, stale-while-revalidate=86400'
   }
 
   if (!ctx.set.headers['content-security-policy']) {
@@ -78,11 +77,7 @@ function extensionHeaders(ctx: {
  * @param router      The Elysia app instance.
  * @param extensions  Array of UIExtension to register.
  */
-export function bindUIExtensions(
-  app: App,
-  router: Elysia,
-  extensions: UIExtension[],
-): void {
+export function bindUIExtensions(app: App, router: Elysia, extensions: UIExtension[]): void {
   if (extensions.length === 0) return
 
   const uiGroup = new Elysia({ prefix: '/_', name: 'ui-extensions' })
@@ -98,49 +93,43 @@ export function bindUIExtensions(
       continue
     }
 
-    uiGroup.get(
-      `/extensions/${ext.name}/{path*}`,
-      async (ctx) => {
-        const path = ctx.params['path*'] ?? 'index.html'
+    uiGroup.get(`/extensions/${ext.name}/{path*}`, async (ctx) => {
+      const path = ctx.params['path*'] ?? 'index.html'
 
-        try {
-          // Attempt to read the file from the extension's filesystem
-          // The `html` field is treated as inline content.
-          // For real FS-backed extensions, read from ext.FS (not ported yet).
-          if (path === 'main.js' && ext.html) {
-            return new Response(ext.html, {
-              headers: { 'content-type': 'text/javascript' },
-            })
-          }
-
-          ctx.set.status = 404
-          return { message: 'File not found in extension', code: 404 }
-        } catch {
-          ctx.set.status = 404
-          return { message: 'File not found in extension', code: 404 }
+      try {
+        // Attempt to read the file from the extension's filesystem
+        // The `html` field is treated as inline content.
+        // For real FS-backed extensions, read from ext.FS (not ported yet).
+        if (path === 'main.js' && ext.html) {
+          return new Response(ext.html, {
+            headers: { 'content-type': 'text/javascript' },
+          })
         }
-      },
-    )
+
+        ctx.set.status = 404
+        return { message: 'File not found in extension', code: 404 }
+      } catch {
+        ctx.set.status = 404
+        return { message: 'File not found in extension', code: 404 }
+      }
+    })
   }
 
   // Combined extensions.js endpoint
-  uiGroup.get(
-    '/extensions.js',
-    async () => {
-      const parts: string[] = []
+  uiGroup.get('/extensions.js', async () => {
+    const parts: string[] = []
 
-      for (const ext of extensions) {
-        const wrapped = copyExtensionMainjs(ext)
-        if (wrapped) {
-          parts.push(wrapped)
-        }
+    for (const ext of extensions) {
+      const wrapped = copyExtensionMainjs(ext)
+      if (wrapped) {
+        parts.push(wrapped)
       }
+    }
 
-      return new Response(parts.join('\n'), {
-        headers: { 'content-type': 'text/javascript' },
-      })
-    },
-  )
+    return new Response(parts.join('\n'), {
+      headers: { 'content-type': 'text/javascript' },
+    })
+  })
 
   // Apply skipSuccessActivityLog to the extensions.js endpoint
   // (PocketBase does this to avoid flooding logs)

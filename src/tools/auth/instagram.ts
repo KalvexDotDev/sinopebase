@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://graph.instagram.com/me?fields=id,username,name response.
  *
  * @example
- * 
+ *
  */
 export class InstagramProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

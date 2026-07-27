@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { JSONField, FieldTypeJSON, DefaultJSONFieldMaxSize } from '~/core/field_json.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { DefaultJSONFieldMaxSize, FieldTypeJSON, JSONField } from '~/core/field_json.ts'
 
 describe('JSONField', () => {
   it('has type "json"', () => {
@@ -21,8 +21,8 @@ describe('JSONField', () => {
   it('settings schema accepts multiple types', () => {
     const f = new JSONField()
     const schema = f.settingsSchema
-    expect(Array.isArray(schema['type'])).toBe(true)
-    expect(schema['default']).toBeNull()
+    expect(Array.isArray(schema.type)).toBe(true)
+    expect(schema.default).toBeNull()
   })
 
   it('effectiveMaxSize defaults to 1MB', () => {

@@ -24,13 +24,13 @@
  */
 export interface Resolver {
   /** Proceed to the next handler in the hook chain (if any). */
-  next(): Promise<unknown>;
+  next(): Promise<unknown>
 
   /** @internal Returns the current next-function. */
-  nextFunc(): (() => Promise<unknown>) | null;
+  nextFunc(): (() => Promise<unknown>) | null
 
   /** @internal Sets the function that [[next]] will call. */
-  setNextFunc(fn: (() => Promise<unknown>) | null): void;
+  setNextFunc(fn: (() => Promise<unknown>) | null): void
 }
 
 /**
@@ -47,22 +47,22 @@ export interface Resolver {
  * ```
  */
 export class Event implements Resolver {
-  #next: (() => Promise<unknown>) | null = null;
+  #next: (() => Promise<unknown>) | null = null
 
   /** Calls the next handler in the chain (or resolves immediately). */
   async next(): Promise<unknown> {
     if (this.#next) {
-      return this.#next();
+      return this.#next()
     }
   }
 
   /** @internal */
   nextFunc(): (() => Promise<unknown>) | null {
-    return this.#next;
+    return this.#next
   }
 
   /** @internal */
   setNextFunc(fn: (() => Promise<unknown>) | null): void {
-    this.#next = fn;
+    this.#next = fn
   }
 }

@@ -6,10 +6,10 @@
  * Layer 1 -- imports from Layer 0 tools.
  */
 
-import { spawn } from "node:child_process";
-import type { Mailer, Message, SendInterceptor } from "./mailer.ts";
-import { addressToStrings, SendEvent } from "./mailer.ts";
-import { Hook } from "~/tools/hook/hook.ts";
+import { spawn } from 'node:child_process'
+import { Hook } from '~/tools/hook/hook.ts'
+import type { Mailer, Message, SendInterceptor } from './mailer.ts'
+import { addressToStrings, SendEvent } from './mailer.ts'
 
 // ---------------------------------------------------------------------------
 // Sendmail
@@ -24,7 +24,7 @@ import { Hook } from "~/tools/hook/hook.ts";
  * message piped to its stdin.
  */
 export class Sendmail implements Mailer, SendInterceptor {
-  private onSendHook: Hook<SendEvent> | null = null;
+  private onSendHook: Hook<SendEvent> | null = null
 
   /**
    * Optional path to the sendmail executable.
@@ -45,9 +45,9 @@ export class Sendmail implements Mailer, SendInterceptor {
 
   onSend(): Hook<SendEvent> {
     if (this.onSendHook === null) {
-      this.onSendHook = new Hook<SendEvent>();
+      this.onSendHook = new Hook<SendEvent>()
     }
-    return this.onSendHook;
+    return this.onSendHook
   }
 
   // -----------------------------------------------------------------------
@@ -56,15 +56,12 @@ export class Sendmail implements Mailer, SendInterceptor {
 
   async send(message: Message): Promise<void> {
     if (this.onSendHook !== null) {
-      await this.onSendHook.trigger(
-        new SendEvent(message),
-        async (e: SendEvent) => {
-          await this.doSend(e.message);
-          return e.next();
-        },
-      );
+      await this.onSendHook.trigger(new SendEvent(message), async (e: SendEvent) => {
+        await this.doSend(e.message)
+        return e.next()
+      })
     } else {
-      await this.doSend(message);
+      await this.doSend(message)
     }
   }
 
@@ -73,60 +70,58 @@ export class Sendmail implements Mailer, SendInterceptor {
   // -----------------------------------------------------------------------
 
   private async doSend(m: Message): Promise<void> {
-    const cmdPath = this.sendmailPath ?? (await findSendmailPath());
+    const cmdPath = this.sendmailPath ?? (await findSendmailPath())
 
     // Build email headers
     const headers: string[] = [
       `Subject: ${m.subject}`,
-      `From: ${m.from.name !== "" ? `${m.from.name} <${m.from.address}>` : m.from.address}`,
+      `From: ${m.from.name !== '' ? `${m.from.name} <${m.from.address}>` : m.from.address}`,
       `Content-Type: text/html; charset=UTF-8`,
-      `To: ${addressToStrings(m.to, false).join(",")}`,
-    ];
+      `To: ${addressToStrings(m.to, false).join(',')}`,
+    ]
 
     if (m.cc.length > 0) {
-      headers.push(`Cc: ${addressToStrings(m.cc, false).join(",")}`);
+      headers.push(`Cc: ${addressToStrings(m.cc, false).join(',')}`)
     }
 
     if (m.bcc.length > 0) {
-      headers.push(`Bcc: ${addressToStrings(m.bcc, false).join(",")}`);
+      headers.push(`Bcc: ${addressToStrings(m.bcc, false).join(',')}`)
     }
 
     // Custom headers
     for (const [key, value] of Object.entries(m.headers)) {
-      headers.push(`${key}: ${value}`);
+      headers.push(`${key}: ${value}`)
     }
 
-    const body = m.html !== "" ? m.html : m.text;
-    const emailContent = `${headers.join("\r\n")}\r\n\r\n${body}`;
+    const body = m.html !== '' ? m.html : m.text
+    const emailContent = `${headers.join('\r\n')}\r\n\r\n${body}`
 
     return new Promise<void>((resolve, reject) => {
-      const proc = spawn(cmdPath, ["-i", "-t"], {
-        stdio: ["pipe", "inherit", "inherit"],
-      });
+      const proc = spawn(cmdPath, ['-i', '-t'], {
+        stdio: ['pipe', 'inherit', 'inherit'],
+      })
 
-      let hasError = false;
+      let hasError = false
 
-      proc.on("error", (err) => {
-        hasError = true;
-        reject(new Error(`Failed to run sendmail: ${err.message}`));
-      });
+      proc.on('error', (err) => {
+        hasError = true
+        reject(new Error(`Failed to run sendmail: ${err.message}`))
+      })
 
-      proc.on("exit", (code) => {
+      proc.on('exit', (code) => {
         if (!hasError) {
           if (code === 0) {
-            resolve();
+            resolve()
           } else {
-            reject(
-              new Error(`sendmail exited with code ${code ?? "null"}`),
-            );
+            reject(new Error(`sendmail exited with code ${code ?? 'null'}`))
           }
         }
-      });
+      })
 
       // Write the email content to stdin
-      proc.stdin!.write(emailContent, "utf-8");
-      proc.stdin!.end();
-    });
+      proc.stdin?.write(emailContent, 'utf-8')
+      proc.stdin?.end()
+    })
   }
 }
 
@@ -145,41 +140,35 @@ export class Sendmail implements Mailer, SendInterceptor {
  * On Windows, returns a reasonable error since sendmail is a Unix tool.
  */
 async function findSendmailPath(): Promise<string> {
-  const options = [
-    "/usr/sbin/sendmail",
-    "/usr/bin/sendmail",
-    "sendmail",
-  ];
+  const options = ['/usr/sbin/sendmail', '/usr/bin/sendmail', 'sendmail']
 
   for (const option of options) {
     try {
-      const { access } = await import("node:fs/promises");
+      const { access } = await import('node:fs/promises')
       // For "sendmail" (no path), check if it's available via PATH
-      if (!option.includes("/")) {
-        const { execFile } = await import("node:child_process");
+      if (!option.includes('/')) {
+        const { execFile } = await import('node:child_process')
         try {
           await new Promise<void>((resolve, reject) => {
             execFile(
-              process.env['ComSpec'] ? "where" : "which",
+              process.env.ComSpec ? 'where' : 'which',
               [option],
               { timeout: 1000 },
               (err) => {
-                if (err) reject(err);
-                else resolve();
+                if (err) reject(err)
+                else resolve()
               },
-            );
-          });
-          return option;
+            )
+          })
+          return option
         } catch {
-          continue;
+          continue
         }
       }
-      await access(option);
-      return option;
-    } catch {
-      continue;
-    }
+      await access(option)
+      return option
+    } catch {}
   }
 
-  throw new Error("Failed to locate a sendmail executable path");
+  throw new Error('Failed to locate a sendmail executable path')
 }

@@ -11,12 +11,12 @@
  * and a skipReason.
  */
 
+import type { InfrastructureReady } from './infrastructure'
 import {
   gateInfrastructure,
-  POSTGRES_REQUIREMENTS,
   OBJECT_STORAGE_REQUIREMENTS,
+  POSTGRES_REQUIREMENTS,
 } from './infrastructure'
-import type { InfrastructureReady } from './infrastructure'
 
 export interface RustFSConfig {
   readonly endpoint: string
@@ -33,8 +33,8 @@ export interface RustFSConfig {
 export function requirePostgres(): string {
   // Allow POSTGRES_URL as fallback for backward compatibility
   const env = { ...process.env } as Record<string, string | undefined>
-  if (!env['TEST_POSTGRES_URL'] && env['POSTGRES_URL']) {
-    env['TEST_POSTGRES_URL'] = env['POSTGRES_URL']
+  if (!env.TEST_POSTGRES_URL && env.POSTGRES_URL) {
+    env.TEST_POSTGRES_URL = env.POSTGRES_URL
   }
   const gate = gateInfrastructure({
     suiteId: 'require-infra',
@@ -68,9 +68,7 @@ export function requireRustFS(): RustFSConfig {
 export function requireAnonKey(): string {
   const gate = gateInfrastructure({
     suiteId: 'require-infra',
-    requirements: [
-      { name: 'SINOPEBASE_ANON_KEY', secret: true },
-    ],
+    requirements: [{ name: 'SINOPEBASE_ANON_KEY', secret: true }],
   })
   return (gate as InfrastructureReady).values.SINOPEBASE_ANON_KEY
 }
@@ -82,9 +80,7 @@ export function requireAnonKey(): string {
 export function requireServiceRoleKey(): string {
   const gate = gateInfrastructure({
     suiteId: 'require-infra',
-    requirements: [
-      { name: 'SINOPEBASE_SERVICE_ROLE_KEY', secret: true },
-    ],
+    requirements: [{ name: 'SINOPEBASE_SERVICE_ROLE_KEY', secret: true }],
   })
   return (gate as InfrastructureReady).values.SINOPEBASE_SERVICE_ROLE_KEY
 }

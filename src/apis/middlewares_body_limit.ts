@@ -44,9 +44,7 @@ class LimitedStream extends ReadableStream<Uint8Array> {
           totalRead += value.byteLength
           if (totalRead > limitBytes) {
             controller.error(
-              new RequestEntityTooLargeError(
-                `Request body exceeds the ${limitBytes} byte limit.`,
-              ),
+              new RequestEntityTooLargeError(`Request body exceeds the ${limitBytes} byte limit.`),
             )
             return
           }
@@ -84,9 +82,7 @@ export function bodyLimit(limitBytes: number) {
     // Optimistic check
     const contentLength = Number(ctx.request.headers.get('content-length') ?? 0)
     if (contentLength > limitBytes) {
-      throw new RequestEntityTooLargeError(
-        `Request body exceeds the ${limitBytes} byte limit.`,
-      )
+      throw new RequestEntityTooLargeError(`Request body exceeds the ${limitBytes} byte limit.`)
     }
 
     // If the body is already consumed or empty, nothing to do.
@@ -95,10 +91,7 @@ export function bodyLimit(limitBytes: number) {
     // Replace the body stream with a limited reader.
     // We create a new Request with the limited stream so that Elysia's
     // body parser reads through our wrapper.
-    const limited = new LimitedStream(
-      ctx.request.body as ReadableStream<Uint8Array>,
-      limitBytes,
-    )
+    const limited = new LimitedStream(ctx.request.body as ReadableStream<Uint8Array>, limitBytes)
 
     // Patch the request body — use the low-level approach since
     // Elysia reads from `request.body` (a ReadableStream).

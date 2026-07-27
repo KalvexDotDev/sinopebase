@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import {
-  bridgeGetUserResponse,
-  bridgeSignInResponse,
-} from '~/tools/auth-better/supabase-bridge'
+import { bridgeGetUserResponse, bridgeSignInResponse } from '~/tools/auth-better/supabase-bridge'
 
 const betterAuthUser = {
   id: '42d9ec90-0294-4599-9a54-6dc4c9dd5387',

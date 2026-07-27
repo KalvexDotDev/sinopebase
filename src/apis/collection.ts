@@ -7,8 +7,9 @@
  */
 
 import { Elysia } from 'elysia'
-import type { IDatabase } from '~/core/db-interface'
 import { Collection } from '~/core/collection_model'
+import type { IDatabase } from '~/core/db-interface'
+import { selectRows } from './db-helpers'
 
 // ---------------------------------------------------------------------------
 // Internal helpers (avoid dependency on collection_query.ts MemoryDatabase mismatch)
@@ -18,7 +19,7 @@ async function queryAllCollections(db: IDatabase): Promise<Collection[]> {
   try {
     const result = await db.select('_collections', {})
     // Handle both MemoryDatabase format ({ rows, total }) and IDatabase format (Record[])
-    const rows = Array.isArray(result) ? result : (result as any).rows ?? []
+    const rows = selectRows(result)
     return rows.map((row: Record<string, unknown>) => {
       const collection = new Collection()
       collection.loadFromDb(row)
@@ -34,10 +35,12 @@ async function queryCollectionById(db: IDatabase, id: string): Promise<Collectio
     const result = await db.select('_collections', {
       filters: [{ column: 'id', operator: 'eq', value: id }],
     })
-    const rows = Array.isArray(result) ? result : (result as any).rows ?? []
+    const rows = selectRows(result)
     if (rows.length === 0) return null
+    const first = rows[0]
+    if (!first) return null
     const collection = new Collection()
-    collection.loadFromDb(rows[0]!)
+    collection.loadFromDb(first)
     return collection
   } catch {
     return null
@@ -47,6 +50,24 @@ async function queryCollectionById(db: IDatabase, id: string): Promise<Collectio
 // ---------------------------------------------------------------------------
 // Plugin factory
 // ---------------------------------------------------------------------------
+
+/**
+ * MemoryDatabase insert/update/delete take arrays where IDatabase takes single
+ * records. This tiny interface captures the fallback signature so we can avoid
+ * `as any` without changing the core IDatabase contract.
+ */
+interface MemoryAdapterFallback {
+  insert(table: string, records: Record<string, unknown>[]): Promise<unknown>
+  update(
+    table: string,
+    filters: { column: string; operator: string; value: unknown }[],
+    data: Record<string, unknown>,
+  ): Promise<unknown>
+  delete(
+    table: string,
+    filters: { column: string; operator: string; value: unknown }[],
+  ): Promise<unknown>
+}
 
 /**
  * Create an Elysia plugin that registers all /api/collections/* routes.
@@ -68,8 +89,11 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
 
       // Apply pagination from query
       const q = query as Record<string, string>
-      const page = Math.max(1, parseInt(q['page'] ?? '1', 10) || 1)
-      const perPage = Math.min(1000, Math.max(1, parseInt(q['perPage'] ?? q['per_page'] ?? '30', 10) || 30))
+      const page = Math.max(1, parseInt(q.page ?? '1', 10) || 1)
+      const perPage = Math.min(
+        1000,
+        Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30),
+      )
 
       const totalItems = allCollections.length
       const totalPages = Math.ceil(totalItems / perPage)
@@ -85,7 +109,10 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
       }
     } catch (err) {
       set.status = 400
-      return { code: 400, message: `Failed to list collections: ${err instanceof Error ? err.message : String(err)}` }
+      return {
+        code: 400,
+        message: `Failed to list collections: ${err instanceof Error ? err.message : String(err)}`,
+      }
     }
   })
 
@@ -99,7 +126,7 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
     try {
       const data = (body ?? {}) as Record<string, unknown>
 
-      const name = String(data['name'] ?? '')
+      const name = String(data.name ?? '')
       if (!name) {
         set.status = 400
         return { code: 400, message: 'Collection name is required.' }
@@ -115,13 +142,13 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
 
       // Save to DB
       const serialized = collection.dbExport()
-      serialized['id'] = collection.id
+      serialized.id = collection.id
 
       try {
         await db.insert('_collections', serialized)
       } catch {
         // MemoryDatabase insert takes array
-        await (db as any).insert('_collections', [serialized])
+        await (db as MemoryAdapterFallback).insert('_collections', [serialized])
       }
 
       return collection.toJSON()
@@ -153,7 +180,10 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
       return collection.toJSON()
     } catch (err) {
       set.status = 400
-      return { code: 400, message: `Failed to view collection: ${err instanceof Error ? err.message : String(err)}` }
+      return {
+        code: 400,
+        message: `Failed to view collection: ${err instanceof Error ? err.message : String(err)}`,
+      }
     }
   })
 
@@ -179,13 +209,21 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
 
       // Save to DB
       const serialized = collection.dbExport()
-      serialized['id'] = collection.id
+      serialized.id = collection.id
 
       try {
-        await db.update('_collections', [{ column: 'id', operator: 'eq', value: collection.id }], serialized)
+        await db.update(
+          '_collections',
+          [{ column: 'id', operator: 'eq', value: collection.id }],
+          serialized,
+        )
       } catch {
         // MemoryDatabase update is synchronous
-        ;(db as any).update('_collections', [{ column: 'id', operator: 'eq', value: collection.id }], serialized)
+        ;(db as MemoryAdapterFallback).update(
+          '_collections',
+          [{ column: 'id', operator: 'eq', value: collection.id }],
+          serialized,
+        )
       }
 
       return collection.toJSON()
@@ -217,7 +255,9 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
       try {
         await db.delete('_collections', [{ column: 'id', operator: 'eq', value: collection.id }])
       } catch {
-        ;(db as any).delete('_collections', [{ column: 'id', operator: 'eq', value: collection.id }])
+        ;(db as MemoryAdapterFallback).delete('_collections', [
+          { column: 'id', operator: 'eq', value: collection.id },
+        ])
       }
 
       set.status = 204

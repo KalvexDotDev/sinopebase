@@ -44,7 +44,7 @@ export type ValidatedConfig = z.infer<typeof ProductionConfig>
  * Returns `'development'` when neither indicates production.
  */
 export function detectMode(): 'production' | 'development' {
-  if (process.env['NODE_ENV'] === 'production') return 'production'
-  if (process.env['SINOPEBASE_PRODUCTION'] === 'true') return 'production'
+  if (process.env.NODE_ENV === 'production') return 'production'
+  if (process.env.SINOPEBASE_PRODUCTION === 'true') return 'production'
   return 'development'
 }

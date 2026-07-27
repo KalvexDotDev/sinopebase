@@ -14,8 +14,6 @@
  * This module provides the TypeScript equivalent of that flow.
  */
 
-
-
 import type { App } from '~/core/app'
 import { SuperusersCollectionName } from '~/core/record_model_superusers'
 import { newStaticAuthToken } from '~/core/record_tokens'
@@ -53,10 +51,7 @@ export async function defaultInstallerFunc(
 ): Promise<void> {
   // Generate a short-lived auth token (30 minutes)
   // In the Go version, this uses `Record.NewStaticAuthToken(30 * time.Minute)`
-  const token = await newStaticAuthToken(
-    systemSuperuser as never,
-    30 * 60 * 1000,
-  )
+  const token = await newStaticAuthToken(systemSuperuser as never, 30 * 60 * 1000)
 
   // Build the installer URL
   const url = `${baseURL.replace(/\/$/, '')}/_/#/pbinstall/${token}`
@@ -65,9 +60,7 @@ export async function defaultInstallerFunc(
   console.log('  FIRST-TIME SETUP')
   console.log('==============================================')
   console.log()
-  console.log(
-    `  Launch the URL below in the browser to create your first superuser account:`,
-  )
+  console.log(`  Launch the URL below in the browser to create your first superuser account:`)
   console.log()
   console.log(`  ${url}`)
   console.log()
@@ -130,9 +123,7 @@ export function needInstallerSuperuser(_app: App): boolean {
  * Finds the installer superuser record by email, or creates one with a
  * random password if it does not exist.
  */
-export async function findOrCreateInstallerSuperuser(
-  _app: App,
-): Promise<Record<string, unknown>> {
+export async function findOrCreateInstallerSuperuser(_app: App): Promise<Record<string, unknown>> {
   // In the full implementation:
   // 1. Find collection by name (SuperusersCollectionName)
   // 2. Find auth record by email (DEFAULT_INSTALLER_EMAIL)
@@ -144,8 +135,7 @@ export async function findOrCreateInstallerSuperuser(
   return {
     id: crypto.randomUUID(),
     email: DEFAULT_INSTALLER_EMAIL,
-    collection: { name: SuperusersCollectionName, id: '_superusers', isAuth: () => true },
-    getString: (key: string) => key === 'email' ? DEFAULT_INSTALLER_EMAIL : '',
+    getString: (key: string) => (key === 'email' ? DEFAULT_INSTALLER_EMAIL : ''),
     collection: {
       id: '_superusers',
       name: SuperusersCollectionName,

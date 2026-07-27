@@ -6,10 +6,10 @@
 // clean isolation between function invocations.
 // ---------------------------------------------------------------------------
 
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export interface SandboxOptions {
@@ -51,26 +51,33 @@ export async function executeInSandbox(
       worker = new Worker(tempFilePath, { smol: true, env: {} })
     }
 
+    const w = worker
+    if (!w) throw new Error('Worker not initialized')
+
     return await new Promise<unknown>((resolve, reject) => {
       timeoutHandle = setTimeout(() => {
-        worker?.terminate()
+        w.terminate()
         reject(new Error(`Function execution timed out after ${options.timeout}ms`))
       }, options.timeout)
 
-      worker!.onmessage = (event: MessageEvent<{ type: string; data?: unknown; error?: string; stack?: string }>) => {
-        clearTimeout(timeoutHandle!)
+      w.onmessage = (
+        event: MessageEvent<{ type: string; data?: unknown; error?: string; stack?: string }>,
+      ) => {
+        if (timeoutHandle) clearTimeout(timeoutHandle)
         const msg = event.data
         if (msg.type === 'result') {
           // Reconstruct Response objects that were serialized by the worker
-          const data = msg.data as any
+          const data = msg.data as Record<string, unknown>
           if (data && data.__response === true) {
-            resolve(new Response(data.body, {
-              status: data.status,
-              statusText: data.statusText,
-              headers: data.headers,
-            }))
+            resolve(
+              new Response(data.body as BodyInit | null | undefined, {
+                status: data.status as number,
+                statusText: data.statusText as string,
+                headers: data.headers as HeadersInit,
+              }),
+            )
           } else {
-            resolve(data)
+            resolve(msg.data)
           }
         } else {
           const err = new Error(msg.error)
@@ -79,19 +86,23 @@ export async function executeInSandbox(
         }
       }
 
-      worker!.onerror = (event: ErrorEvent) => {
-        clearTimeout(timeoutHandle!)
+      w.onerror = (event: ErrorEvent) => {
+        if (timeoutHandle) clearTimeout(timeoutHandle)
         reject(new Error(event.message || 'Unknown worker error'))
       }
 
-      worker!.postMessage({ filePath, serializedReq: req, ctx })
+      w.postMessage({ filePath, serializedReq: req, ctx })
     })
   } finally {
     URL.revokeObjectURL(workerURL)
     if (timeoutHandle) clearTimeout(timeoutHandle)
     worker?.terminate()
     if (tempFilePath) {
-      try { await unlink(tempFilePath) } catch { /* best-effort */ }
+      try {
+        await unlink(tempFilePath)
+      } catch {
+        /* best-effort */
+      }
     }
   }
 }

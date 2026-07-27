@@ -5,13 +5,13 @@
  * Backend returns 404/501 until Phase 2 (Auth) is ported.
  */
 
-import type { AuthClient, AuthResponse, User, Session, AuthError, AuthChangeEvent } from './auth'
+import type { AuthChangeEvent, AuthClient, AuthError, AuthResponse, Session, User } from './auth'
 
 export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
   const headers = {
     'Content-Type': 'application/json',
-    'apikey': apiKey,
-    'Authorization': `Bearer ${apiKey}`,
+    apikey: apiKey,
+    Authorization: `Bearer ${apiKey}`,
   }
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -24,7 +24,7 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
     if (!res.ok) {
       return {
         data: { user: null, session: null },
-        error: { message: (json?.['message'] as string) ?? res.statusText, status: res.status },
+        error: { message: (json?.message as string) ?? res.statusText, status: res.status },
       } as T
     }
     return json as unknown as T
@@ -45,7 +45,11 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
     },
 
     async signInWithPassword(credentials): Promise<AuthResponse> {
-      const res = await request<Session | AuthResponse>('POST', '/auth/v1/token?grant_type=password', credentials)
+      const res = await request<Session | AuthResponse>(
+        'POST',
+        '/auth/v1/token?grant_type=password',
+        credentials,
+      )
       if ('error' in res) return res
       currentSession = res
       return authResponse(res)
@@ -60,29 +64,34 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
 
     async getUser(): Promise<{ data: { user: User | null }; error: AuthError | null }> {
       const token = currentSession?.access_token
-      const authHeaders = token
-        ? { ...headers, Authorization: `Bearer ${token}` }
-        : headers
+      const authHeaders = token ? { ...headers, Authorization: `Bearer ${token}` } : headers
       const res = await fetch(`${baseUrl}/auth/v1/user`, { headers: authHeaders })
       const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
       if (!res.ok) {
-        return { data: { user: null }, error: { message: (json?.['message'] as string) ?? res.statusText, status: res.status } }
+        return {
+          data: { user: null },
+          error: { message: (json?.message as string) ?? res.statusText, status: res.status },
+        }
       }
       return { data: { user: json as unknown as User }, error: null }
     },
 
     async refreshSession(): Promise<AuthResponse> {
-      const res = await request<Session | AuthResponse>('POST', '/auth/v1/token?grant_type=refresh_token', {
-        refresh_token: currentSession?.refresh_token,
-      })
+      const res = await request<Session | AuthResponse>(
+        'POST',
+        '/auth/v1/token?grant_type=refresh_token',
+        {
+          refresh_token: currentSession?.refresh_token,
+        },
+      )
       if ('error' in res) return res
       currentSession = res
       return authResponse(res)
     },
 
-    onAuthStateChange(
-      _callback: (event: AuthChangeEvent, session: Session | null) => void,
-    ): { data: { subscription: { unsubscribe: () => void } } } {
+    onAuthStateChange(_callback: (event: AuthChangeEvent, session: Session | null) => void): {
+      data: { subscription: { unsubscribe: () => void } }
+    } {
       // TODO(port): Implement state change listener when realtime is ready
       return { data: { subscription: { unsubscribe: () => {} } } }
     },

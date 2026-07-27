@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 
 export const FieldTypePassword = 'password'
 
@@ -74,13 +74,13 @@ export class PasswordField implements Field {
       writeOnly: true,
     }
 
-    schema['minLength'] = this.min > 0 ? this.min : DefaultPasswordMinLength
+    schema.minLength = this.min > 0 ? this.min : DefaultPasswordMinLength
 
     const max = this.max > 0 ? this.max : DefaultPasswordMaxLength
-    schema['maxLength'] = max
+    schema.maxLength = max
 
     if (this.pattern) {
-      schema['pattern'] = this.pattern
+      schema.pattern = this.pattern
     }
 
     return schema

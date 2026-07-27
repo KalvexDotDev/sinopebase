@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { EditorField, FieldTypeEditor, DefaultEditorFieldMaxSize } from '~/core/field_editor.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { DefaultEditorFieldMaxSize, EditorField, FieldTypeEditor } from '~/core/field_editor.ts'
 
 describe('EditorField', () => {
   it('has type "editor"', () => {
@@ -20,8 +20,8 @@ describe('EditorField', () => {
 
   it('settings schema is string', () => {
     const f = new EditorField()
-    expect(f.settingsSchema['type']).toBe('string')
-    expect(f.settingsSchema['default']).toBe('')
+    expect(f.settingsSchema.type).toBe('string')
+    expect(f.settingsSchema.default).toBe('')
   })
 
   it('effectiveMaxSize defaults to 5MB', () => {

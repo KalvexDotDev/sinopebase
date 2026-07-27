@@ -5,52 +5,50 @@
  * Layer 1 -- imports Layer 0 (~/tools/...).
  */
 
-import { Tokenizer } from "~/tools/tokenizer/tokenizer";
+import { Tokenizer } from '~/tools/tokenizer/tokenizer'
 
 /**
  * Parsed SQL index column metadata.
  */
 export interface IndexColumn {
   /** Column identifier or expression. */
-  name: string;
+  name: string
   /** COLLATE clause value (e.g. "NOCASE", "BINARY"). */
-  collate: string;
+  collate: string
   /** Sort direction: "ASC", "DESC", or empty. */
-  sort: string;
+  sort: string
 }
 
 /**
  * Parsed SQL CREATE INDEX expression.
  */
 export interface Index {
-  schemaName: string;
-  indexName: string;
-  tableName: string;
-  where: string;
-  columns: IndexColumn[];
-  unique: boolean;
-  optional: boolean;
+  schemaName: string
+  indexName: string
+  tableName: string
+  where: string
+  columns: IndexColumn[]
+  unique: boolean
+  optional: boolean
 }
 
 // Regexps matching Go's indexRegex and indexColumnRegex.
 // Go: (?im)create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*)\)(?:\s*where\s+([\s\S]*))?
 const INDEX_REGEX =
-  /create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*?)\)(?:\s*where\s+([\s\S]*))?$/im;
+  /create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*?)\)(?:\s*where\s+([\s\S]*))?$/im
 
-const INDEX_COLUMN_REGEX =
-  /^([\s\S]+?)(?:\s+collate\s+([\w]+))?(?:\s+(asc|desc))?$/im;
+const INDEX_COLUMN_REGEX = /^([\s\S]+?)(?:\s+collate\s+([\w]+))?(?:\s+(asc|desc))?$/im
 
 /**
  * Character set used to trim index name/column tokens.
  * Matches Go's `\x60'\"[]\\r\\n\\t\\f\\v ` escaped set.
  */
 
-
 /**
  * Checks if the index contains the minimum required fields to be considered valid.
  */
 export function isValidIndex(idx: Index): boolean {
-  return idx.indexName !== "" && idx.tableName !== "" && idx.columns.length > 0;
+  return idx.indexName !== '' && idx.tableName !== '' && idx.columns.length > 0
 }
 
 /**
@@ -59,67 +57,67 @@ export function isValidIndex(idx: Index): boolean {
  * Returns an empty string if the index is not valid.
  */
 export function buildIndex(idx: Index): string {
-  if (!isValidIndex(idx)) return "";
+  if (!isValidIndex(idx)) return ''
 
-  const parts: string[] = [];
+  const parts: string[] = []
 
-  parts.push("CREATE");
+  parts.push('CREATE')
 
   if (idx.unique) {
-    parts.push("UNIQUE");
+    parts.push('UNIQUE')
   }
 
-  parts.push("INDEX");
+  parts.push('INDEX')
 
   if (idx.optional) {
-    parts.push("IF NOT EXISTS");
+    parts.push('IF NOT EXISTS')
   }
 
-  let name = "";
+  let name = ''
   if (idx.schemaName) {
-    name += `"${idx.schemaName}".`;
+    name += `"${idx.schemaName}".`
   }
-  name += `"${idx.indexName}"`;
-  parts.push(name);
+  name += `"${idx.indexName}"`
+  parts.push(name)
 
-  parts.push("ON");
-  parts.push(`"${idx.tableName}"`);
+  parts.push('ON')
+  parts.push(`"${idx.tableName}"`)
 
   // Columns
-  const colParts: string[] = [];
+  const colParts: string[] = []
   for (const col of idx.columns) {
-    const trimmed = col.name.trim();
-    if (!trimmed) continue;
+    const trimmed = col.name.trim()
+    if (!trimmed) continue
 
-    let colStr: string;
-    if (trimmed.includes("(") || trimmed.includes(" ")) {
+    let colStr: string
+    if (trimmed.includes('(') || trimmed.includes(' ')) {
       // Expression
-      colStr = trimmed;
+      colStr = trimmed
     } else {
-      colStr = `"${trimmed}"`;
+      colStr = `"${trimmed}"`
     }
 
     if (col.collate) {
-      colStr += ` COLLATE ${col.collate}`;
+      colStr += ` COLLATE ${col.collate}`
     }
     if (col.sort) {
-      colStr += ` ${col.sort.toUpperCase()}`;
+      colStr += ` ${col.sort.toUpperCase()}`
     }
 
-    colParts.push(colStr);
+    colParts.push(colStr)
   }
 
   if (idx.columns.length > 1 && colParts.length > 0) {
-    parts.push(`(\n  ${colParts.join(",\n  ")}\n)`);
+    parts.push(`(\n  ${colParts.join(',\n  ')}\n)`)
   } else if (colParts.length > 0) {
-    parts.push(`(${colParts.join(", ")})`);
+    parts.push(`(${colParts.join(', ')})`)
   }
 
   if (idx.where) {
-    parts.push(`WHERE ${idx.where}`);
+    parts.push(`WHERE ${idx.where}`)
   }
 
-  return parts.join(" ");
+  return parts.join(' ')
 }
 
 /**
@@ -127,76 +125,74 @@ export function buildIndex(idx: Index): string {
  */
 export function parseIndex(createIndexExpr: string): Index {
   const result: Index = {
-    schemaName: "",
-    indexName: "",
-    tableName: "",
-    where: "",
+    schemaName: '',
+    indexName: '',
+    tableName: '',
+    where: '',
     columns: [],
     unique: false,
     optional: false,
-  };
+  }
 
-  const matches = INDEX_REGEX.exec(createIndexExpr);
-  if (!matches || matches.length !== 7) {
-    return result;
+  const matches = INDEX_REGEX.exec(createIndexExpr)
+  if (matches?.length !== 7) {
+    return result
   }
 
   // Unique
-  result.unique = matches[1]?.trim() !== undefined && matches[1].trim() !== "";
+  result.unique = matches[1]?.trim() !== undefined && matches[1].trim() !== ''
 
   // Optional (IF NOT EXISTS)
-  result.optional = matches[2]?.trim() !== undefined && matches[2].trim() !== "";
+  result.optional = matches[2]?.trim() !== undefined && matches[2].trim() !== ''
 
   // SchemaName and IndexName
-  const namePart = matches[3] ?? "";
-  const nameTk = new Tokenizer(namePart);
-  nameTk.SetSeparators(".");
-  const nameParts = nameTk.ScanAll();
+  const namePart = matches[3] ?? ''
+  const nameTk = new Tokenizer(namePart)
+  nameTk.SetSeparators('.')
+  const nameParts = nameTk.ScanAll()
   if (nameParts.length >= 2) {
-    result.schemaName = nameParts[0]!.trim().replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "");
-    result.indexName = nameParts[1]!.trim().replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "");
+    result.schemaName = nameParts[0]?.trim().replace(/^[`'"[\]]+|[`'"[\]]+$/g, '')
+    result.indexName = nameParts[1]?.trim().replace(/^[`'"[\]]+|[`'"[\]]+$/g, '')
   } else if (nameParts.length === 1) {
-    result.indexName = nameParts[0]!.trim().replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "");
+    result.indexName = nameParts[0]?.trim().replace(/^[`'"[\]]+|[`'"[\]]+$/g, '')
   }
 
   // TableName (may include schema like "schema"."table")
-  const rawTableName = matches[4] ?? "";
-  const tableTk = new Tokenizer(rawTableName);
-  tableTk.SetSeparators(".");
-  const tableParts = tableTk.ScanAll();
+  const rawTableName = matches[4] ?? ''
+  const tableTk = new Tokenizer(rawTableName)
+  tableTk.SetSeparators('.')
+  const tableParts = tableTk.ScanAll()
   if (tableParts.length >= 2) {
-    result.schemaName = tableParts[0]!.trim().replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "");
-    result.tableName = tableParts[1]!.trim().replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "");
+    result.schemaName = tableParts[0]?.trim().replace(/^[`'"[\]]+|[`'"[\]]+$/g, '')
+    result.tableName = tableParts[1]?.trim().replace(/^[`'"[\]]+|[`'"[\]]+$/g, '')
   } else {
-    result.tableName = rawTableName.trim().replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "");
+    result.tableName = rawTableName.trim().replace(/^[`'"[\]]+|[`'"[\]]+$/g, '')
   }
 
   // Columns
-  const columnsStr = matches[5] ?? "";
-  const columnsTk = new Tokenizer(columnsStr);
-  columnsTk.SetSeparators(",");
-  const rawColumns = columnsTk.ScanAll();
+  const columnsStr = matches[5] ?? ''
+  const columnsTk = new Tokenizer(columnsStr)
+  columnsTk.SetSeparators(',')
+  const rawColumns = columnsTk.ScanAll()
 
   for (const col of rawColumns) {
-    const colMatches = INDEX_COLUMN_REGEX.exec(col);
-    if (!colMatches || colMatches.length !== 4) continue;
+    const colMatches = INDEX_COLUMN_REGEX.exec(col)
+    if (colMatches?.length !== 4) continue
 
-    const trimmedName = colMatches[1]!
-      .replace(/^[`'"\[\]]+|[`'"\[\]]+$/g, "")
-      .trim();
-    if (!trimmedName) continue;
+    const trimmedName = colMatches[1]?.replace(/^[`'"[\]]+|[`'"[\]]+$/g, '').trim()
+    if (!trimmedName) continue
 
     result.columns.push({
       name: trimmedName,
-      collate: (colMatches[2] ?? "").trim(),
-      sort: (colMatches[3] ?? "").toUpperCase(),
-    });
+      collate: (colMatches[2] ?? '').trim(),
+      sort: (colMatches[3] ?? '').toUpperCase(),
+    })
   }
 
   // WHERE expression
-  result.where = (matches[6] ?? "").trim();
+  result.where = (matches[6] ?? '').trim()
 
-  return result;
+  return result
 }
 
 /**
@@ -211,16 +207,27 @@ export function findSingleColumnUniqueIndex(
   column: string,
 ): { index: Index; found: boolean } {
   for (const raw of indexes) {
-    const idx = parseIndex(raw);
+    const idx = parseIndex(raw)
     if (
       idx.unique &&
       idx.columns.length === 1 &&
-      idx.columns[0]!.name.toLowerCase() === column.toLowerCase()
+      idx.columns[0]?.name.toLowerCase() === column.toLowerCase()
     ) {
-      return { index: idx, found: true };
+      return { index: idx, found: true }
     }
   }
-  return { index: { schemaName: "", indexName: "", tableName: "", where: "", columns: [], unique: false, optional: false }, found: false };
+  return {
+    index: {
+      schemaName: '',
+      indexName: '',
+      tableName: '',
+      where: '',
+      columns: [],
+      unique: false,
+      optional: false,
+    },
+    found: false,
+  }
 }
 
 /**
@@ -229,5 +236,5 @@ export function findSingleColumnUniqueIndex(
  * @deprecated Use `findSingleColumnUniqueIndex(indexes, column).found` instead.
  */
 export function hasSingleColumnUniqueIndex(column: string, indexes: string[]): boolean {
-  return findSingleColumnUniqueIndex(indexes, column).found;
+  return findSingleColumnUniqueIndex(indexes, column).found
 }

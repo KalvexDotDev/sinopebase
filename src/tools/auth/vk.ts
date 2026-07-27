@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.vk.com/method/users.get response.
  *
  * @example
- * 
+ *
  */
 export class VkProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

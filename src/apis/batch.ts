@@ -39,11 +39,7 @@ export interface BatchRequestBody {
  * Executes multiple API requests sequentially (not in a true transaction,
  * since Elysia runs in-memory; for production this would use a DB transaction).
  */
-export function createBatchPlugin(
-  _db: IDatabase,
-  _isSuperuser: () => boolean,
-  app: Elysia,
-) {
+export function createBatchPlugin(_db: IDatabase, _isSuperuser: () => boolean, app: Elysia) {
   const batchApp = new Elysia()
 
   batchApp.post('/api/batch', async ({ body, set, request }) => {
@@ -108,10 +104,7 @@ export function createBatchPlugin(
  * In a production implementation, this would route through the actual
  * Elysia request pipeline.
  */
-async function executeInternalRequest(
-  _app: Elysia,
-  req: BatchRequest,
-): Promise<BatchResponse> {
+async function executeInternalRequest(_app: Elysia, req: BatchRequest): Promise<BatchResponse> {
   const { method, url, body: reqBody, headers } = req
 
   // Validate the request has a recognized method and URL pattern

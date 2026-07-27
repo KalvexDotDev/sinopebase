@@ -14,9 +14,9 @@
  *   )
  */
 
-import { mkdir, stat, readdir } from "node:fs/promises";
-import { resolve, dirname, basename, join, relative, normalize } from "node:path";
-import AdmZip from "adm-zip";
+import { mkdir, readdir, stat } from 'node:fs/promises'
+import { basename, dirname, join, normalize, relative, resolve } from 'node:path'
+import AdmZip from 'adm-zip'
 
 // --------------------------------------------------
 // Types
@@ -29,13 +29,13 @@ import AdmZip from "adm-zip";
  */
 export interface ZipSource {
   /** Path to a file or directory on disk. */
-  path: string;
+  path: string
 
   /**
    * Optional custom name/path within the archive.
    * If omitted, the basename of `path` is used.
    */
-  name?: string;
+  name?: string
 }
 
 // --------------------------------------------------
@@ -46,7 +46,7 @@ export interface ZipSource {
  * Normalizes a path to use forward slashes for consistent matching across platforms.
  */
 function normalizePath(p: string): string {
-  return normalize(p).replace(/\\/g, "/");
+  return normalize(p).replace(/\\/g, '/')
 }
 
 /**
@@ -59,18 +59,15 @@ function normalizePath(p: string): string {
  * This mirrors the Go logic in archive.zipAddFS.
  */
 function shouldSkip(relPath: string, skipSet: Set<string>): boolean {
-  const normalized = normalizePath(relPath);
+  const normalized = normalizePath(relPath)
 
   for (const sp of skipSet) {
-    if (
-      normalized === sp ||
-      normalized.startsWith(sp + "/")
-    ) {
-      return true;
+    if (normalized === sp || normalized.startsWith(`${sp}/`)) {
+      return true
     }
   }
 
-  return false;
+  return false
 }
 
 /**
@@ -86,30 +83,28 @@ async function collectFiles(
   skipSet: Set<string>,
   files: Array<{ fsPath: string; arcPath: string }>,
 ): Promise<void> {
-  const entries = await readdir(current, { withFileTypes: true });
+  const entries = await readdir(current, { withFileTypes: true })
 
   for (const entry of entries) {
-    const fullPath = join(current, entry.name);
-    const relPath = relative(root, fullPath);
-    const arcPath = arcPrefix
-      ? normalizePath(join(arcPrefix, relPath))
-      : relPath;
+    const fullPath = join(current, entry.name)
+    const relPath = relative(root, fullPath)
+    const arcPath = arcPrefix ? normalizePath(join(arcPrefix, relPath)) : relPath
 
     // Skip symlinks (matches Go's fs.WalkDir behavior)
     if (entry.isSymbolicLink()) {
-      continue;
+      continue
     }
 
     // Check skip list
     if (shouldSkip(relPath, skipSet) || shouldSkip(entry.name, skipSet)) {
-      continue;
+      continue
     }
 
     if (entry.isFile()) {
-      files.push({ fsPath: fullPath, arcPath });
+      files.push({ fsPath: fullPath, arcPath })
     } else if (entry.isDirectory()) {
       // Only recurse if the directory itself is not being skipped
-      await collectFiles(root, fullPath, arcPrefix, skipSet, files);
+      await collectFiles(root, fullPath, arcPrefix, skipSet, files)
     }
     // Other entry types (sockets, pipes, etc.) are implicitly skipped
   }
@@ -121,17 +116,17 @@ async function collectFiles(
  * Example: "dir1/dir2/file.txt" -> { dir: "dir1/dir2", name: "file.txt" }
  */
 function splitArcPath(arcPath: string): { dir: string; name: string } {
-  const normalized = normalizePath(arcPath);
-  const idx = normalized.lastIndexOf("/");
+  const normalized = normalizePath(arcPath)
+  const idx = normalized.lastIndexOf('/')
 
   if (idx >= 0) {
     return {
       dir: normalized.substring(0, idx),
       name: normalized.substring(idx + 1),
-    };
+    }
   }
 
-  return { dir: "", name: normalized };
+  return { dir: '', name: normalized }
 }
 
 // --------------------------------------------------
@@ -157,36 +152,34 @@ export async function CreateZipArchive(
   dest: string,
   skipPaths?: string[],
 ): Promise<void> {
-  const destPath = resolve(dest);
+  const destPath = resolve(dest)
 
   // Ensure the destination directory exists
-  await mkdir(dirname(destPath), { recursive: true });
+  await mkdir(dirname(destPath), { recursive: true })
 
-  const zip = new AdmZip();
-  const skipSet = new Set(
-    (skipPaths ?? []).map((p) => normalizePath(p)),
-  );
+  const zip = new AdmZip()
+  const skipSet = new Set((skipPaths ?? []).map((p) => normalizePath(p)))
 
   for (const source of sources) {
-    const srcPath = resolve(source.path);
-    const arcName = source.name ?? basename(srcPath);
+    const srcPath = resolve(source.path)
+    const arcName = source.name ?? basename(srcPath)
 
-    const srcStat = await stat(srcPath);
+    const srcStat = await stat(srcPath)
 
     if (srcStat.isFile()) {
       // Single file source
-      const base = basename(srcPath);
+      const base = basename(srcPath)
       if (!shouldSkip(base, skipSet)) {
-        zip.addLocalFile(srcPath, "", arcName);
+        zip.addLocalFile(srcPath, '', arcName)
       }
     } else if (srcStat.isDirectory()) {
       // Directory source -- walk and collect files
-      const collected: Array<{ fsPath: string; arcPath: string }> = [];
-      await collectFiles(srcPath, srcPath, arcName, skipSet, collected);
+      const collected: Array<{ fsPath: string; arcPath: string }> = []
+      await collectFiles(srcPath, srcPath, arcName, skipSet, collected)
 
       for (const { fsPath, arcPath } of collected) {
-        const { dir, name: zipName } = splitArcPath(arcPath);
-        zip.addLocalFile(fsPath, dir, zipName);
+        const { dir, name: zipName } = splitArcPath(arcPath)
+        zip.addLocalFile(fsPath, dir, zipName)
       }
     }
     // Symlinks and other types are implicitly skipped
@@ -194,5 +187,5 @@ export async function CreateZipArchive(
     //  keep the behavior aligned with Go's WalkDir)
   }
 
-  zip.writeZip(destPath);
+  zip.writeZip(destPath)
 }

@@ -4,9 +4,9 @@
 
 import type {
   AIMessage,
+  ChatChunk,
   ChatOptions,
   ChatResponse,
-  ChatChunk,
   EmbeddingOptions,
   EmbeddingResponse,
 } from './types'

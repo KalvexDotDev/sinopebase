@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { EmailField, FieldTypeEmail } from '~/core/field_email.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { EmailField, FieldTypeEmail } from '~/core/field_email.ts'
 
 describe('EmailField', () => {
   it('has type "email"', () => {
@@ -20,8 +20,8 @@ describe('EmailField', () => {
 
   it('settings schema is string with email format', () => {
     const f = new EmailField()
-    expect(f.settingsSchema['type']).toBe('string')
-    expect(f.settingsSchema['format']).toBe('email')
+    expect(f.settingsSchema.type).toBe('string')
+    expect(f.settingsSchema.format).toBe('email')
   })
 
   describe('validateValue', () => {

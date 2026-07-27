@@ -5,7 +5,7 @@
  * Refresh tokens: structured JWTs with family tracking for replay detection.
  */
 
-import { SignJWT, jwtVerify } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
 import type { User } from '../sdk/auth'
 
 export interface JwtPayload {
@@ -33,11 +33,11 @@ export interface JwtRefreshPayload {
 const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 
 function getSecret(): Uint8Array {
-  const secret = process.env['JWT_SECRET'] ?? JWT_DEV_FALLBACK
-  if (secret === JWT_DEV_FALLBACK && process.env['POSTGRES_URL']) {
+  const secret = process.env.JWT_SECRET ?? JWT_DEV_FALLBACK
+  if (secret === JWT_DEV_FALLBACK && process.env.POSTGRES_URL) {
     console.warn(
       '⚠ JWT_SECRET is using the dev fallback in PostgreSQL mode. ' +
-      'Set JWT_SECRET to a cryptographically random value in production.',
+        'Set JWT_SECRET to a cryptographically random value in production.',
     )
   }
   return new TextEncoder().encode(secret)
@@ -52,10 +52,7 @@ export const ACCESS_TOKEN_EXPIRES_IN = ACCESS_TOKEN_TTL
 const TOKEN_ISSUER = 'sinopebase'
 const TOKEN_AUDIENCE = 'authenticated'
 
-export async function generateAccessToken(
-  user: User,
-  sessionId: string,
-): Promise<string> {
+export async function generateAccessToken(user: User, sessionId: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   return new SignJWT({
     sub: user.id,
@@ -73,9 +70,7 @@ export async function generateAccessToken(
     .sign(getSecret())
 }
 
-export async function verifyAccessToken(
-  token: string,
-): Promise<JwtPayload> {
+export async function verifyAccessToken(token: string): Promise<JwtPayload> {
   const { payload } = await jwtVerify(token, getSecret(), {
     issuer: TOKEN_ISSUER,
     audience: TOKEN_AUDIENCE,
@@ -104,9 +99,7 @@ export async function generateRefreshToken(
     .sign(getSecret())
 }
 
-export async function verifyRefreshToken(
-  token: string,
-): Promise<JwtRefreshPayload> {
+export async function verifyRefreshToken(token: string): Promise<JwtRefreshPayload> {
   const { payload } = await jwtVerify(token, getSecret(), {
     issuer: TOKEN_ISSUER,
     audience: TOKEN_AUDIENCE,

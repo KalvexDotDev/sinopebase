@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.monday.com/v2/users/me response.
  *
  * @example
- * 
+ *
  */
 export class MondayProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

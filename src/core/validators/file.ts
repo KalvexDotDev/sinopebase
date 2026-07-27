@@ -6,7 +6,7 @@
  */
 
 import type { ValidationRule } from '~/core/validators/validators.ts'
-import { ErrUnsupportedValueType, ValidationError, cutStr } from '~/core/validators/validators.ts'
+import { cutStr, ErrUnsupportedValueType, ValidationError } from '~/core/validators/validators.ts'
 
 /**
  * Represents an uploaded file.
@@ -93,5 +93,5 @@ function isUploadedFile(value: unknown): value is UploadedFile {
   if (value === null || value === undefined) return false
   if (typeof value !== 'object') return false
   const obj = value as Record<string, unknown>
-  return typeof obj['name'] === 'string' && typeof obj['size'] === 'number'
+  return typeof obj.name === 'string' && typeof obj.size === 'number'
 }

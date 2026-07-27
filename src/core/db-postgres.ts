@@ -5,7 +5,7 @@
  * Used when POSTGRES_URL is configured.
  */
 
-import { Kysely, PostgresDialect, sql, type RawBuilder } from 'kysely'
+import { Kysely, PostgresDialect, type RawBuilder, sql } from 'kysely'
 // @ts-expect-error The pg package currently ships without declarations here.
 import pg from 'pg'
 import { parseInValue } from '~/tools/search/filter'
@@ -89,13 +89,19 @@ export class PostgresDatabase implements IDatabase {
   }
 
   /** Expose the writer pg.Pool for direct use (e.g. by better-auth). */
-  getPool(): pg.Pool { return this.writerPool }
+  getPool(): pg.Pool {
+    return this.writerPool
+  }
 
   /** Expose the reader Kysely for read-only queries. */
-  getReader(): Kysely<DatabaseSchema> { return this.reader }
+  getReader(): Kysely<DatabaseSchema> {
+    return this.reader
+  }
 
   /** Expose the writer Kysely. */
-  getWriter(): Kysely<DatabaseSchema> { return this.writer }
+  getWriter(): Kysely<DatabaseSchema> {
+    return this.writer
+  }
 
   /**
    * Run one HTTP request on a single connection with transaction-local
@@ -148,9 +154,13 @@ export class PostgresDatabase implements IDatabase {
     // Grant role access so anon/authenticated can reach the table.
     // Schema USAGE is idempotent (the public schema already has it via
     // PUBLIC, but we ensure it for environments that tighten defaults).
-    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`.execute(this.writer).catch(() => undefined)
+    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`
+      .execute(this.writer)
+      .catch(() => undefined)
     await sql`GRANT SELECT ON ${sql.table(table)} TO anon`.execute(this.writer)
-    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ${sql.table(table)} TO authenticated`.execute(this.writer)
+    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ${sql.table(table)} TO authenticated`.execute(
+      this.writer,
+    )
   }
 
   async hasTable(table: string): Promise<boolean> {
@@ -172,7 +182,7 @@ export class PostgresDatabase implements IDatabase {
   // -----------------------------------------------------------------------
 
   async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const id = record['id'] ?? crypto.randomUUID()
+    const id = record.id ?? crypto.randomUUID()
     const data = { ...record, id }
     await this.writer
       .insertInto(table as never)
@@ -182,7 +192,7 @@ export class PostgresDatabase implements IDatabase {
   }
 
   async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const id = record['id'] ?? crypto.randomUUID()
+    const id = record.id ?? crypto.randomUUID()
     const data = { ...record, id }
     await this.writer
       .insertInto(table as never)
@@ -224,9 +234,14 @@ export class PostgresDatabase implements IDatabase {
 
     const orGroups = (options.orFilters ?? []).filter((group) => group.length > 0)
     if (orGroups.length > 0) {
-      const groups = orGroups.map((group) => sql<boolean>`(
-        ${sql.join(group.map((filter) => this.filterExpression(filter)), sql` AND `)}
-      )`)
+      const groups = orGroups.map(
+        (group) => sql<boolean>`(
+        ${sql.join(
+          group.map((filter) => this.filterExpression(filter)),
+          sql` AND `,
+        )}
+      )`,
+      )
       query = query.where(sql<boolean>`(${sql.join(groups, sql` OR `)})`) as never
     }
 
@@ -258,10 +273,7 @@ export class PostgresDatabase implements IDatabase {
     return result as unknown as Record<string, unknown>[]
   }
 
-  async delete(
-    table: string,
-    filters: Filter[],
-  ): Promise<Record<string, unknown>[]> {
+  async delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]> {
     let query = this.writer.deleteFrom(table as never)
 
     for (const filter of filters) {
@@ -272,13 +284,8 @@ export class PostgresDatabase implements IDatabase {
     return result as unknown as Record<string, unknown>[]
   }
 
-  async count(
-    table: string,
-    filters: Filter[] = [],
-  ): Promise<number> {
-    let query = this.reader
-      .selectFrom(table as never)
-      .select(sql<number>`count(*)`.as('count'))
+  async count(table: string, filters: Filter[] = []): Promise<number> {
+    let query = this.reader.selectFrom(table as never).select(sql<number>`count(*)`.as('count'))
 
     for (const filter of filters) {
       query = this.applyFilter(query as never, filter) as never
@@ -344,18 +351,27 @@ export class PostgresDatabase implements IDatabase {
     const column = sql.ref(filter.column)
 
     switch (filter.operator) {
-      case 'eq': return sql<boolean>`${column} = ${filter.value}`
-      case 'neq': return sql<boolean>`${column} <> ${filter.value}`
-      case 'gt': return sql<boolean>`${column} > ${filter.value}`
-      case 'gte': return sql<boolean>`${column} >= ${filter.value}`
-      case 'lt': return sql<boolean>`${column} < ${filter.value}`
-      case 'lte': return sql<boolean>`${column} <= ${filter.value}`
-      case 'like': return sql<boolean>`${column} LIKE ${filter.value}`
-      case 'ilike': return sql<boolean>`${column} ILIKE ${filter.value}`
+      case 'eq':
+        return sql<boolean>`${column} = ${filter.value}`
+      case 'neq':
+        return sql<boolean>`${column} <> ${filter.value}`
+      case 'gt':
+        return sql<boolean>`${column} > ${filter.value}`
+      case 'gte':
+        return sql<boolean>`${column} >= ${filter.value}`
+      case 'lt':
+        return sql<boolean>`${column} < ${filter.value}`
+      case 'lte':
+        return sql<boolean>`${column} <= ${filter.value}`
+      case 'like':
+        return sql<boolean>`${column} LIKE ${filter.value}`
+      case 'ilike':
+        return sql<boolean>`${column} ILIKE ${filter.value}`
       case 'is': {
         if (filter.value === null || filter.value === 'null') return sql<boolean>`${column} IS NULL`
         if (filter.value === true || filter.value === 'true') return sql<boolean>`${column} IS TRUE`
-        if (filter.value === false || filter.value === 'false') return sql<boolean>`${column} IS FALSE`
+        if (filter.value === false || filter.value === 'false')
+          return sql<boolean>`${column} IS FALSE`
         throw new Error(`Unsupported is-filter value: ${String(filter.value)}`)
       }
       case 'in': {
@@ -367,7 +383,8 @@ export class PostgresDatabase implements IDatabase {
         if (values.length === 0) return sql<boolean>`FALSE`
         return sql<boolean>`${column} IN (${sql.join(values)})`
       }
-      default: throw new Error(`Unsupported filter operator: ${filter.operator}`)
+      default:
+        throw new Error(`Unsupported filter operator: ${filter.operator}`)
     }
   }
 }

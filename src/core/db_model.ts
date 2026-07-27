@@ -95,7 +95,9 @@ function randomString(length: number): string {
   const array = new Uint8Array(length)
   crypto.getRandomValues(array)
   for (let i = 0; i < length; i++) {
-    result += chars[array[i]! % chars.length]
+    const r = array[i]
+    if (r === undefined) continue
+    result += chars[r % chars.length]
   }
   return result
 }

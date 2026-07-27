@@ -5,9 +5,9 @@
  * Layer 2 — imports from ~/core/* and ~/tools/*.
  */
 
-import type { IDatabase } from '~/core/db-interface.ts'
-import { Collection, FieldsListFromJSON, type CollectionType } from '~/core/collection_model.ts'
+import { Collection, type CollectionType, FieldsListFromJSON } from '~/core/collection_model.ts'
 import { CollectionAuthOptions } from '~/core/collection_model_auth_options.ts'
+import type { IDatabase } from '~/core/db-interface.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,9 +29,10 @@ export async function findAllCollections(
   db: IDatabase,
   ...collectionTypes: CollectionType[]
 ): Promise<Collection[]> {
-  const filters = collectionTypes.length > 0
-    ? [{ column: 'type', operator: 'in' as const, value: [...new Set(collectionTypes)] }]
-    : []
+  const filters =
+    collectionTypes.length > 0
+      ? [{ column: 'type', operator: 'in' as const, value: [...new Set(collectionTypes)] }]
+      : []
 
   const rows = await db.select('_collections', { filters })
   return rows.map(rowToCollection)
@@ -56,7 +57,8 @@ export async function findCollectionByNameOrId(
     ],
   })
 
-  if (rows.length > 0) return rowToCollection(rows[0]!)
+  const firstRow = rows[0]
+  if (firstRow) return rowToCollection(firstRow)
 
   // Try by name (case-insensitive)
   const rowsByName = await db.select('_collections', {
@@ -69,7 +71,8 @@ export async function findCollectionByNameOrId(
     ],
   })
 
-  if (rowsByName.length > 0) return rowToCollection(rowsByName[0]!)
+  const firstByName = rowsByName[0]
+  if (firstByName) return rowToCollection(firstByName)
 
   return null
 }
@@ -116,9 +119,9 @@ export async function findCollectionReferences(
     const refFieldNames: string[] = []
     for (const field of c.fields) {
       if (
-        field.type === 'relation'
-        && 'collectionId' in field
-        && String(field.collectionId) === collection.id
+        field.type === 'relation' &&
+        'collectionId' in field &&
+        String(field.collectionId) === collection.id
       ) {
         refFieldNames.push(field.name)
       }
@@ -153,9 +156,9 @@ export async function findCachedCollectionReferences(
     const refFieldNames: string[] = []
     for (const field of c.fields) {
       if (
-        field.type === 'relation'
-        && 'collectionId' in field
-        && String(field.collectionId) === collection.id
+        field.type === 'relation' &&
+        'collectionId' in field &&
+        String(field.collectionId) === collection.id
       ) {
         refFieldNames.push(field.name)
       }
@@ -201,26 +204,30 @@ export async function isCollectionNameUnique(
 function rowToCollection(row: Record<string, unknown>): Collection {
   const collection = new Collection()
 
-  collection.id = String(row['id'] ?? '')
-  collection.name = String(row['name'] ?? '')
-  collection.type = (row['type'] as CollectionType) ?? 'base'
-  collection.system = Boolean(row['system'])
+  collection.id = String(row.id ?? '')
+  collection.name = String(row.name ?? '')
+  collection.type = (row.type as CollectionType) ?? 'base'
+  collection.system = Boolean(row.system)
 
-  collection.listRule = row['listRule'] != null ? String(row['listRule']) : null
-  collection.viewRule = row['viewRule'] != null ? String(row['viewRule']) : null
-  collection.createRule = row['createRule'] != null ? String(row['createRule']) : null
-  collection.updateRule = row['updateRule'] != null ? String(row['updateRule']) : null
-  collection.deleteRule = row['deleteRule'] != null ? String(row['deleteRule']) : null
+  collection.listRule = row.listRule != null ? String(row.listRule) : null
+  collection.viewRule = row.viewRule != null ? String(row.viewRule) : null
+  collection.createRule = row.createRule != null ? String(row.createRule) : null
+  collection.updateRule = row.updateRule != null ? String(row.updateRule) : null
+  collection.deleteRule = row.deleteRule != null ? String(row.deleteRule) : null
 
   // Parse indexes
-  if (typeof row['indexes'] === 'string') {
-    try { collection.indexes = JSON.parse(row['indexes']) } catch { collection.indexes = [] }
+  if (typeof row.indexes === 'string') {
+    try {
+      collection.indexes = JSON.parse(row.indexes)
+    } catch {
+      collection.indexes = []
+    }
   }
 
   // Parse fields
-  if (typeof row['fields'] === 'string') {
+  if (typeof row.fields === 'string') {
     try {
-      const parsedFields = JSON.parse(row['fields']) as Record<string, unknown>[]
+      const parsedFields = JSON.parse(row.fields) as Record<string, unknown>[]
       collection.fields = FieldsListFromJSON(parsedFields)
     } catch {
       // ignore
@@ -228,9 +235,9 @@ function rowToCollection(row: Record<string, unknown>): Collection {
   }
 
   // Parse options
-  if (typeof row['options'] === 'string' && row['options']) {
+  if (typeof row.options === 'string' && row.options) {
     try {
-      const opts = JSON.parse(row['options']) as Record<string, unknown>
+      const opts = JSON.parse(row.options) as Record<string, unknown>
       collection.rawOptions = opts
       if (collection.isAuth()) {
         collection.authOptions = CollectionAuthOptions.fromJSON(opts)

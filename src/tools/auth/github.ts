@@ -5,8 +5,8 @@
  * Layer 1 -- depends on BaseProvider.
  */
 
-import { BaseProvider } from '~/tools/auth/base_provider.ts'
 import type { AuthUser, HttpClient } from '~/tools/auth/auth.ts'
+import { BaseProvider } from '~/tools/auth/base_provider.ts'
 
 /**
  * GitHubProvider implements OAuth2 authentication via GitHub.
@@ -39,10 +39,7 @@ export class GitHubProvider extends BaseProvider {
     return 'github'
   }
 
-  override async FetchUser(
-    token: string,
-    client?: HttpClient,
-  ): Promise<AuthUser> {
+  override async FetchUser(token: string, client?: HttpClient): Promise<AuthUser> {
     const doFetch = client ?? fetch
 
     // -------------------------------------------------------------------
@@ -53,9 +50,7 @@ export class GitHubProvider extends BaseProvider {
     })
 
     if (!userResponse.ok) {
-      throw new Error(
-        `GitHub user fetch failed: ${userResponse.status} ${userResponse.statusText}`,
-      )
+      throw new Error(`GitHub user fetch failed: ${userResponse.status} ${userResponse.statusText}`)
     }
 
     const userData = (await userResponse.json()) as Record<string, unknown>
@@ -67,19 +62,15 @@ export class GitHubProvider extends BaseProvider {
     let email = ''
 
     try {
-      const emailsResponse = await doFetch(
-        'https://api.github.com/user/emails',
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      )
+      const emailsResponse = await doFetch('https://api.github.com/user/emails', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
 
       if (emailsResponse.ok) {
-        const emails =
-          (await emailsResponse.json()) as Array<Record<string, unknown>>
-        const primary = emails.find((e) => e['primary'] === true)
+        const emails = (await emailsResponse.json()) as Array<Record<string, unknown>>
+        const primary = emails.find((e) => e.primary === true)
         if (primary) {
-          email = (primary['email'] as string) ?? ''
+          email = (primary.email as string) ?? ''
         }
       }
     } catch {
@@ -90,11 +81,11 @@ export class GitHubProvider extends BaseProvider {
     // 3. Map to AuthUser
     // -------------------------------------------------------------------
     return {
-      Id: String(userData['id'] ?? ''),
-      Name: (userData['name'] as string) ?? (userData['login'] as string) ?? '',
-      Username: (userData['login'] as string) ?? '',
+      Id: String(userData.id ?? ''),
+      Name: (userData.name as string) ?? (userData.login as string) ?? '',
+      Username: (userData.login as string) ?? '',
       Email: email,
-      AvatarUrl: (userData['avatar_url'] as string) ?? '',
+      AvatarUrl: (userData.avatar_url as string) ?? '',
       RawUser: userData,
     }
   }

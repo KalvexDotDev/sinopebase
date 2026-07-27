@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://wakatime.com/api/v1/users/current response.
  *
  * @example
- * 
+ *
  */
 export class WakatimeProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

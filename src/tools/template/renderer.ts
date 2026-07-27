@@ -19,13 +19,13 @@
 export function Render(template: string, data: Record<string, unknown>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
     if (key in data) {
-      const value = data[key];
+      const value = data[key]
       if (value === null || value === undefined) {
-        return "";
+        return ''
       }
-      return String(value);
+      return String(value)
     }
     // Keep the placeholder as-is when the key is missing.
-    return `{{${key}}}`;
-  });
+    return `{{${key}}}`
+  })
 }

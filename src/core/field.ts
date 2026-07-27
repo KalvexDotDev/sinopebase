@@ -141,7 +141,8 @@ export const maxSafeJSONInt = Number.MAX_SAFE_INTEGER
 export function ValidateFieldName(name: string): string | null {
   if (!name) return 'Field name is required'
   if (name.length > 100) return 'Field name must be at most 100 characters'
-  if (!fieldNameRegex.test(name)) return 'Field name must contain only word characters (letters, digits, underscore)'
+  if (!fieldNameRegex.test(name))
+    return 'Field name must contain only word characters (letters, digits, underscore)'
   if (ExcludedFieldNames.includes(name.toLowerCase())) return `"${name}" is a reserved name`
   if (name.toLowerCase().includes('_via_')) return 'Field name cannot contain "_via_"'
   return null

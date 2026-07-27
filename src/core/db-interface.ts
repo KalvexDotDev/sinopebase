@@ -40,7 +40,11 @@ export interface IDatabase {
   upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>>
 
   select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]>
-  update(table: string, filters: Filter[], data: Record<string, unknown>): Promise<Record<string, unknown>[]>
+  update(
+    table: string,
+    filters: Filter[],
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]>
   delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]>
   count(table: string, filters?: Filter[]): Promise<number>
 
@@ -63,11 +67,11 @@ export interface DatabaseSchemaCapability {
 
 export type SchemaDatabase = IDatabase & DatabaseSchemaCapability
 
-export function hasDatabaseSchemaCapability(
-  database: IDatabase,
-): database is SchemaDatabase {
+export function hasDatabaseSchemaCapability(database: IDatabase): database is SchemaDatabase {
   const candidate = database as IDatabase & Partial<DatabaseSchemaCapability>
-  return typeof candidate.addColumn === 'function'
-    && typeof candidate.dropColumn === 'function'
-    && typeof candidate.renameColumn === 'function'
+  return (
+    typeof candidate.addColumn === 'function' &&
+    typeof candidate.dropColumn === 'function' &&
+    typeof candidate.renameColumn === 'function'
+  )
 }

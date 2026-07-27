@@ -16,7 +16,7 @@
 /**
  * Default alphanumeric alphabet: [A-Za-z0-9].
  */
-const DEFAULT_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const DEFAULT_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -30,15 +30,17 @@ const DEFAULT_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01
  */
 function cryptoRandomInt(max: number): number {
   if (max <= 0) {
-    throw new RangeError('max must be positive');
+    throw new RangeError('max must be positive')
   }
-  if (max === 1) return 0;
+  if (max === 1) return 0
 
-  const byteLimit = 256 - (256 % max);
+  const byteLimit = 256 - (256 % max)
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const byte = crypto.getRandomValues(new Uint8Array(1))[0]!;
-    if (byte < byteLimit) return byte % max;
+    const bytes = crypto.getRandomValues(new Uint8Array(1))
+    const byte = bytes[0]
+    if (byte === undefined) throw new Error('Failed to generate random byte')
+    if (byte < byteLimit) return byte % max
   }
 }
 
@@ -52,7 +54,7 @@ function cryptoRandomInt(max: number): number {
  * The generated string matches [A-Za-z0-9]+ and is safe for URL-encoding.
  */
 export function RandomString(length: number): string {
-  return RandomStringWithAlphabet(length, DEFAULT_ALPHABET);
+  return RandomStringWithAlphabet(length, DEFAULT_ALPHABET)
 }
 
 /**
@@ -64,17 +66,20 @@ export function RandomString(length: number): string {
  */
 export function RandomStringWithAlphabet(length: number, alphabet: string): string {
   if (alphabet.length === 0) {
-    throw new RangeError('alphabet must not be empty');
+    throw new RangeError('alphabet must not be empty')
   }
 
-  const result = new Array<string>(length);
-  const alphabetLen = alphabet.length;
+  const result = new Array<string>(length)
+  const alphabetLen = alphabet.length
 
   for (let i = 0; i < length; i++) {
-    result[i] = alphabet[cryptoRandomInt(alphabetLen)]!;
+    const idx = cryptoRandomInt(alphabetLen)
+    const ch = alphabet[idx]
+    if (ch === undefined) throw new Error('Failed to pick random character')
+    result[i] = ch
   }
 
-  return result.join('');
+  return result.join('')
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +93,7 @@ export function RandomStringWithAlphabet(length: number, alphabet: string): stri
  * For a secure alternative use {@link RandomString}.
  */
 export function PseudorandomString(length: number): string {
-  return PseudorandomStringWithAlphabet(length, DEFAULT_ALPHABET);
+  return PseudorandomStringWithAlphabet(length, DEFAULT_ALPHABET)
 }
 
 /**
@@ -99,15 +104,18 @@ export function PseudorandomString(length: number): string {
  */
 export function PseudorandomStringWithAlphabet(length: number, alphabet: string): string {
   if (alphabet.length === 0) {
-    throw new RangeError('alphabet must not be empty');
+    throw new RangeError('alphabet must not be empty')
   }
 
-  const result = new Array<string>(length);
-  const alphabetLen = alphabet.length;
+  const result = new Array<string>(length)
+  const alphabetLen = alphabet.length
 
   for (let i = 0; i < length; i++) {
-    result[i] = alphabet[Math.floor(Math.random() * alphabetLen)]!;
+    const idx = Math.floor(Math.random() * alphabetLen)
+    const ch = alphabet[idx]
+    if (ch === undefined) throw new Error('Failed to pick random character')
+    result[i] = ch
   }
 
-  return result.join('');
+  return result.join('')
 }

@@ -79,19 +79,20 @@ export async function bootstrapPostgresRequestRolesOnConnection(
       if (!existing.has(role)) await client.query(createRoleStatement(role))
     }
 
-    const memberships = await client.query<MembershipRow>(`
+    const memberships = await client.query<MembershipRow>(
+      `
       SELECT target.rolname, pg_has_role(current_user, target.oid, 'MEMBER') AS member
       FROM pg_roles AS target
       WHERE target.rolname = ANY($1::text[])
-    `, [[...REQUEST_ROLES]])
+    `,
+      [[...REQUEST_ROLES]],
+    )
     const missingMemberships = memberships.rows
       .filter((row) => !row.member)
       .map((row) => row.rolname as RequestRole)
 
     if (missingMemberships.length > 0) {
-      await client.query(
-        `GRANT ${missingMemberships.join(', ')} TO CURRENT_USER`,
-      )
+      await client.query(`GRANT ${missingMemberships.join(', ')} TO CURRENT_USER`)
     }
 
     for (const role of REQUEST_ROLES) await assertCanSetRole(client, role)
@@ -103,10 +104,10 @@ export async function bootstrapPostgresRequestRolesOnConnection(
 
     const detail = cause instanceof Error ? cause.message : String(cause)
     throw new PostgresRoleBootstrapError(
-      `PostgreSQL request-role bootstrap failed for connection role "${connectionRole}": ${detail}. `
-      + 'Sinopebase will not start without RLS role isolation. Run startup once with a PostgreSQL '
-      + 'administrator, or provision NOLOGIN roles anon and authenticated plus a NOLOGIN BYPASSRLS '
-      + `role service_role, then grant all three roles to "${connectionRole}".`,
+      `PostgreSQL request-role bootstrap failed for connection role "${connectionRole}": ${detail}. ` +
+        'Sinopebase will not start without RLS role isolation. Run startup once with a PostgreSQL ' +
+        'administrator, or provision NOLOGIN roles anon and authenticated plus a NOLOGIN BYPASSRLS ' +
+        `role service_role, then grant all three roles to "${connectionRole}".`,
       { cause },
     )
   }
@@ -115,7 +116,8 @@ export async function bootstrapPostgresRequestRolesOnConnection(
 async function loadRequestRoles(
   client: PostgresRoleBootstrapClient,
 ): Promise<Map<string, RoleAttributes>> {
-  const result = await client.query<RoleAttributes>(`
+  const result = await client.query<RoleAttributes>(
+    `
     SELECT
       rolname,
       rolcanlogin,
@@ -126,24 +128,27 @@ async function loadRequestRoles(
       rolbypassrls
     FROM pg_roles
     WHERE rolname = ANY($1::text[])
-  `, [[...REQUEST_ROLES]])
+  `,
+    [[...REQUEST_ROLES]],
+  )
   return new Map(result.rows.map((role) => [role.rolname, role]))
 }
 
 function validateExistingRole(role: RoleAttributes): void {
   const expectedBypass = role.rolname === 'service_role'
-  const unsafe = role.rolcanlogin
-    || role.rolsuper
-    || role.rolcreatedb
-    || role.rolcreaterole
-    || role.rolreplication
-    || role.rolbypassrls !== expectedBypass
+  const unsafe =
+    role.rolcanlogin ||
+    role.rolsuper ||
+    role.rolcreatedb ||
+    role.rolcreaterole ||
+    role.rolreplication ||
+    role.rolbypassrls !== expectedBypass
 
   if (unsafe) {
     throw new PostgresRoleBootstrapError(
-      `PostgreSQL role "${role.rolname}" has incompatible security attributes. `
-      + `Expected NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION ${expectedBypass ? 'BYPASSRLS' : 'NOBYPASSRLS'}. `
-      + 'Sinopebase did not alter this existing cluster-wide role.',
+      `PostgreSQL role "${role.rolname}" has incompatible security attributes. ` +
+        `Expected NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION ${expectedBypass ? 'BYPASSRLS' : 'NOBYPASSRLS'}. ` +
+        'Sinopebase did not alter this existing cluster-wide role.',
     )
   }
 }
@@ -157,11 +162,11 @@ async function assertCanSetRole(
   role: RequestRole,
 ): Promise<void> {
   await client.query(`SET LOCAL ROLE ${role}`)
-  const result = await client.query<CurrentRoleRow>(
-    'SELECT current_role AS "currentRole"',
-  )
+  const result = await client.query<CurrentRoleRow>('SELECT current_role AS "currentRole"')
   if (result.rows[0]?.currentRole !== role) {
-    throw new Error(`SET ROLE validation selected "${result.rows[0]?.currentRole ?? '<unknown>'}" instead of "${role}"`)
+    throw new Error(
+      `SET ROLE validation selected "${result.rows[0]?.currentRole ?? '<unknown>'}" instead of "${role}"`,
+    )
   }
   await client.query('RESET ROLE')
 }

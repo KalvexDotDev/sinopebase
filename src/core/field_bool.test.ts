@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { BoolField, FieldTypeBool } from '~/core/field_bool.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { BoolField, FieldTypeBool } from '~/core/field_bool.ts'
 
 describe('BoolField', () => {
   it('has type "bool"', () => {

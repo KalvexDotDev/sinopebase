@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/core/*.
  */
 
-import type { IDatabase } from '~/core/db-interface.ts'
 import { Collection } from '~/core/collection_model.ts'
+import type { IDatabase } from '~/core/db-interface.ts'
 
 // ---------------------------------------------------------------------------
 // ImportCollections
@@ -42,7 +42,7 @@ export async function importCollections(
 
   for (const data of toImport) {
     // Resolve the collection identifier
-    const idOrName = String(data['id'] ?? data['name'] ?? '')
+    const idOrName = String(data.id ?? data.name ?? '')
 
     // Check if this collection already exists
     const { findCollectionByNameOrId } = await import('~/core/collection_query.ts')
@@ -126,10 +126,7 @@ export async function importCollectionsByMarshaledJSON(
 /**
  * Saves a collection to the database.
  */
-async function saveCollectionToDb(
-  _db: IDatabase,
-  _collection: Collection,
-): Promise<void> {
+async function saveCollectionToDb(_db: IDatabase, _collection: Collection): Promise<void> {
   // TODO: Implement actual persistence with validation
   // 1. Validate the collection
   // 2. Sync record table schema
@@ -140,10 +137,7 @@ async function saveCollectionToDb(
 /**
  * Deletes a collection from the database.
  */
-async function deleteCollectionFromDb(
-  _db: IDatabase,
-  _collection: Collection,
-): Promise<void> {
+async function deleteCollectionFromDb(_db: IDatabase, _collection: Collection): Promise<void> {
   // TODO: Implement actual deletion
   // 1. Drop the record table
   // 2. Remove from _collections table

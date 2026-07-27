@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { RelationField, FieldTypeRelation } from '~/core/field_relation.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { FieldTypeRelation, RelationField } from '~/core/field_relation.ts'
 
 describe('RelationField', () => {
   it('has type "relation"', () => {

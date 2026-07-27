@@ -4,9 +4,10 @@
  * Provides file read/write/delete/list operations against a local directory.
  * Used as fallback when MinIO is not configured.
  */
-import * as fs from 'fs/promises'
-import { existsSync } from 'fs'
-import { join, dirname, resolve as resolvePath, sep } from 'path'
+
+import { existsSync } from 'node:fs'
+import * as fs from 'node:fs/promises'
+import { dirname, join, resolve as resolvePath, sep } from 'node:path'
 import type { IFileStore } from './store-interface'
 
 export interface LocalFileInfo {

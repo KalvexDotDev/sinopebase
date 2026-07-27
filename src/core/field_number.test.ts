@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { NumberField, FieldTypeNumber } from '~/core/field_number.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { FieldTypeNumber, NumberField } from '~/core/field_number.ts'
 
 describe('NumberField', () => {
   it('has type "number"', () => {
@@ -33,10 +33,10 @@ describe('NumberField', () => {
     f.onlyInt = true
 
     const schema = f.settingsSchema
-    expect(schema['type']).toBe('number')
-    expect(schema['minimum']).toBe(0)
-    expect(schema['maximum']).toBe(100)
-    expect(schema['multipleOf']).toBe(1)
+    expect(schema.type).toBe('number')
+    expect(schema.minimum).toBe(0)
+    expect(schema.maximum).toBe(100)
+    expect(schema.multipleOf).toBe(1)
   })
 
   it('validateSettings validates min <= max', () => {

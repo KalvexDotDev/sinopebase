@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { PasswordField, FieldTypePassword } from '~/core/field_password.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { FieldTypePassword, PasswordField } from '~/core/field_password.ts'
 
 describe('PasswordField', () => {
   it('has type "password"', () => {
@@ -20,8 +20,8 @@ describe('PasswordField', () => {
 
   it('settings schema has writeOnly set to true', () => {
     const f = new PasswordField()
-    expect(f.settingsSchema['writeOnly']).toBe(true)
-    expect(f.settingsSchema['type']).toBe('string')
+    expect(f.settingsSchema.writeOnly).toBe(true)
+    expect(f.settingsSchema.type).toBe('string')
   })
 
   it('defaults to bcrypt algorithm', () => {
@@ -76,7 +76,7 @@ describe('PasswordField', () => {
       const f = new PasswordField()
       f.id = 'fld1'
       f.name = 'password'
-      ;(f as Record<string, unknown>)['algorithm'] = 'invalid'
+      ;(f as Record<string, unknown>).algorithm = 'invalid'
       const errors = f.validateSettings()
       expect(errors.some((e) => e.includes('algorithm'))).toBe(true)
     })

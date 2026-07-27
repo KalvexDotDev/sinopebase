@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Sinopebase, type AppConfig } from '../../src/core/app'
+import { type AppConfig, Sinopebase } from '../../src/core/app'
 import { reserveLoopbackPort } from '../harness'
 
 // ---------------------------------------------------------------------------

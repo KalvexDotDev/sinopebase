@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId, maxSafeJSONInt } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { maxSafeJSONInt, RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 
 export const FieldTypeNumber = 'number'
 
@@ -53,15 +53,15 @@ export class NumberField implements Field {
     }
 
     if (this.onlyInt) {
-      schema['multipleOf'] = 1
+      schema.multipleOf = 1
     }
 
     if (this.min !== null) {
-      schema['minimum'] = this.min
+      schema.minimum = this.min
     }
 
     if (this.max !== null) {
-      schema['maximum'] = this.max
+      schema.maximum = this.max
     }
 
     return schema
@@ -81,11 +81,11 @@ export class NumberField implements Field {
       errors.push('help: must be between 1 and 300 characters')
     }
 
-    if (this.min !== null && (this.min > maxSafeJSONInt)) {
+    if (this.min !== null && this.min > maxSafeJSONInt) {
       errors.push('min: out of valid range')
     }
 
-    if (this.max !== null && (this.max > maxSafeJSONInt)) {
+    if (this.max !== null && this.max > maxSafeJSONInt) {
       errors.push('max: out of valid range')
     }
 

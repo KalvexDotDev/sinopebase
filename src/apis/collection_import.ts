@@ -7,12 +7,17 @@
  */
 
 import { Elysia } from 'elysia'
-import type { IDatabase } from '~/core/db-interface'
 import { Collection } from '~/core/collection_model'
+import type { IDatabase } from '~/core/db-interface'
+import { selectRows } from './db-helpers'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+interface MemoryAdapterFallback {
+  insert(table: string, records: Record<string, unknown>[]): Promise<unknown>
+}
 
 interface CollectionsImportBody {
   collections: Record<string, unknown>[]
@@ -51,8 +56,8 @@ export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => b
 
       for (const colData of data.collections) {
         try {
-          const name = String(colData['name'] ?? '')
-          const id = String(colData['id'] ?? '')
+          const name = String(colData.name ?? '')
+          const id = String(colData.id ?? '')
 
           if (!name && !id) {
             errors.push(`Skipped collection with no name or id`)
@@ -67,46 +72,54 @@ export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => b
           }
 
           const serialized = collection.dbExport()
-          serialized['id'] = collection.id
+          serialized.id = collection.id
 
           // Try to update existing, or insert new
           try {
             const existing = await db.select('_collections', {
               filters: [{ column: 'id', operator: 'eq', value: collection.id }],
             })
-            const existingRows = Array.isArray(existing) ? existing : ((existing as any)?.rows ?? [])
+            const existingRows = selectRows(existing)
             if (existingRows.length > 0) {
-              await db.update('_collections', [{ column: 'id', operator: 'eq', value: collection.id }], serialized)
+              await db.update(
+                '_collections',
+                [{ column: 'id', operator: 'eq', value: collection.id }],
+                serialized,
+              )
             } else {
               try {
                 await db.insert('_collections', serialized)
               } catch {
-                await (db as any).insert('_collections', [serialized])
+                await (db as MemoryAdapterFallback).insert('_collections', [serialized])
               }
             }
           } catch {
             try {
               await db.insert('_collections', serialized)
             } catch {
-              await (db as any).insert('_collections', [serialized])
+              await (db as MemoryAdapterFallback).insert('_collections', [serialized])
             }
           }
         } catch (colErr) {
-          errors.push(`Error importing collection: ${colErr instanceof Error ? colErr.message : String(colErr)}`)
+          errors.push(
+            `Error importing collection: ${colErr instanceof Error ? colErr.message : String(colErr)}`,
+          )
         }
       }
 
       // Handle deleteMissing
       if (data.deleteMissing && data.collections.length > 0) {
         try {
-          const importedNames = new Set(data.collections.map((c) => String(c['name'] ?? '')))
+          const importedNames = new Set(data.collections.map((c) => String(c.name ?? '')))
           const result = await db.select('_collections', {})
-          const allRows = Array.isArray(result) ? result : ((result as any)?.rows ?? [])
+          const allRows = selectRows(result)
           for (const row of allRows) {
             const name = String(row.name ?? '')
             if (name && !importedNames.has(name) && row.system !== true) {
               try {
-                await db.delete('_collections', [{ column: 'id', operator: 'eq', value: String(row.id) }])
+                await db.delete('_collections', [
+                  { column: 'id', operator: 'eq', value: String(row.id) },
+                ])
               } catch {
                 // ignore delete errors
               }

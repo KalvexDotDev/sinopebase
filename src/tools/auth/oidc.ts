@@ -11,8 +11,8 @@
  * hard-coding the endpoint URLs.
  */
 
-import { BaseProvider, type TokenResponse } from '~/tools/auth/base_provider.ts'
 import type { AuthUser, HttpClient } from '~/tools/auth/auth.ts'
+import { BaseProvider, type TokenResponse } from '~/tools/auth/base_provider.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -107,14 +107,10 @@ export class OIDCProvider extends BaseProvider {
     const config = (await response.json()) as OIDCConfiguration
 
     if (!config.authorization_endpoint) {
-      throw new Error(
-        `OIDC discovery missing authorization_endpoint for issuer ${this.issuer}`,
-      )
+      throw new Error(`OIDC discovery missing authorization_endpoint for issuer ${this.issuer}`)
     }
     if (!config.token_endpoint) {
-      throw new Error(
-        `OIDC discovery missing token_endpoint for issuer ${this.issuer}`,
-      )
+      throw new Error(`OIDC discovery missing token_endpoint for issuer ${this.issuer}`)
     }
 
     this.AuthUrl = config.authorization_endpoint
@@ -149,18 +145,12 @@ export class OIDCProvider extends BaseProvider {
     return await super.BuildAuthUrl(state, opts)
   }
 
-  override async ExchangeCode(
-    code: string,
-    codeVerifier?: string,
-  ): Promise<TokenResponse> {
+  override async ExchangeCode(code: string, codeVerifier?: string): Promise<TokenResponse> {
     await this.Discover()
     return super.ExchangeCode(code, codeVerifier)
   }
 
-  override async FetchUser(
-    token: string,
-    client?: HttpClient,
-  ): Promise<AuthUser> {
+  override async FetchUser(token: string, client?: HttpClient): Promise<AuthUser> {
     await this.Discover()
     return super.FetchUser(token, client)
   }
@@ -172,13 +162,12 @@ export class OIDCProvider extends BaseProvider {
   override MapUser(rawUser: unknown): AuthUser {
     const data = rawUser as Record<string, unknown>
     return {
-      Id: (data['sub'] as string) ?? '',
-      Name: (data['name'] as string) ?? '',
-      Username: (data['preferred_username'] as string) ?? (data['email'] as string) ?? '',
-      Email: (data['email'] as string) ?? '',
-      AvatarUrl: (data['picture'] as string) ?? '',
+      Id: (data.sub as string) ?? '',
+      Name: (data.name as string) ?? '',
+      Username: (data.preferred_username as string) ?? (data.email as string) ?? '',
+      Email: (data.email as string) ?? '',
+      AvatarUrl: (data.picture as string) ?? '',
       RawUser: rawUser,
     }
   }
-
 }

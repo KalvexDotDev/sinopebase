@@ -38,7 +38,9 @@ export class RequiredInfrastructureError extends Error {
     const problems = [
       missing.length > 0 ? `missing: ${missing.join(', ')}` : '',
       invalid.length > 0 ? `invalid: ${invalid.join(', ')}` : '',
-    ].filter(Boolean).join('; ')
+    ]
+      .filter(Boolean)
+      .join('; ')
     super(`Required infrastructure for suite "${suiteId}" is unavailable (${problems})`)
     this.name = 'RequiredInfrastructureError'
     this.suiteId = suiteId

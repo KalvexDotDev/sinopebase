@@ -1,11 +1,8 @@
-import { describe, it, expect } from 'bun:test'
-import {
-  normalizeTableName,
-  syncRecordTableSchema,
-} from '~/core/collection_record_table_sync.ts'
+import { describe, expect, it } from 'bun:test'
+import { Collection } from '~/core/collection_model.ts'
+import { normalizeTableName, syncRecordTableSchema } from '~/core/collection_record_table_sync.ts'
 import type { DatabaseSchemaCapability } from '~/core/db-interface.ts'
 import { MemoryDatabaseAdapter } from '~/core/db-memory-adapter.ts'
-import { Collection } from '~/core/collection_model.ts'
 
 class SchemaMemoryDatabase extends MemoryDatabaseAdapter implements DatabaseSchemaCapability {
   readonly operations: string[] = []
@@ -57,9 +54,7 @@ describe('syncRecordTableSchema capabilities', () => {
     await syncRecordTableSchema(db, collectionWithTextField('articles'), null)
 
     expect(await db.hasTable('articles')).toBe(true)
-    expect(db.operations).toEqual([
-      'add:articles:title:TEXT DEFAULT NULL',
-    ])
+    expect(db.operations).toEqual(['add:articles:title:TEXT DEFAULT NULL'])
   })
 
   it('fails before mutation when the database has only CRUD capabilities', async () => {

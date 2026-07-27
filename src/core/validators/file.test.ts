@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { UploadedFileSize, UploadedFileMimeType } from '~/core/validators/file.ts'
+import { describe, expect, it } from 'bun:test'
 import type { UploadedFile } from '~/core/validators/file.ts'
+import { UploadedFileMimeType, UploadedFileSize } from '~/core/validators/file.ts'
 
 function makeFile(name: string, size: number, mimeType: string = 'text/plain'): UploadedFile {
   return { name, size, mimeType }
@@ -18,7 +18,7 @@ describe('UploadedFileSize', () => {
   it('returns error for files over the limit', () => {
     const err = UploadedFileSize(1000)(makeFile('test.txt', 2000))
     expect(err).not.toBeNull()
-    expect(err!.code).toBe('validation_file_size_limit')
+    expect(err?.code).toBe('validation_file_size_limit')
   })
 
   it('returns error for non-file input', () => {
@@ -38,7 +38,7 @@ describe('UploadedFileMimeType', () => {
     const file = makeFile('file.exe', 1000, 'application/x-msdownload')
     const err = UploadedFileMimeType(['image/jpeg', 'image/png'])(file)
     expect(err).not.toBeNull()
-    expect(err!.code).toBe('validation_invalid_mime_type')
+    expect(err?.code).toBe('validation_invalid_mime_type')
   })
 
   it('returns error for empty validTypes list', () => {

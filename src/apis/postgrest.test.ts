@@ -16,11 +16,7 @@ function createApp(rows: Record<string, unknown>[]) {
   return app
 }
 
-async function get(
-  app: Elysia,
-  path: string,
-  headers: Record<string, string> = {},
-) {
+async function get(app: Elysia, path: string, headers: Record<string, string> = {}) {
   const response = await app.handle(new Request(`http://localhost${path}`, { headers }))
   return {
     response,
@@ -73,15 +69,17 @@ describe('PostgREST singular responses', () => {
     const app = new Elysia()
     mountPostgrestRoutes(app, db as never)
 
-    const response = await app.handle(new Request('http://localhost/rest/v1/items', {
-      method: 'POST',
-      headers: {
-        accept: singularMediaType,
-        'content-type': 'application/json',
-        prefer: 'return=representation',
-      },
-      body: JSON.stringify({ rank: 4 }),
-    }))
+    const response = await app.handle(
+      new Request('http://localhost/rest/v1/items', {
+        method: 'POST',
+        headers: {
+          accept: singularMediaType,
+          'content-type': 'application/json',
+          prefer: 'return=representation',
+        },
+        body: JSON.stringify({ rank: 4 }),
+      }),
+    )
 
     expect(response.status).toBe(201)
     expect(await response.json()).toEqual(inserted)
@@ -105,12 +103,12 @@ describe('PostgREST ordering', () => {
   it('translates order into the PostgreSQL database order shape', async () => {
     let capturedOrder: unknown
     const db = {
-      select: async (
-        _table: string,
-        options: { order?: unknown },
-      ) => {
+      select: async (_table: string, options: { order?: unknown }) => {
         capturedOrder = options.order
-        return [{ id: 'three', rank: 3 }, { id: 'one', rank: 1 }]
+        return [
+          { id: 'three', rank: 3 },
+          { id: 'one', rank: 1 },
+        ]
       },
     }
     const app = new Elysia()
@@ -152,8 +150,8 @@ function createRelationshipApp(
       return rows
     },
     getForeignKeyRelationships: async (table: string) =>
-      relationships.filter(({ sourceTable, targetTable }) =>
-        sourceTable === table || targetTable === table
+      relationships.filter(
+        ({ sourceTable, targetTable }) => sourceTable === table || targetTable === table,
       ),
   }
 
@@ -169,13 +167,15 @@ describe('PostgREST embedded relationships', () => {
         certifications: [{ id: 'cert-1', framework_id: 'framework-1', ignored: true }],
         frameworks: [{ id: 'framework-1', name: 'ISO 27001', version: '2022', ignored: true }],
       },
-      [{
-        constraintName: 'certifications_framework_id_fkey',
-        sourceTable: 'certifications',
-        sourceColumn: 'framework_id',
-        targetTable: 'frameworks',
-        targetColumn: 'id',
-      }],
+      [
+        {
+          constraintName: 'certifications_framework_id_fkey',
+          sourceTable: 'certifications',
+          sourceColumn: 'framework_id',
+          targetTable: 'frameworks',
+          targetColumn: 'id',
+        },
+      ],
     )
 
     const { body } = await get(
@@ -183,11 +183,13 @@ describe('PostgREST embedded relationships', () => {
       '/rest/v1/certifications?select=id,framework_id,frameworks(id,name,version)',
     )
 
-    expect(body).toEqual([{
-      id: 'cert-1',
-      framework_id: 'framework-1',
-      frameworks: { id: 'framework-1', name: 'ISO 27001', version: '2022' },
-    }])
+    expect(body).toEqual([
+      {
+        id: 'cert-1',
+        framework_id: 'framework-1',
+        frameworks: { id: 'framework-1', name: 'ISO 27001', version: '2022' },
+      },
+    ])
   })
 
   it('filters parent rows for !inner embeds', async () => {
@@ -199,13 +201,15 @@ describe('PostgREST embedded relationships', () => {
         ],
         controls: [{ id: 'control-1', domain: 'A', control_id: 'A.1', control_name: 'Policy' }],
       },
-      [{
-        constraintName: 'certification_controls_control_id_fkey',
-        sourceTable: 'certification_controls',
-        sourceColumn: 'control_id',
-        targetTable: 'controls',
-        targetColumn: 'id',
-      }],
+      [
+        {
+          constraintName: 'certification_controls_control_id_fkey',
+          sourceTable: 'certification_controls',
+          sourceColumn: 'control_id',
+          targetTable: 'controls',
+          targetColumn: 'id',
+        },
+      ],
     )
 
     const { body } = await get(
@@ -213,10 +217,12 @@ describe('PostgREST embedded relationships', () => {
       '/rest/v1/certification_controls?select=id,controls!inner(id,domain,control_id,control_name)',
     )
 
-    expect(body).toEqual([{
-      id: 'cc-1',
-      controls: { id: 'control-1', domain: 'A', control_id: 'A.1', control_name: 'Policy' },
-    }])
+    expect(body).toEqual([
+      {
+        id: 'cc-1',
+        controls: { id: 'control-1', domain: 'A', control_id: 'A.1', control_name: 'Policy' },
+      },
+    ])
   })
 
   it('uses a foreign-key column as an aliased relationship hint', async () => {
@@ -225,13 +231,15 @@ describe('PostgREST embedded relationships', () => {
         control_evidence: [{ certification_control_id: 'cc-1', evidence_id: 'evidence-1' }],
         evidence: [{ id: 'evidence-1', file_name: 'policy.pdf', storage_path: '/policy.pdf' }],
       },
-      [{
-        constraintName: 'control_evidence_evidence_id_fkey',
-        sourceTable: 'control_evidence',
-        sourceColumn: 'evidence_id',
-        targetTable: 'evidence',
-        targetColumn: 'id',
-      }],
+      [
+        {
+          constraintName: 'control_evidence_evidence_id_fkey',
+          sourceTable: 'control_evidence',
+          sourceColumn: 'evidence_id',
+          targetTable: 'evidence',
+          targetColumn: 'id',
+        },
+      ],
     )
 
     const { body } = await get(
@@ -239,10 +247,12 @@ describe('PostgREST embedded relationships', () => {
       '/rest/v1/control_evidence?select=certification_control_id,evidence:evidence_id(id,file_name,storage_path)',
     )
 
-    expect(body).toEqual([{
-      certification_control_id: 'cc-1',
-      evidence: { id: 'evidence-1', file_name: 'policy.pdf', storage_path: '/policy.pdf' },
-    }])
+    expect(body).toEqual([
+      {
+        certification_control_id: 'cc-1',
+        evidence: { id: 'evidence-1', file_name: 'policy.pdf', storage_path: '/policy.pdf' },
+      },
+    ])
   })
 
   it('embeds an incoming relationship as an array', async () => {
@@ -254,23 +264,24 @@ describe('PostgREST embedded relationships', () => {
           { id: 'cert-2', framework_id: 'framework-1' },
         ],
       },
-      [{
-        constraintName: 'certifications_framework_id_fkey',
-        sourceTable: 'certifications',
-        sourceColumn: 'framework_id',
-        targetTable: 'frameworks',
-        targetColumn: 'id',
-      }],
+      [
+        {
+          constraintName: 'certifications_framework_id_fkey',
+          sourceTable: 'certifications',
+          sourceColumn: 'framework_id',
+          targetTable: 'frameworks',
+          targetColumn: 'id',
+        },
+      ],
     )
 
-    const { body } = await get(
-      app,
-      '/rest/v1/frameworks?select=id,certifications(id)',
-    )
+    const { body } = await get(app, '/rest/v1/frameworks?select=id,certifications(id)')
 
-    expect(body).toEqual([{
-      id: 'framework-1',
-      certifications: [{ id: 'cert-1' }, { id: 'cert-2' }],
-    }])
+    expect(body).toEqual([
+      {
+        id: 'framework-1',
+        certifications: [{ id: 'cert-1' }, { id: 'cert-2' }],
+      },
+    ])
   })
 })

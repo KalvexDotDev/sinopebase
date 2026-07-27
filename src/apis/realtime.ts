@@ -25,7 +25,7 @@ interface PhoenixMessage {
   protocol: 'object' | 'v2'
 }
 
-interface BroadcastPayload {
+export interface BroadcastPayload {
   type: string
   event: string
   payload: unknown
@@ -127,7 +127,11 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   private readonly options: RealtimeHubOptions<TContext>
 
   constructor(options: RealtimeHubOptions<TContext> = {}) {
-    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' && !options.authorize) {
+    if (
+      typeof process !== 'undefined' &&
+      process.env?.NODE_ENV === 'production' &&
+      !options.authorize
+    ) {
       throw new Error('[realtime] authorize callback is required in production mode')
     }
     this.options = options
@@ -142,10 +146,10 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     // Fallback for test doubles: store a synthetic key on ws.data.
     const data = (ws.data ?? {}) as Record<string, unknown>
     ws.data = data as WSClient['data']
-    const cached = data['_realtimeCid']
+    const cached = data._realtimeCid
     if (typeof cached === 'string') return cached
     const id = `synthetic-${this.nextBindingId++}`
-    data['_realtimeCid'] = id
+    data._realtimeCid = id
     return id
   }
 
@@ -185,12 +189,11 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
 
     switch (msg.event) {
       case 'phx_join': {
-        const token = typeof msg.payload['access_token'] === 'string'
-          ? msg.payload['access_token']
-          : websocketApiKey(ws)
-        const context = this.options.authorize
-          ? await this.options.authorize(token)
-          : undefined
+        const token =
+          typeof msg.payload.access_token === 'string'
+            ? msg.payload.access_token
+            : websocketApiKey(ws)
+        const context = this.options.authorize ? await this.options.authorize(token) : undefined
 
         if (this.options.authorize && context === undefined) {
           sendPhoenix(ws, msg, 'phx_reply', {
@@ -200,7 +203,11 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           return
         }
 
-        if (context !== undefined && this.options.canJoinTopic && !this.options.canJoinTopic(context, msg.topic)) {
+        if (
+          context !== undefined &&
+          this.options.canJoinTopic &&
+          !this.options.canJoinTopic(context, msg.topic)
+        ) {
           sendPhoenix(ws, msg, 'phx_reply', {
             status: 'error',
             response: { reason: 'topic not authorized' },
@@ -235,9 +242,10 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         // If the token has expired, the client is evicted and the WebSocket
         // is closed.
         if (this.options.authorize) {
-          const heartbeatToken = typeof msg.payload['access_token'] === 'string'
-            ? msg.payload['access_token']
-            : entry.state.lastToken
+          const heartbeatToken =
+            typeof msg.payload.access_token === 'string'
+              ? msg.payload.access_token
+              : entry.state.lastToken
           if (heartbeatToken) {
             const refreshed = await this.options.authorize(heartbeatToken)
             if (refreshed === undefined && entry.state.context !== undefined) {
@@ -247,12 +255,14 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
                 status: 'error',
                 response: { reason: 'token expired' },
               })
-              ws.send(JSON.stringify({
-                topic: msg.topic,
-                event: 'phx_close',
-                payload: { reason: 'token expired' },
-                ref: null,
-              }))
+              ws.send(
+                JSON.stringify({
+                  topic: msg.topic,
+                  event: 'phx_close',
+                  payload: { reason: 'token expired' },
+                  ref: null,
+                }),
+              )
               return
             }
             if (refreshed !== undefined) {
@@ -286,16 +296,24 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         }
 
         const broadcastPayload = msg.payload
-        const broadcastEvent = typeof broadcastPayload['event'] === 'string' ? broadcastPayload['event'] : ''
-        const broadcastData = broadcastPayload['payload']
-        const self = broadcastPayload['self'] !== false
+        const broadcastEvent =
+          typeof broadcastPayload.event === 'string' ? broadcastPayload.event : ''
+        const broadcastData = broadcastPayload.payload
+        const self = broadcastPayload.self !== false
 
         // ── Null/undefined broadcast payload (silently ignored) ──
         if (broadcastData == null) break
 
         // ── Broadcast auth hook ──
         if (this.options.canBroadcast && entry.state.context) {
-          if (!this.options.canBroadcast(entry.state.context, msg.topic, broadcastEvent, broadcastData)) {
+          if (
+            !this.options.canBroadcast(
+              entry.state.context,
+              msg.topic,
+              broadcastEvent,
+              broadcastData,
+            )
+          ) {
             sendPhoenix(ws, msg, 'phx_reply', {
               status: 'error',
               response: { reason: 'broadcast not authorized' },
@@ -314,18 +332,11 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           return
         }
 
-        const response = encodePhoenix(
-          msg.protocol,
-          null,
-          null,
-          msg.topic,
-          'broadcast',
-          {
-            type: 'broadcast',
-            event: broadcastEvent,
-            payload: broadcastData,
-          },
-        )
+        const response = encodePhoenix(msg.protocol, null, null, msg.topic, 'broadcast', {
+          type: 'broadcast',
+          event: broadcastEvent,
+          payload: broadcastData,
+        })
         ws.publish(msg.topic, response)
         if (self) ws.send(response)
         break
@@ -351,9 +362,10 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         const columnGroups = new Map<string, { ids: number[]; columns?: string[] }>()
         for (const binding of bindings) {
           if (!bindingMatches(binding, change, row, !this.options.allowSchemaWildcard)) continue
-          const key = binding.columns && binding.columns.length > 0
-            ? [...binding.columns].sort().join(',')
-            : '*'
+          const key =
+            binding.columns && binding.columns.length > 0
+              ? [...binding.columns].sort().join(',')
+              : '*'
           let group = columnGroups.get(key)
           if (!group) {
             group = { ids: [], columns: binding.columns }
@@ -403,14 +415,12 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         for (const delivery of bounded) {
           try {
             const payload = postgresChangePayload(change, delivery.columns)
-            delivery.ws.send(encodePhoenix(
-              delivery.protocol,
-              null,
-              null,
-              delivery.topic,
-              'postgres_changes',
-              { ids: delivery.ids, data: payload },
-            ))
+            delivery.ws.send(
+              encodePhoenix(delivery.protocol, null, null, delivery.topic, 'postgres_changes', {
+                ids: delivery.ids,
+                data: payload,
+              }),
+            )
           } catch (err) {
             console.error('[realtime] delivery error:', err)
           }
@@ -470,16 +480,21 @@ function parsePhoenixMessage(rawMessage: unknown): PhoenixMessage | null {
     }
   }
 
-  if (!isRecord(value) || typeof value['topic'] !== 'string' || (value['topic'] as string).length === 0 || typeof value['event'] !== 'string') {
+  if (
+    !isRecord(value) ||
+    typeof value.topic !== 'string' ||
+    (value.topic as string).length === 0 ||
+    typeof value.event !== 'string'
+  ) {
     return null
   }
 
   return {
-    joinRef: typeof value['join_ref'] === 'string' ? value['join_ref'] : null,
-    ref: typeof value['ref'] === 'string' ? value['ref'] : null,
-    topic: value['topic'],
-    event: value['event'],
-    payload: isRecord(value['payload']) ? value['payload'] : {},
+    joinRef: typeof value.join_ref === 'string' ? value.join_ref : null,
+    ref: typeof value.ref === 'string' ? value.ref : null,
+    topic: value.topic,
+    event: value.event,
+    payload: isRecord(value.payload) ? value.payload : {},
     protocol: 'object',
   }
 }
@@ -490,14 +505,9 @@ function sendPhoenix(
   event: string,
   payload: Record<string, unknown>,
 ): void {
-  ws.send(encodePhoenix(
-    msg.protocol,
-    msg.joinRef ?? null,
-    msg.ref ?? null,
-    msg.topic,
-    event,
-    payload,
-  ))
+  ws.send(
+    encodePhoenix(msg.protocol, msg.joinRef ?? null, msg.ref ?? null, msg.topic, event, payload),
+  )
 }
 
 function encodePhoenix(
@@ -514,7 +524,7 @@ function encodePhoenix(
 }
 
 function websocketApiKey(ws: WSClient): string | undefined {
-  const value = ws.data?.query?.['apikey']
+  const value = ws.data?.query?.apikey
   return typeof value === 'string' ? value : undefined
 }
 
@@ -523,25 +533,27 @@ function websocketApiKey(ws: WSClient): string | undefined {
 // ---------------------------------------------------------------------------
 
 function postgresChangesFilters(payload: Record<string, unknown>): PostgresChangesFilter[] {
-  const config = isRecord(payload['config']) ? payload['config'] : {}
-  const rawFilters = Array.isArray(config['postgres_changes']) ? config['postgres_changes'] : []
+  const config = isRecord(payload.config) ? payload.config : {}
+  const rawFilters = Array.isArray(config.postgres_changes) ? config.postgres_changes : []
 
   return rawFilters.flatMap((value): PostgresChangesFilter[] => {
     if (!isRecord(value)) return []
-    const event = typeof value['event'] === 'string' ? value['event'].toUpperCase() : '*'
+    const event = typeof value.event === 'string' ? value.event.toUpperCase() : '*'
     if (!['INSERT', 'UPDATE', 'DELETE', '*'].includes(event)) return []
-    if (typeof value['schema'] !== 'string' || value['schema'] === '') return []
-    return [{
-      event: event as PostgresChangesFilter['event'],
-      schema: value['schema'],
-      table: typeof value['table'] === 'string' ? value['table'] : undefined,
-      filter: typeof value['filter'] === 'string' && value['filter'].length > 0
-        ? value['filter']
-        : undefined,
-      columns: Array.isArray(value['columns']) && value['columns'].every((c) => typeof c === 'string')
-        ? (value['columns'] as string[])
-        : undefined,
-    }]
+    if (typeof value.schema !== 'string' || value.schema === '') return []
+    return [
+      {
+        event: event as PostgresChangesFilter['event'],
+        schema: value.schema,
+        table: typeof value.table === 'string' ? value.table : undefined,
+        filter:
+          typeof value.filter === 'string' && value.filter.length > 0 ? value.filter : undefined,
+        columns:
+          Array.isArray(value.columns) && value.columns.every((c) => typeof c === 'string')
+            ? (value.columns as string[])
+            : undefined,
+      },
+    ]
   })
 }
 
@@ -572,19 +584,27 @@ function realtimeFilterMatches(filter: string, row: Record<string, unknown>): bo
   const compare = String(actual) === expected
 
   switch (operator) {
-    case 'eq': return compare
-    case 'neq': return !compare
-    case 'lt': return compareValues(actual, expected) < 0
-    case 'lte': return compareValues(actual, expected) <= 0
-    case 'gt': return compareValues(actual, expected) > 0
-    case 'gte': return compareValues(actual, expected) >= 0
+    case 'eq':
+      return compare
+    case 'neq':
+      return !compare
+    case 'lt':
+      return compareValues(actual, expected) < 0
+    case 'lte':
+      return compareValues(actual, expected) <= 0
+    case 'gt':
+      return compareValues(actual, expected) > 0
+    case 'gte':
+      return compareValues(actual, expected) >= 0
     case 'in': {
-      const values = expected.startsWith('(') && expected.endsWith(')')
-        ? expected.slice(1, -1).split(',')
-        : [expected]
+      const values =
+        expected.startsWith('(') && expected.endsWith(')')
+          ? expected.slice(1, -1).split(',')
+          : [expected]
       return values.some((value) => String(actual) === value.trim())
     }
-    default: return false
+    default:
+      return false
   }
 }
 
@@ -623,10 +643,7 @@ function postgresChangePayload(
   }
 }
 
-function projectRow(
-  row: Record<string, unknown>,
-  columns?: string[],
-): Record<string, unknown> {
+function projectRow(row: Record<string, unknown>, columns?: string[]): Record<string, unknown> {
   if (!columns || columns.length === 0) return { ...row }
   const projected: Record<string, unknown> = {}
   for (const col of columns) {

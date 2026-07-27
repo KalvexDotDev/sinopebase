@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { Record } from '~/core/record_model.ts'
+import { describe, expect, it } from 'bun:test'
 import { Collection } from '~/core/collection_model.ts'
+import { Record } from '~/core/record_model.ts'
 import { BaseRecordProxy } from '~/core/record_proxy.ts'
 
 describe('BaseRecordProxy', () => {
@@ -40,7 +40,7 @@ describe('BaseRecordProxy', () => {
     const proxy = new BaseRecordProxy(record)
 
     const json = proxy.toJSON()
-    expect(json['collectionId']).toBe(collection.id)
-    expect(json['collectionName']).toBe(collection.name)
+    expect(json.collectionId).toBe(collection.id)
+    expect(json.collectionName).toBe(collection.name)
   })
 })

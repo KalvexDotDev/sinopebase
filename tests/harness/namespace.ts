@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 const POSTGRES_IDENTIFIER_LIMIT = 63
 const STORAGE_BUCKET_LIMIT = 63
@@ -43,7 +43,7 @@ function limitIdentifier(value: string, limit: number, separator: '_' | '-'): st
 }
 
 function createRunId(): string {
-  const configured = process.env['SINOPEBASE_TEST_RUN_ID']?.trim()
+  const configured = process.env.SINOPEBASE_TEST_RUN_ID?.trim()
   if (configured) return configured
   return `${process.pid}-${randomUUID()}`
 }
@@ -55,7 +55,7 @@ function createRunId(): string {
 export function createTestNamespace(options: TestNamespaceOptions): TestNamespace {
   const runId = options.runId?.trim() || createRunId()
   const suiteId = options.suiteId.trim()
-  const workerId = String(options.workerId ?? process.env['BUN_TEST_WORKER_ID'] ?? '0').trim()
+  const workerId = String(options.workerId ?? process.env.BUN_TEST_WORKER_ID ?? '0').trim()
 
   if (!suiteId) throw new Error('suiteId must not be empty')
 

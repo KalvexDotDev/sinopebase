@@ -9,7 +9,7 @@
  * Signature for a registered template function.
  * Receives the data object and returns the rendered string.
  */
-export type TemplateFn = (data: Record<string, unknown>) => string;
+export type TemplateFn = (data: Record<string, unknown>) => string
 
 /**
  * A thread-safe (by JS single-threaded nature) registry of named template
@@ -22,7 +22,7 @@ export type TemplateFn = (data: Record<string, unknown>) => string;
  */
 export class Registry {
   /** @internal */
-  private readonly templates = new Map<string, TemplateFn>();
+  private readonly templates = new Map<string, TemplateFn>()
 
   // -----------------------------------------------------------------------
   // Register
@@ -33,7 +33,7 @@ export class Registry {
    * If a function with that name already exists it is replaced.
    */
   Register(name: string, fn: TemplateFn): void {
-    this.templates.set(name, fn);
+    this.templates.set(name, fn)
   }
 
   // -----------------------------------------------------------------------
@@ -45,7 +45,7 @@ export class Registry {
    * if no function is registered under `name`.
    */
   Get(name: string): TemplateFn | undefined {
-    return this.templates.get(name);
+    return this.templates.get(name)
   }
 
   // -----------------------------------------------------------------------
@@ -59,10 +59,10 @@ export class Registry {
    * Throws if `name` has not been registered.
    */
   Render(name: string, data: Record<string, unknown>): string {
-    const fn = this.Get(name);
+    const fn = this.Get(name)
     if (fn === undefined) {
-      throw new Error(`Template "${name}" not found`);
+      throw new Error(`Template "${name}" not found`)
     }
-    return fn(data);
+    return fn(data)
   }
 }

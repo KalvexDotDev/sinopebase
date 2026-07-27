@@ -17,10 +17,7 @@ class LoopbackPortReservation implements TestPortReservation {
   private readonly server: Server
   #released = false
 
-  constructor(
-    port: number,
-    server: Server,
-  ) {
+  constructor(port: number, server: Server) {
     this.port = port
     this.server = server
     this.origin = `http://${this.host}:${port}`
@@ -35,7 +32,7 @@ class LoopbackPortReservation implements TestPortReservation {
     this.#released = true
 
     await new Promise<void>((resolve, reject) => {
-      this.server.close((error) => error ? reject(error) : resolve())
+      this.server.close((error) => (error ? reject(error) : resolve()))
     })
   }
 }
@@ -56,13 +53,10 @@ export async function reserveLoopbackPort(): Promise<TestPortReservation> {
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error): void => reject(error)
     server.once('error', onError)
-    server.listen(
-      { host: TEST_LOOPBACK_HOST, port: 0, exclusive: true },
-      () => {
-        server.off('error', onError)
-        resolve()
-      },
-    )
+    server.listen({ host: TEST_LOOPBACK_HOST, port: 0, exclusive: true }, () => {
+      server.off('error', onError)
+      resolve()
+    })
   })
 
   const address = server.address()

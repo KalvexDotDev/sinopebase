@@ -33,10 +33,7 @@ export function generateFamilyId(): string {
  *
  * Returns true if the token has no `exp` claim or is past its expiry + leeway.
  */
-export function isTokenExpired(
-  token: { exp?: number } | string,
-  leewaySec = 0,
-): boolean {
+export function isTokenExpired(token: { exp?: number } | string, leewaySec = 0): boolean {
   let exp: number | undefined
   if (typeof token === 'string') {
     try {
@@ -58,7 +55,9 @@ export function isTokenExpired(
 export function getTokenKid(token: string): string | undefined {
   try {
     const parts = token.split('.')
-    const header = JSON.parse(atob(parts[0]!))
+    const firstPart = parts[0]
+    if (!firstPart) return undefined
+    const header = JSON.parse(atob(firstPart))
     return header.kid as string | undefined
   } catch {
     return undefined
@@ -72,7 +71,7 @@ export function getTokenKid(token: string): string | undefined {
 export function getTokenSessionId(token: string): string | undefined {
   try {
     const payload = decodeJwt(token)
-    return payload['sid'] as string | undefined
+    return payload.sid as string | undefined
   } catch {
     return undefined
   }

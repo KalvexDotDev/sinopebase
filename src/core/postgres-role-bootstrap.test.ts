@@ -2,8 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import type { QueryResult } from 'pg'
 import {
   bootstrapPostgresRequestRolesOnConnection,
-  PostgresRoleBootstrapError,
   type PostgresRoleBootstrapClient,
+  PostgresRoleBootstrapError,
 } from './postgres-role-bootstrap'
 
 type Role = {
@@ -43,15 +43,19 @@ class FakeRoleClient implements PostgresRoleBootstrapClient {
     }
     if (normalized.startsWith('CREATE ROLE ')) {
       if (!this.canAdministerRoles) throw new Error('permission denied to create role')
-      const name = normalized.split(' ')[2]!
+      const parts = normalized.split(' ')
+      const name = parts[2]
+      if (!name) throw new Error(`Invalid CREATE ROLE statement: ${normalized}`)
       this.roles.set(name, safeRole(name))
       return result([])
     }
     if (normalized.includes("pg_has_role(current_user, target.oid, 'MEMBER')")) {
-      return result([...this.roles.values()].map((role) => ({
-        rolname: role.rolname,
-        member: this.memberships.has(role.rolname),
-      })) as R[])
+      return result(
+        [...this.roles.values()].map((role) => ({
+          rolname: role.rolname,
+          member: this.memberships.has(role.rolname),
+        })) as R[],
+      )
     }
     if (normalized.startsWith('GRANT ')) {
       if (!this.canAdministerRoles) throw new Error('permission denied to grant role')

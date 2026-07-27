@@ -17,67 +17,67 @@ import { Store } from '~/tools/store/store'
 import type { App } from './app'
 import { Sinopebase } from './app'
 import type { Model } from './db_model'
+import type { IDatabase } from './db-interface'
 import {
+  BackupEvent,
+  // Batch events
+  type BatchRequestEvent,
   // App lifecycle events
   BootstrapEvent,
-  ServeEvent,
-  TerminateEvent,
-  BackupEvent,
+  type CollectionCreateEvent,
+  type CollectionDeleteEvent,
+  type CollectionErrorEvent,
+  // Collection proxy events
+  type CollectionEvent,
+  type CollectionRequestEvent,
+  type CollectionsImportRequestEvent,
+  // Collection API events
+  type CollectionsListEvent,
+  type CollectionUpdateEvent,
+  type FileDownloadRequestEvent,
+  // File events
+  type FileTokenRequestEvent,
+  // Mailer events
+  type MailerEvent,
+  type MailerRecordEvent,
+  type ModelErrorEvent,
   // Model events
   ModelEvent,
-  ModelErrorEvent,
-  // Record proxy events
-  RecordEvent,
-  RecordErrorEvent,
-  RecordEnrichEvent,
-  // Collection proxy events
-  CollectionEvent,
-  CollectionErrorEvent,
-  // Mailer events
-  MailerEvent,
-  MailerRecordEvent,
   // Realtime events
-  RealtimeConnectEvent,
-  RealtimeDisconnectEvent,
-  RealtimeMessageEvent,
-  RealtimeSubscribeEvent,
-  // Settings events
-  SettingsListEvent,
-  SettingsUpdateEvent,
-  SettingsReloadEvent,
-  // Record CRUD API events
-  RecordsListEvent,
-  RecordViewEvent,
-  RecordCreateEvent,
-  RecordUpdateEvent,
-  RecordDeleteEvent,
+  type RealtimeConnectEvent,
+  type RealtimeDisconnectEvent,
+  type RealtimeMessageEvent,
+  type RealtimeSubscribeEvent,
   // Auth Record API events
-  RecordAuthEvent,
-  RecordAuthWithPasswordEvent,
-  RecordAuthWithOAuth2Event,
-  RecordAuthRefreshEvent,
-  RecordRequestPasswordResetEvent,
-  RecordConfirmPasswordResetEvent,
-  RecordRequestVerificationEvent,
-  RecordConfirmVerificationEvent,
-  RecordRequestEmailChangeEvent,
-  RecordConfirmEmailChangeEvent,
-  RecordCreateOTPRequestEvent,
-  RecordAuthWithOTPRequestEvent,
-  // Collection API events
-  CollectionsListEvent,
-  CollectionRequestEvent,
-  CollectionCreateEvent,
-  CollectionUpdateEvent,
-  CollectionDeleteEvent,
-  CollectionsImportRequestEvent,
-  // File events
-  FileTokenRequestEvent,
-  FileDownloadRequestEvent,
-  // Batch events
-  BatchRequestEvent,
+  type RecordAuthEvent,
+  type RecordAuthRefreshEvent,
+  type RecordAuthWithOAuth2Event,
+  type RecordAuthWithOTPRequestEvent,
+  type RecordAuthWithPasswordEvent,
+  type RecordConfirmEmailChangeEvent,
+  type RecordConfirmPasswordResetEvent,
+  type RecordConfirmVerificationEvent,
+  type RecordCreateEvent,
+  type RecordCreateOTPRequestEvent,
+  type RecordDeleteEvent,
+  type RecordEnrichEvent,
+  type RecordErrorEvent,
+  // Record proxy events
+  type RecordEvent,
+  type RecordRequestEmailChangeEvent,
+  type RecordRequestPasswordResetEvent,
+  type RecordRequestVerificationEvent,
+  // Record CRUD API events
+  type RecordsListEvent,
+  type RecordUpdateEvent,
+  type RecordViewEvent,
+  type ServeEvent,
+  // Settings events
+  type SettingsListEvent,
+  type SettingsReloadEvent,
+  type SettingsUpdateEvent,
+  type TerminateEvent,
 } from './events'
-import type { IDatabase } from './db-interface'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -408,16 +408,22 @@ export class BaseApp extends Sinopebase implements App {
   // DB access
   // ---------------------------------------------------------------
 
+  #requireDb(): IDatabase {
+    const db = this.getDatabase()
+    if (!db) throw new Error('Database not initialized — call app.start() first')
+    return db
+  }
+
   db(): IDatabase {
-    return this.getDatabase()!
+    return this.#requireDb()
   }
 
   concurrentDB(): IDatabase {
-    return this.getDatabase()!
+    return this.#requireDb()
   }
 
   nonconcurrentDB(): IDatabase {
-    return this.getDatabase()!
+    return this.#requireDb()
   }
 
   async hasTable(tableName: string): Promise<boolean> {
@@ -464,9 +470,7 @@ export class BaseApp extends Sinopebase implements App {
         if (db) {
           const id = model.getId()
           if (id) {
-            await db.delete(model.tableName(), [
-              { column: 'id', operator: 'eq', value: id },
-            ])
+            await db.delete(model.tableName(), [{ column: 'id', operator: 'eq', value: id }])
           }
         }
       })
@@ -540,9 +544,7 @@ export class BaseApp extends Sinopebase implements App {
     await this.onModelValidateHook.trigger(event)
   }
 
-  async runInTransaction(
-    fn: (txApp: App) => Promise<void>,
-  ): Promise<void> {
+  async runInTransaction(fn: (txApp: App) => Promise<void>): Promise<void> {
     await fn(this)
   }
 
@@ -578,10 +580,7 @@ export class BaseApp extends Sinopebase implements App {
     return null
   }
 
-  async isCollectionNameUnique(
-    _name: string,
-    ..._excludeIds: string[]
-  ): Promise<boolean> {
+  async isCollectionNameUnique(_name: string, ..._excludeIds: string[]): Promise<boolean> {
     return true
   }
 
@@ -592,10 +591,7 @@ export class BaseApp extends Sinopebase implements App {
     // Placeholder
   }
 
-  async syncRecordTableSchema(
-    _newCollection: unknown,
-    _oldCollection: unknown,
-  ): Promise<void> {
+  async syncRecordTableSchema(_newCollection: unknown, _oldCollection: unknown): Promise<void> {
     // Placeholder
   }
 
@@ -657,17 +653,11 @@ export class BaseApp extends Sinopebase implements App {
     return null
   }
 
-  async countRecords(
-    _collectionModelOrIdentifier: unknown,
-    ..._exprs: unknown[]
-  ): Promise<number> {
+  async countRecords(_collectionModelOrIdentifier: unknown, ..._exprs: unknown[]): Promise<number> {
     return 0
   }
 
-  async findAuthRecordByToken(
-    _token: string,
-    ..._validTypes: string[]
-  ): Promise<unknown> {
+  async findAuthRecordByToken(_token: string, ..._validTypes: string[]): Promise<unknown> {
     return null
   }
 
@@ -990,19 +980,27 @@ export class BaseApp extends Sinopebase implements App {
     return new TaggedHook(this.onRecordAuthRefreshRequestHook, ...tags)
   }
 
-  onRecordRequestPasswordResetRequest(...tags: string[]): TaggedHook<RecordRequestPasswordResetEvent> {
+  onRecordRequestPasswordResetRequest(
+    ...tags: string[]
+  ): TaggedHook<RecordRequestPasswordResetEvent> {
     return new TaggedHook(this.onRecordRequestPasswordResetRequestHook, ...tags)
   }
 
-  onRecordConfirmPasswordResetRequest(...tags: string[]): TaggedHook<RecordConfirmPasswordResetEvent> {
+  onRecordConfirmPasswordResetRequest(
+    ...tags: string[]
+  ): TaggedHook<RecordConfirmPasswordResetEvent> {
     return new TaggedHook(this.onRecordConfirmPasswordResetRequestHook, ...tags)
   }
 
-  onRecordRequestVerificationRequest(...tags: string[]): TaggedHook<RecordRequestVerificationEvent> {
+  onRecordRequestVerificationRequest(
+    ...tags: string[]
+  ): TaggedHook<RecordRequestVerificationEvent> {
     return new TaggedHook(this.onRecordRequestVerificationRequestHook, ...tags)
   }
 
-  onRecordConfirmVerificationRequest(...tags: string[]): TaggedHook<RecordConfirmVerificationEvent> {
+  onRecordConfirmVerificationRequest(
+    ...tags: string[]
+  ): TaggedHook<RecordConfirmVerificationEvent> {
     return new TaggedHook(this.onRecordConfirmVerificationRequestHook, ...tags)
   }
 

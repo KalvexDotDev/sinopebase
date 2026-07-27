@@ -1,9 +1,37 @@
-import type { User, Session } from '~/sdk/auth'
-import { toSinopebaseUser, toSinopebaseSession, ACCESS_TOKEN_EXPIRES_IN } from './types'
+import type { Session, User } from '~/sdk/auth'
+import { ACCESS_TOKEN_EXPIRES_IN, toSinopebaseSession, toSinopebaseUser } from './types'
 
 export interface GoTrueErrorResponse {
   message: string
   status: number
+}
+
+interface BetterAuthSignInResult {
+  token: string
+  user: {
+    id: string
+    email: string
+    emailVerified?: boolean
+    name?: string | null
+    image?: string | null
+    role?: string
+    createdAt?: Date | string
+    updatedAt?: Date | string
+  }
+}
+
+interface BetterAuthGetSessionResult {
+  session: Record<string, unknown>
+  user: {
+    id: string
+    email: string
+    emailVerified: boolean
+    name: string | null
+    image: string | null
+    role: string
+    createdAt: Date
+    updatedAt: Date
+  }
 }
 
 /**
@@ -13,8 +41,10 @@ export interface GoTrueErrorResponse {
  * Expected input shape:
  *   { token: string, user: { id, email, emailVerified?, createdAt?, updatedAt?, ... } }
  */
-export function bridgeSignInResponse(result: any): Session | GoTrueErrorResponse {
-  if (!result || !result.token || !result.user) {
+export function bridgeSignInResponse(
+  result: BetterAuthSignInResult,
+): Session | GoTrueErrorResponse {
+  if (!result?.token || !result.user) {
     return bridgeErrorResponse('Authentication failed', 400)
   }
 
@@ -42,8 +72,10 @@ export function bridgeSignInResponse(result: any): Session | GoTrueErrorResponse
  * Expected input shape:
  *   { session: {...}, user: { id, email, ... } } | null
  */
-export function bridgeGetUserResponse(result: any): User | GoTrueErrorResponse {
-  if (!result || !result.user) {
+export function bridgeGetUserResponse(
+  result: BetterAuthGetSessionResult | null,
+): User | GoTrueErrorResponse {
+  if (!result?.user) {
     return bridgeErrorResponse('Invalid token', 401)
   }
 

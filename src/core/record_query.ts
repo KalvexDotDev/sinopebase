@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/core/*, ~/tools/*.
  */
 
-import type { IDatabase, Filter } from '~/core/db-interface.ts'
 import type { Collection } from '~/core/collection_model.ts'
+import type { Filter, IDatabase } from '~/core/db-interface.ts'
 import { Record as RecordModel } from '~/core/record_model.ts'
 import { ParseJWT } from '~/tools/security/jwt.ts'
 
@@ -33,11 +33,17 @@ export async function findRecordById(
 
   if (rows.length === 0) return null
 
-  const col = typeof collection === 'string'
-    ? { name: collection, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection
-    : collection
+  const col =
+    typeof collection === 'string'
+      ? ({
+          name: collection,
+          fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} },
+        } as unknown as Collection)
+      : collection
 
-  return rowToRecord(col, rows[0]!)
+  const firstRow2 = rows[0]
+  if (!firstRow2) return null
+  return rowToRecord(col, firstRow2)
 }
 
 /**
@@ -57,9 +63,13 @@ export async function findRecordsByIds(
     filters: [{ column: 'id', operator: 'in', value: recordIds }],
   })
 
-  const col = typeof collection === 'string'
-    ? { name: collection, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection
-    : collection
+  const col =
+    typeof collection === 'string'
+      ? ({
+          name: collection,
+          fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} },
+        } as unknown as Collection)
+      : collection
 
   return rows.map((row) => rowToRecord(col, row))
 }
@@ -78,9 +88,13 @@ export async function findAllRecords(
 
   const rows = await db.select(tableName, { filters })
 
-  const col = typeof collection === 'string'
-    ? { name: collection, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection
-    : collection
+  const col =
+    typeof collection === 'string'
+      ? ({
+          name: collection,
+          fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} },
+        } as unknown as Collection)
+      : collection
 
   return rows.map((row) => rowToRecord(col, row))
 }
@@ -105,11 +119,17 @@ export async function findFirstRecordByData(
 
   if (rows.length === 0) return null
 
-  const col = typeof collection === 'string'
-    ? { name: collection, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection
-    : collection
+  const col =
+    typeof collection === 'string'
+      ? ({
+          name: collection,
+          fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} },
+        } as unknown as Collection)
+      : collection
 
-  return rowToRecord(col, rows[0]!)
+  const firstRow2 = rows[0]
+  if (!firstRow2) return null
+  return rowToRecord(col, firstRow2)
 }
 
 /**
@@ -126,9 +146,13 @@ export async function findRecordsByFilter(
   offset?: number,
 ): Promise<RecordModel[]> {
   const tableName = typeof collection === 'string' ? collection : collection.name
-  const col = typeof collection === 'string'
-    ? { name: collection, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection
-    : collection
+  const col =
+    typeof collection === 'string'
+      ? ({
+          name: collection,
+          fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} },
+        } as unknown as Collection)
+      : collection
 
   // Parse the filter string into Filters
   const filters = parseFilterString(filter)
@@ -184,15 +208,15 @@ export async function findAuthRecordByToken(
   try {
     const claims = await ParseJWT(token, tokenSecret)
 
-    const id = claims['id'] as string | undefined
-    const collectionId = claims['collectionId'] as string | undefined
+    const id = claims.id as string | undefined
+    const collectionId = claims.collectionId as string | undefined
 
     if (!id || !collectionId) return null
 
     // Find the collection first
     const { findCollectionByNameOrId } = await import('~/core/collection_query.ts')
     const collection = await findCollectionByNameOrId(db, collectionId)
-    if (!collection || !collection.isAuth()) return null
+    if (!collection?.isAuth()) return null
 
     return findRecordById(db, collection, id)
   } catch {
@@ -245,7 +269,7 @@ function rowToRecord(collection: Collection, row: Record<string, unknown>): Reco
   const record = new RecordModel(collection)
 
   // Set the id
-  record.id = String(row['id'] ?? '')
+  record.id = String(row.id ?? '')
 
   // Set data from row
   for (const [key, value] of Object.entries(row)) {
@@ -275,9 +299,7 @@ function parseFilterString(filter: string): Filter[] {
     if (!trimmed) continue
 
     // Try to match operator patterns
-    const match = trimmed.match(
-      /^(\w+)\s*(!=|>=|<=|=|~|!~|>|<)\s*(.+)$/,
-    )
+    const match = trimmed.match(/^(\w+)\s*(!=|>=|<=|=|~|!~|>|<)\s*(.+)$/)
     if (match) {
       const [, column, op, rawValue] = match
       const value = rawValue.trim().replace(/^['"]|['"]$/g, '')
@@ -293,9 +315,10 @@ function parseFilterString(filter: string): Filter[] {
         '!~': 'not',
       }
 
+      if (!column || !op) continue
       filters.push({
-        column: column!,
-        operator: operatorMap[op!] ?? 'eq',
+        column,
+        operator: operatorMap[op] ?? 'eq',
         value,
       })
     }

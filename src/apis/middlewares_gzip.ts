@@ -55,9 +55,7 @@ export const DEFAULT_GZIP_CONFIG: GzipConfig = {
  * This function is kept as a documentation/anchor point for the port.
  * The actual compression registration should use the Elysia-native plugin.
  */
-export function configureGzip(
-  _config: GzipConfig = DEFAULT_GZIP_CONFIG,
-): void {
+export function configureGzip(_config: GzipConfig = DEFAULT_GZIP_CONFIG): void {
   // Elysia v1.4+ provides built-in compression.
   // Register it in the app/route bootstrap instead:
   //

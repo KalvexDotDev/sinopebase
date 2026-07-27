@@ -12,23 +12,20 @@
  * skipped when POSTGRES_URL is not set.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdir, writeFile, readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import {
-  verifyBackup,
-  listBackups,
   cleanupOldBackups,
+  listBackups,
   pgDump,
   pgRestore,
+  verifyBackup,
 } from '../../src/core/backup'
-import {
-  backupFileStore,
-  restoreFileStore,
-} from '../../src/core/backup-files'
-import type { IFileStore, Bucket, FileObject } from '../../src/tools/filesystem/store-interface'
+import { backupFileStore, restoreFileStore } from '../../src/core/backup-files'
+import type { Bucket, FileObject, IFileStore } from '../../src/tools/filesystem/store-interface'
 
 // ---------------------------------------------------------------------------
 // In-memory file store stub for testing
@@ -63,7 +60,7 @@ class TestFileStore implements IFileStore {
 
   async save(bucket: string, path: string, data: ArrayBuffer): Promise<void> {
     await this.ensureBucket(bucket)
-    this.objects.get(bucket)!.set(path, data)
+    this.objects.get(bucket)?.set(path, data)
   }
 
   async read(bucket: string, path: string): Promise<Buffer> {
@@ -101,7 +98,7 @@ class TestFileStore implements IFileStore {
 // Fixture directories
 // ---------------------------------------------------------------------------
 
-const testTmpDir = join(tmpdir(), 'sinopebase-backup-test-' + Date.now())
+const testTmpDir = join(tmpdir(), `sinopebase-backup-test-${Date.now()}`)
 const backupDir = join(testTmpDir, 'backups')
 
 beforeAll(async () => {
@@ -185,9 +182,9 @@ describe('listBackups', () => {
 
     const result = await listBackups(listDir)
     expect(result.length).toBe(3)
-    expect(result[0]!.name).toBe('middle.sql')
-    expect(result[0]!.size).toBeGreaterThan(0)
-    expect(result[0]!.modified).toBeTruthy()
+    expect(result[0]?.name).toBe('middle.sql')
+    expect(result[0]?.size).toBeGreaterThan(0)
+    expect(result[0]?.modified).toBeTruthy()
   })
 
   it('skips directories', async () => {
@@ -198,7 +195,7 @@ describe('listBackups', () => {
 
     const result = await listBackups(listDir)
     expect(result.length).toBe(1)
-    expect(result[0]!.name).toBe('backup.sql')
+    expect(result[0]?.name).toBe('backup.sql')
   })
 })
 
@@ -212,7 +209,7 @@ describe('cleanupOldBackups', () => {
     await mkdir(cleanDir, { recursive: true })
 
     for (let i = 0; i < 5; i++) {
-      await writeFile(join(cleanDir, 'backup-' + i + '.sql'), '-- content')
+      await writeFile(join(cleanDir, `backup-${i}.sql`), '-- content')
       await new Promise((r) => setTimeout(r, 50))
     }
 
@@ -284,9 +281,7 @@ describe('backupFileStore / restoreFileStore', () => {
     const emptyDir = join(testTmpDir, 'no-manifest')
     await mkdir(emptyDir, { recursive: true })
 
-    await expect(restoreFileStore(store, emptyDir)).rejects.toThrow(
-      'Backup manifest not found',
-    )
+    await expect(restoreFileStore(store, emptyDir)).rejects.toThrow('Backup manifest not found')
   })
 })
 
@@ -295,7 +290,7 @@ describe('backupFileStore / restoreFileStore', () => {
 // ---------------------------------------------------------------------------
 
 describe('pgDump + pgRestore (integration)', () => {
-  const postgresUrl = process.env['POSTGRES_URL'] || ''
+  const postgresUrl = process.env.POSTGRES_URL || ''
 
   beforeAll(() => {
     if (!postgresUrl) {
@@ -324,7 +319,8 @@ describe('pgDump + pgRestore (integration)', () => {
     if (!postgresUrl) return
 
     const dumpPath = join(testTmpDir, 'pg-roundtrip.sql')
-    const testSql = '-- Test dump\nCREATE TABLE IF NOT EXISTS _backup_test (id int);\nDROP TABLE IF EXISTS _backup_test;\n'
+    const testSql =
+      '-- Test dump\nCREATE TABLE IF NOT EXISTS _backup_test (id int);\nDROP TABLE IF EXISTS _backup_test;\n'
 
     await writeFile(dumpPath, testSql)
 

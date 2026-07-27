@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'bun:test'
-import { ValidationError, ValidationErrors, JoinValidationErrors, cutStr, ErrUnsupportedValueType } from '~/core/validators/validators.ts'
+import { describe, expect, it } from 'bun:test'
+import {
+  cutStr,
+  ErrUnsupportedValueType,
+  JoinValidationErrors,
+  ValidationError,
+  ValidationErrors,
+} from '~/core/validators/validators.ts'
 
 describe('ValidationError', () => {
   it('creates a named error with code and message', () => {
@@ -63,8 +69,8 @@ describe('JoinValidationErrors', () => {
   it('joins two plain errors', () => {
     const result = JoinValidationErrors(new Error('err1'), new Error('err2'))
     expect(result).toBeInstanceOf(Error)
-    expect(result!.message).toContain('err1')
-    expect(result!.message).toContain('err2')
+    expect(result?.message).toContain('err1')
+    expect(result?.message).toContain('err2')
   })
 })
 

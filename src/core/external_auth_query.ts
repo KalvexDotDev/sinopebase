@@ -23,18 +23,13 @@ export function createExternalAuthQuery(db: IDatabase) {
     /** Find all ExternalAuth records linked to a collection. */
     async findAllByCollection(collectionId: string): Promise<ExternalAuth[]> {
       const rows = await db.select('_externalAuths', {
-        filters: [
-          { column: 'collectionId', operator: 'eq', value: collectionId },
-        ],
+        filters: [{ column: 'collectionId', operator: 'eq', value: collectionId }],
       })
       return rows.map((r) => Object.assign(new ExternalAuth(), r))
     },
 
     /** Find the first ExternalAuth matching a filter expression. */
-    async findFirstByProvider(
-      provider: string,
-      providerId: string,
-    ): Promise<ExternalAuth | null> {
+    async findFirstByProvider(provider: string, providerId: string): Promise<ExternalAuth | null> {
       const rows = await db.select('_externalAuths', {
         filters: [
           { column: 'provider', operator: 'eq', value: provider },
@@ -48,9 +43,7 @@ export function createExternalAuthQuery(db: IDatabase) {
 
     /** Delete all ExternalAuth records linked to a record. */
     async deleteAllByRecord(recordId: string): Promise<void> {
-      await db.delete('_externalAuths', [
-        { column: 'recordId', operator: 'eq', value: recordId },
-      ])
+      await db.delete('_externalAuths', [{ column: 'recordId', operator: 'eq', value: recordId }])
     },
   }
 }

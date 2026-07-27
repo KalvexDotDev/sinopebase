@@ -30,7 +30,7 @@ const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 // ---------------------------------------------------------------------------
 
 function getSecret(): string {
-  return process.env['JWT_SECRET'] ?? JWT_DEV_FALLBACK
+  return process.env.JWT_SECRET ?? JWT_DEV_FALLBACK
 }
 
 function base64urlEncode(buf: Buffer): string {
@@ -59,7 +59,11 @@ function computeSignature(payloadB64: string, secret: string): string {
  * @param expiresInSec Token lifetime in seconds (defaults to 1 hour).
  * @returns            A signed token string: `payload.signature`.
  */
-export function signUrl(bucket: string, path: string, expiresInSec: number = DEFAULT_TTL_SEC): string {
+export function signUrl(
+  bucket: string,
+  path: string,
+  expiresInSec: number = DEFAULT_TTL_SEC,
+): string {
   const exp = Math.floor(Date.now() / 1000) + expiresInSec
   const payload = { bucket, path, exp }
   const payloadB64 = base64urlEncode(Buffer.from(JSON.stringify(payload), 'utf-8'))

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { ProductionConfig, detectMode } from '../../src/core/config'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { detectMode, ProductionConfig } from '../../src/core/config'
 
 describe('ProductionConfig schema', () => {
   it('parses valid config with all required fields', () => {
@@ -111,8 +111,8 @@ describe('ProductionConfig schema', () => {
     })
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data.tls!.cert).toBe('/path/to/cert.pem')
-      expect(result.data.tls!.key).toBe('/path/to/key.pem')
+      expect(result.data.tls?.cert).toBe('/path/to/cert.pem')
+      expect(result.data.tls?.key).toBe('/path/to/key.pem')
     }
   })
 
@@ -154,7 +154,7 @@ describe('ProductionConfig schema', () => {
       ],
     })
     expect(result.oauthProviders).toHaveLength(1)
-    expect(result.oauthProviders[0]!.providerId).toBe('google')
+    expect(result.oauthProviders[0]?.providerId).toBe('google')
   })
 
   it('accepts trustedProxies', () => {
@@ -193,26 +193,26 @@ describe('detectMode', () => {
   })
 
   it('returns development by default', () => {
-    delete process.env['NODE_ENV']
-    delete process.env['SINOPEBASE_PRODUCTION']
+    delete process.env.NODE_ENV
+    delete process.env.SINOPEBASE_PRODUCTION
     expect(detectMode()).toBe('development')
   })
 
   it('returns production when NODE_ENV=production', () => {
-    delete process.env['SINOPEBASE_PRODUCTION']
-    process.env['NODE_ENV'] = 'production'
+    delete process.env.SINOPEBASE_PRODUCTION
+    process.env.NODE_ENV = 'production'
     expect(detectMode()).toBe('production')
   })
 
   it('returns production when SINOPEBASE_PRODUCTION=true', () => {
-    delete process.env['NODE_ENV']
-    process.env['SINOPEBASE_PRODUCTION'] = 'true'
+    delete process.env.NODE_ENV
+    process.env.SINOPEBASE_PRODUCTION = 'true'
     expect(detectMode()).toBe('production')
   })
 
   it('prefers NODE_ENV over SINOPEBASE_PRODUCTION', () => {
-    process.env['NODE_ENV'] = 'production'
-    process.env['SINOPEBASE_PRODUCTION'] = 'false'
+    process.env.NODE_ENV = 'production'
+    process.env.SINOPEBASE_PRODUCTION = 'false'
     expect(detectMode()).toBe('production')
   })
 })

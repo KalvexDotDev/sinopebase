@@ -139,7 +139,9 @@ class AuthStore {
    */
   validateTokenForRotation(
     tokenId: string,
-  ): { valid: true; data: StoredRefreshToken } | { valid: false; replay: boolean; compromised: boolean } {
+  ):
+    | { valid: true; data: StoredRefreshToken }
+    | { valid: false; replay: boolean; compromised: boolean } {
     const data = this.refreshTokens.get(tokenId)
 
     // Token not found or expired

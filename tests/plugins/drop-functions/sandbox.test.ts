@@ -4,12 +4,26 @@
 // environment isolation, and Response passthrough.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { Sinopebase } from '~/core/app'
+
+/** Loose test-response accessor — narrower than `any`. */
+interface TestResponse {
+  data?: unknown
+  requestId?: unknown
+  functionName?: unknown
+  error?: unknown
+  [key: string]: unknown
+}
+/** Sinopebase application with internal auth hook (not on the public type). */
+interface AppWithAuth extends Sinopebase {
+  getAuth?(): unknown
+}
+
 import { DropFunctionsPlugin } from '~/plugins/drop-functions/plugin'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
-import { resolve, join } from 'node:path'
-import { reserveLoopbackPort, requirePostgres, createTestNamespace } from '../../harness'
+import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
 
 const namespace = createTestNamespace({ suiteId: 'drop-functions-sandbox' })
 const TEST_FUNCTIONS_DIR = namespace.tempPath('sandbox-functions')
@@ -17,7 +31,7 @@ const TEST_FUNCTIONS_DIR = namespace.tempPath('sandbox-functions')
 function writeTestFunction(name: string, source: string): void {
   const dir = resolve(TEST_FUNCTIONS_DIR)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, name + '.ts'), source, 'utf-8')
+  writeFileSync(join(dir, `${name}.ts`), source, 'utf-8')
 }
 
 function cleanupTestFunctions(): void {
@@ -38,45 +52,60 @@ describe('DropFunctions — Sandbox execution', () => {
     cleanupTestFunctions()
 
     // Function that returns a plain object
-    writeTestFunction('test-fn', `
+    writeTestFunction(
+      'test-fn',
+      `
       export const config = { auth: false }
       export default async function handler() {
         return { hello: 'world' }
       }
-    `)
+    `,
+    )
 
     // Slow function with a short timeout so the worker is killed
-    writeTestFunction('slow-fn', `
+    writeTestFunction(
+      'slow-fn',
+      `
       export const config = { auth: false, timeout: 500 }
       export default async function handler() {
         await new Promise(resolve => setTimeout(resolve, 2000))
         return { done: true }
       }
-    `)
+    `,
+    )
 
     // Function that throws an error
-    writeTestFunction('error-fn', `
+    writeTestFunction(
+      'error-fn',
+      `
       export const config = { auth: false }
       export default async function handler() {
         throw new Error('boom')
       }
-    `)
+    `,
+    )
 
     // Function that tries to read process.env directly
-    writeTestFunction('env-fn', `
+    writeTestFunction(
+      'env-fn',
+      `
       export const config = { auth: false }
       export default async function handler() {
         return { secret: process.env.JWT_SECRET }
       }
-    `)
+    `,
+    )
 
     // Function that returns a raw Response object
-    writeTestFunction('resp-fn', `
+    writeTestFunction(
+      'resp-fn',
+      `
       export const config = { auth: false }
       export default async function handler() {
         return new Response('custom', { status: 201 })
       }
-    `)
+    `,
+    )
 
     app = new Sinopebase({
       port: portReservation.port,
@@ -92,7 +121,7 @@ describe('DropFunctions — Sandbox execution', () => {
     // Register the plugin via app.use() so its routes are wired BEFORE
     // server.listen(), avoiding Elysia's onError(NOT_FOUND) route-lock issue.
     app.use(async (server, _auth) => {
-      await plugin.register(server, (app as any).getAuth?.())
+      await plugin.register(server, (app as AppWithAuth).getAuth?.())
     })
 
     await app.start()
@@ -110,46 +139,46 @@ describe('DropFunctions — Sandbox execution', () => {
   // -----------------------------------------------------------------------
 
   it('executes a function in the sandbox', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/test-fn', {
+    const res = await fetch(`${baseUrl}/api/functions/v1/test-fn`, {
       method: 'POST',
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.data).toEqual({ hello: 'world' })
     expect(json.requestId).toBeTruthy()
     expect(json.functionName).toBe('test-fn')
   })
 
   it('timeout kills the worker', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/slow-fn', {
+    const res = await fetch(`${baseUrl}/api/functions/v1/slow-fn`, {
       method: 'POST',
     })
     expect(res.status).toBe(504)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.error).toContain('timed out')
   })
 
   it('worker errors propagate correctly', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/error-fn', {
+    const res = await fetch(`${baseUrl}/api/functions/v1/error-fn`, {
       method: 'POST',
     })
     expect(res.status).toBe(500)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.error).toContain('boom')
   })
 
   it('worker cannot access process.env', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/env-fn', {
+    const res = await fetch(`${baseUrl}/api/functions/v1/env-fn`, {
       method: 'POST',
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     // Bun worker created with env: {} — process.env.JWT_SECRET is undefined
     expect(json.data.secret).toBeUndefined()
   })
 
   it('Response objects pass through', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/resp-fn', {
+    const res = await fetch(`${baseUrl}/api/functions/v1/resp-fn`, {
       method: 'POST',
     })
     expect(res.status).toBe(201)

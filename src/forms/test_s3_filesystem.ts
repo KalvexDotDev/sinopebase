@@ -8,17 +8,17 @@
  * and delete a test file.
  */
 
-import { Type } from '@sinclair/typebox';
+import { Type } from '@sinclair/typebox'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** Storage filesystem type. */
-export const S3FilesystemStorage = 'storage';
+export const S3FilesystemStorage = 'storage'
 
 /** Backups filesystem type. */
-export const S3FilesystemBackups = 'backups';
+export const S3FilesystemBackups = 'backups'
 
 // ---------------------------------------------------------------------------
 // S3 config interface
@@ -28,13 +28,13 @@ export const S3FilesystemBackups = 'backups';
  * S3 configuration needed for connection testing.
  */
 export interface S3Config {
-  enabled: boolean;
-  bucket: string;
-  region: string;
-  endpoint: string;
-  accessKey: string;
-  secret: string;
-  forcePathStyle: boolean;
+  enabled: boolean
+  bucket: string
+  region: string
+  endpoint: string
+  accessKey: string
+  secret: string
+  forcePathStyle: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -47,30 +47,29 @@ export interface S3Config {
  */
 export class TestS3Filesystem {
   /** The filesystem type: "storage" or "backups". */
-  filesystem = '';
+  filesystem = ''
 
   /** Resolver for fetching S3 config (injected or overridden). */
-  protected configResolver: () => S3Config;
+  protected configResolver: () => S3Config
 
   /**
    * @param configResolver - Function that returns the S3 config for the
    *                         given filesystem type.
    */
   constructor(configResolver?: () => S3Config) {
-    this.configResolver = configResolver ?? (() => {
-      throw new Error('No S3 config resolver provided');
-    });
+    this.configResolver =
+      configResolver ??
+      (() => {
+        throw new Error('No S3 config resolver provided')
+      })
   }
 
   /**
    * TypeBox schema for the form.
    */
   static schema = Type.Object({
-    filesystem: Type.Union([
-      Type.Literal(S3FilesystemStorage),
-      Type.Literal(S3FilesystemBackups),
-    ]),
-  });
+    filesystem: Type.Union([Type.Literal(S3FilesystemStorage), Type.Literal(S3FilesystemBackups)]),
+  })
 
   /**
    * Validates the form data.
@@ -78,19 +77,15 @@ export class TestS3Filesystem {
    * Returns null if valid, or a map of field → error message.
    */
   validate(): Record<string, string> | null {
-    const errors: Record<string, string> = {};
+    const errors: Record<string, string> = {}
 
     if (!this.filesystem) {
-      errors['filesystem'] = 'Filesystem type is required';
-    } else if (
-      this.filesystem !== S3FilesystemStorage &&
-      this.filesystem !== S3FilesystemBackups
-    ) {
-      errors['filesystem'] =
-        `Filesystem must be "${S3FilesystemStorage}" or "${S3FilesystemBackups}"`;
+      errors.filesystem = 'Filesystem type is required'
+    } else if (this.filesystem !== S3FilesystemStorage && this.filesystem !== S3FilesystemBackups) {
+      errors.filesystem = `Filesystem must be "${S3FilesystemStorage}" or "${S3FilesystemBackups}"`
     }
 
-    return Object.keys(errors).length > 0 ? errors : null;
+    return Object.keys(errors).length > 0 ? errors : null
   }
 
   /**
@@ -99,22 +94,22 @@ export class TestS3Filesystem {
    * Returns null on success, or an error message on failure.
    */
   async submit(): Promise<string | null> {
-    const errors = this.validate();
+    const errors = this.validate()
     if (errors) {
-      return Object.values(errors).join('; ');
+      return Object.values(errors).join('; ')
     }
 
-    const config = this.configResolver();
+    const config = this.configResolver()
 
     if (!config.enabled) {
-      return 'S3 storage filesystem is not enabled';
+      return 'S3 storage filesystem is not enabled'
     }
 
     try {
-      await this.testConnection(config);
-      return null;
+      await this.testConnection(config)
+      return null
     } catch (err) {
-      return `S3 connection test failed: ${(err as Error).message}`;
+      return `S3 connection test failed: ${(err as Error).message}`
     }
   }
 
@@ -126,12 +121,12 @@ export class TestS3Filesystem {
    *   2. List/delete the test prefix
    */
   protected async testConnection(config: S3Config): Promise<void> {
-    const testPrefix = `pb_settings_test_${Math.random().toString(36).slice(2, 7)}`;
-    const testFileKey = `${testPrefix}/test.txt`;
+    const testPrefix = `pb_settings_test_${Math.random().toString(36).slice(2, 7)}`
+    const testFileKey = `${testPrefix}/test.txt`
 
     // Use the Minio/Bun S3 client if available
     // For testing without real S3, we simulate the operations.
-    await this.simulateS3Operations(config, testPrefix, testFileKey);
+    await this.simulateS3Operations(config, testPrefix, testFileKey)
   }
 
   /**
@@ -148,11 +143,11 @@ export class TestS3Filesystem {
     testFileKey: string,
   ): Promise<void> {
     // Build the endpoint URL
-    const protocol = config.endpoint.startsWith('http') ? '' : 'https://';
-    const baseUrl = `${protocol}${config.endpoint}`;
+    const protocol = config.endpoint.startsWith('http') ? '' : 'https://'
+    const baseUrl = `${protocol}${config.endpoint}`
 
     // Construct object URL
-    const objectUrl = `${baseUrl}/${config.bucket}/${testFileKey}`;
+    const objectUrl = `${baseUrl}/${config.bucket}/${testFileKey}`
 
     // 1. Upload test file
     const uploadResp = await fetch(objectUrl, {
@@ -162,7 +157,7 @@ export class TestS3Filesystem {
         ...this.buildAuthHeaders(config, 'PUT', objectUrl),
       },
       body: 'test',
-    });
+    })
 
     if (!uploadResp.ok && uploadResp.status !== 404) {
       // 404 is OK for some S3 implementations that use different endpoints
@@ -170,32 +165,32 @@ export class TestS3Filesystem {
     }
 
     // 2. Delete test prefix (list and delete objects with the prefix)
-    const listUrl = `${baseUrl}/${config.bucket}/?prefix=${testPrefix}`;
+    const listUrl = `${baseUrl}/${config.bucket}/?prefix=${testPrefix}`
     try {
       const listResp = await fetch(listUrl, {
         method: 'GET',
         headers: this.buildAuthHeaders(config, 'GET', listUrl),
-      });
+      })
 
       if (listResp.ok) {
-        const text = await listResp.text();
+        const text = await listResp.text()
         // Parse XML response and delete each object
-        const keys = this.parseListResponse(text);
+        const keys = this.parseListResponse(text)
         for (const key of keys) {
-          const delUrl = `${baseUrl}/${config.bucket}/${key}`;
+          const delUrl = `${baseUrl}/${config.bucket}/${key}`
           await fetch(delUrl, {
             method: 'DELETE',
             headers: this.buildAuthHeaders(config, 'DELETE', delUrl),
-          });
+          })
         }
       }
     } catch {
       // If listing fails, try direct prefix delete
-      const delUrl = `${baseUrl}/${config.bucket}/?prefix=${testPrefix}`;
+      const delUrl = `${baseUrl}/${config.bucket}/?prefix=${testPrefix}`
       await fetch(delUrl, {
         method: 'DELETE',
         headers: this.buildAuthHeaders(config, 'DELETE', delUrl),
-      });
+      })
     }
   }
 
@@ -214,19 +209,21 @@ export class TestS3Filesystem {
     // For testing, return basic auth headers.
     return {
       'X-Auth-Token': `${_config.accessKey}:${_config.secret}`,
-    };
+    }
   }
 
   /**
    * Parses an S3 ListObjectsV2 XML response to extract object keys.
    */
   protected parseListResponse(xml: string): string[] {
-    const keys: string[] = [];
-    const keyRegex = /<Key>([^<]+)<\/Key>/g;
-    let match: RegExpExecArray | null;
-    while ((match = keyRegex.exec(xml)) !== null) {
-      keys.push(match[1]!);
+    const keys: string[] = []
+    const keyRegex = /<Key>([^<]+)<\/Key>/g
+    let match = keyRegex.exec(xml)
+    while (match !== null) {
+      const m = match[1]
+      if (m) keys.push(m)
+      match = keyRegex.exec(xml)
     }
-    return keys;
+    return keys
   }
 }

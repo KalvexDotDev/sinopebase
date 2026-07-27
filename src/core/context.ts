@@ -17,8 +17,7 @@ export interface AppContext {
   /** Auth configuration */
   auth: {
     /** better-auth instance (set during Phase 2) */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    instance: any
+    instance: unknown
   }
 
   /** Storage configuration */
@@ -27,7 +26,6 @@ export interface AppContext {
     accessKey: string
     secretKey: string
     /** MinIO client (set during Phase 3) */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    client: any
+    client: unknown
   }
 }

@@ -5,19 +5,19 @@
  * Layer 1 -- imports from Layer 0 tools and nodemailer.
  */
 
-import * as nodemailer from "nodemailer";
-import type { Mailer, Message, SendInterceptor } from "./mailer.ts";
-import { addressToStrings, SendEvent } from "./mailer.ts";
-import { Hook } from "~/tools/hook/hook.ts";
-import { html2Text } from "./html2text.ts";
-import { PseudorandomString } from "~/tools/security/random.ts";
+import * as nodemailer from 'nodemailer'
+import { Hook } from '~/tools/hook/hook.ts'
+import { PseudorandomString } from '~/tools/security/random.ts'
+import { html2Text } from './html2text.ts'
+import type { Mailer, Message, SendInterceptor } from './mailer.ts'
+import { addressToStrings, SendEvent } from './mailer.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-export const SMTPAuthPlain = "PLAIN";
-export const SMTPAuthLogin = "LOGIN";
+export const SMTPAuthPlain = 'PLAIN'
+export const SMTPAuthLogin = 'LOGIN'
 
 // ---------------------------------------------------------------------------
 // SMTPConfig
@@ -28,22 +28,22 @@ export const SMTPAuthLogin = "LOGIN";
  */
 export interface SMTPConfig {
   /** Hostname of the SMTP server. */
-  host: string;
+  host: string
   /** Port of the SMTP server. */
-  port: number;
+  port: number
   /** SMTP username (optional). */
-  username?: string;
+  username?: string
   /** SMTP password (optional). */
-  password?: string;
+  password?: string
   /** Whether to use TLS (default: false). */
-  tls?: boolean;
+  tls?: boolean
   /** SMTP auth method: "PLAIN" or "LOGIN" (default: "PLAIN"). */
-  authMethod?: string;
+  authMethod?: string
   /**
    * Optional domain name used for the EHLO/HELO exchange
    * (default: "localhost").
    */
-  localName?: string;
+  localName?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ export interface SMTPConfig {
  * The LOGIN method is required by some providers (e.g. Outlook.com).
  */
 export class SMTPClient implements Mailer, SendInterceptor {
-  private onSendHook: Hook<SendEvent> | null = null;
+  private onSendHook: Hook<SendEvent> | null = null
 
   private config: SMTPConfig
 
@@ -77,9 +77,9 @@ export class SMTPClient implements Mailer, SendInterceptor {
    */
   onSend(): Hook<SendEvent> {
     if (this.onSendHook === null) {
-      this.onSendHook = new Hook<SendEvent>();
+      this.onSendHook = new Hook<SendEvent>()
     }
-    return this.onSendHook;
+    return this.onSendHook
   }
 
   // -----------------------------------------------------------------------
@@ -95,15 +95,12 @@ export class SMTPClient implements Mailer, SendInterceptor {
    */
   async send(message: Message): Promise<void> {
     if (this.onSendHook !== null) {
-      await this.onSendHook.trigger(
-        new SendEvent(message),
-        async (e: SendEvent) => {
-          await this.doSend(e.message);
-          return e.next();
-        },
-      );
+      await this.onSendHook.trigger(new SendEvent(message), async (e: SendEvent) => {
+        await this.doSend(e.message)
+        return e.next()
+      })
     } else {
-      await this.doSend(message);
+      await this.doSend(message)
     }
   }
 
@@ -113,12 +110,12 @@ export class SMTPClient implements Mailer, SendInterceptor {
 
   private async doSend(m: Message): Promise<void> {
     // Build auth
-    let auth: { user: string; pass: string } | undefined;
+    let auth: { user: string; pass: string } | undefined
     if (this.config.username || this.config.password) {
       auth = {
-        user: this.config.username ?? "",
-        pass: this.config.password ?? "",
-      };
+        user: this.config.username ?? '',
+        pass: this.config.password ?? '',
+      }
     }
 
     // Create transporter
@@ -127,42 +124,42 @@ export class SMTPClient implements Mailer, SendInterceptor {
       host: this.config.host,
       port: this.config.port,
       secure: this.config.tls ?? false,
-      name: this.config.localName ?? "localhost",
-    };
+      name: this.config.localName ?? 'localhost',
+    }
 
     if (auth) {
-      transporterOptions['auth'] = {
+      transporterOptions.auth = {
         user: auth.user,
         pass: auth.pass,
-      };
+      }
       // For LOGIN auth, nodemailer uses a custom auth mechanism
       if (this.config.authMethod === SMTPAuthLogin) {
-        transporterOptions['authMethod'] = "LOGIN";
+        transporterOptions.authMethod = 'LOGIN'
       }
     }
 
     const transporter = nodemailer.createTransport(
       transporterOptions as nodemailer.TransportOptions,
-    );
+    )
 
     // Build the mail options
     const mailOptions: nodemailer.SendMailOptions = {
       from:
-        m.from.name !== ""
-          ? `"${m.from.name.replace(/["\\]/g, "\\$&")}" <${m.from.address}>`
+        m.from.name !== ''
+          ? `"${m.from.name.replace(/["\\]/g, '\\$&')}" <${m.from.address}>`
           : m.from.address,
-      to: addressToStrings(m.to, true).join(", "),
+      to: addressToStrings(m.to, true).join(', '),
       subject: m.subject,
       html: m.html,
-    };
+    }
 
     // Plain text body
-    if (m.text !== "") {
-      mailOptions.text = m.text;
-    } else if (m.html !== "") {
+    if (m.text !== '') {
+      mailOptions.text = m.text
+    } else if (m.html !== '') {
       // Try to generate a plain text version from HTML
       try {
-        mailOptions.text = html2Text(m.html);
+        mailOptions.text = html2Text(m.html)
       } catch {
         // Fall back to no text version
       }
@@ -170,41 +167,40 @@ export class SMTPClient implements Mailer, SendInterceptor {
 
     // BCC
     if (m.bcc.length > 0) {
-      mailOptions.bcc = addressToStrings(m.bcc, true).join(", ");
+      mailOptions.bcc = addressToStrings(m.bcc, true).join(', ')
     }
 
     // CC
     if (m.cc.length > 0) {
-      mailOptions.cc = addressToStrings(m.cc, true).join(", ");
+      mailOptions.cc = addressToStrings(m.cc, true).join(', ')
     }
 
     // Custom headers
-    const resolvedHeaders: Record<string, string> = { ...m.headers };
+    const resolvedHeaders: Record<string, string> = { ...m.headers }
 
     const hasMessageIdHeader = Object.keys(resolvedHeaders).some(
-      (k) => k.toLowerCase() === "message-id",
-    );
+      (k) => k.toLowerCase() === 'message-id',
+    )
 
-    if (!hasMessageIdHeader && m.from.address.includes("@")) {
-      const domain = m.from.address.split("@")[1];
+    if (!hasMessageIdHeader && m.from.address.includes('@')) {
+      const domain = m.from.address.split('@')[1]
       if (domain) {
-        resolvedHeaders["Message-ID"] = `<${PseudorandomString(15)}@${domain}>`;
+        resolvedHeaders['Message-ID'] = `<${PseudorandomString(15)}@${domain}>`
       }
     }
 
     if (Object.keys(resolvedHeaders).length > 0) {
-      mailOptions.headers = resolvedHeaders;
+      mailOptions.headers = resolvedHeaders
     }
 
     // Attachments
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const attachments: { filename?: string; content?: any; cid?: string }[] = [];
+    const attachments: { filename?: string; content?: Buffer | ReadableStream; cid?: string }[] = []
 
     for (const [filename, stream] of Object.entries(m.attachments)) {
       attachments.push({
         filename,
         content: stream,
-      });
+      })
     }
 
     // Inline attachments
@@ -213,13 +209,13 @@ export class SMTPClient implements Mailer, SendInterceptor {
         filename,
         content: stream,
         cid: filename,
-      });
+      })
     }
 
     if (attachments.length > 0) {
-      mailOptions.attachments = attachments;
+      mailOptions.attachments = attachments
     }
 
-    await transporter.sendMail(mailOptions);
+    await transporter.sendMail(mailOptions)
   }
 }

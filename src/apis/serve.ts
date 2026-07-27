@@ -18,9 +18,9 @@
  * 8. Blocks until a shutdown signal is received.
  */
 
-import { Elysia } from 'elysia'
-import { existsSync, mkdirSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { Elysia } from 'elysia'
 
 import type { App } from '~/core/app'
 import { NewRouter, type RouterOptions } from './base'
@@ -124,10 +124,7 @@ function createCertManager(dataDir: string, _domains: string[]): CertManager {
  * await Serve(app, { httpAddr: '127.0.0.1:8090', showStartBanner: true })
  * ```
  */
-export async function Serve(
-  app: App,
-  config: ServeConfig = {},
-): Promise<Elysia> {
+export async function Serve(app: App, config: ServeConfig = {}): Promise<Elysia> {
   const cfg: ServeConfig = {
     showStartBanner: true,
     httpAddr: '127.0.0.1:8090',
@@ -264,10 +261,7 @@ export async function Serve(
  * On SIGINT / SIGTERM the server is stopped and the app's OnTerminate hook
  * is triggered.
  */
-export function registerShutdown(
-  app: App,
-  router: Elysia,
-): void {
+export function registerShutdown(app: App, router: Elysia): void {
   const shutdown = async (signal: string) => {
     console.log(`\n[serve] Received ${signal}, shutting down...`)
 

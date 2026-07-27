@@ -14,10 +14,7 @@ export function stderrFixtureCommand(message: string, exitCode = 1): PortableCom
 
   return {
     command: process.execPath,
-    args: [
-      '-e',
-      `process.stderr.write(${JSON.stringify(message)}); process.exit(${exitCode})`,
-    ],
+    args: ['-e', `process.stderr.write(${JSON.stringify(message)}); process.exit(${exitCode})`],
   }
 }
 

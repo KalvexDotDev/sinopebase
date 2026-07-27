@@ -2,10 +2,18 @@
 // Mastra AI — Integration tests
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '~/core/app'
 import { MastraPlugin } from '~/plugins/mastra/plugin'
-import { reserveLoopbackPort, requirePostgres } from '../../harness'
+import { requirePostgres, reserveLoopbackPort } from '../../harness'
+
+/** Loose test-response accessor — narrower than `any`. */
+interface TestResponse {
+  id?: unknown
+  choices?: unknown[]
+  error?: unknown
+  [key: string]: unknown
+}
 
 describe('Mastra AI Plugin', () => {
   let app: Sinopebase
@@ -40,17 +48,15 @@ describe('Mastra AI Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('returns chat completion for valid messages', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/chat', {
+    const res = await fetch(`${baseUrl}/api/mastra/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: [
-          { role: 'user', content: 'Hello, how are you?' },
-        ],
+        messages: [{ role: 'user', content: 'Hello, how are you?' }],
       }),
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.id).toBeTruthy()
     expect(json.choices).toBeInstanceOf(Array)
     expect(json.choices.length).toBeGreaterThan(0)
@@ -58,7 +64,7 @@ describe('Mastra AI Plugin', () => {
   })
 
   it('rejects chat with empty messages', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/chat', {
+    const res = await fetch(`${baseUrl}/api/mastra/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: [] }),
@@ -67,7 +73,7 @@ describe('Mastra AI Plugin', () => {
   })
 
   it('rejects chat with no messages field', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/chat', {
+    const res = await fetch(`${baseUrl}/api/mastra/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -76,13 +82,11 @@ describe('Mastra AI Plugin', () => {
   })
 
   it('streams chat completion', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/chat/stream', {
+    const res = await fetch(`${baseUrl}/api/mastra/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: [
-          { role: 'user', content: 'Tell me a story' },
-        ],
+        messages: [{ role: 'user', content: 'Tell me a story' }],
       }),
     })
     expect(res.status).toBe(200)
@@ -97,7 +101,7 @@ describe('Mastra AI Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('returns embeddings for input text', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/embeddings', {
+    const res = await fetch(`${baseUrl}/api/mastra/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -105,14 +109,14 @@ describe('Mastra AI Plugin', () => {
       }),
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.data).toBeInstanceOf(Array)
     expect(json.data.length).toBe(1)
     expect(json.data[0].embedding).toBeInstanceOf(Array)
   })
 
   it('returns embeddings for array input', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/embeddings', {
+    const res = await fetch(`${baseUrl}/api/mastra/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -120,13 +124,13 @@ describe('Mastra AI Plugin', () => {
       }),
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.data).toBeInstanceOf(Array)
     expect(json.data.length).toBe(3)
   })
 
   it('rejects embeddings with no input', async () => {
-    const res = await fetch(baseUrl + '/api/mastra/embeddings', {
+    const res = await fetch(`${baseUrl}/api/mastra/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),

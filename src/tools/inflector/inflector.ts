@@ -16,10 +16,10 @@
  *   UcFirst("hello") // => "Hello"
  */
 export function UcFirst(str: string): string {
-  if (str === "") {
-    return "";
+  if (str === '') {
+    return ''
   }
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ export function UcFirst(str: string): string {
 
 // Matches any character that is NOT a valid DB identifier character:
 // word chars (\w), dots, asterisks, hyphens, underscores, @, #
-const columnifyRemoveRegex = /[^\w.*\-_@#]+/g;
+const columnifyRemoveRegex = /[^\w.*\-_@#]+/g
 
 /**
  * Strips characters that are invalid in database identifiers.
@@ -37,7 +37,7 @@ const columnifyRemoveRegex = /[^\w.*\-_@#]+/g;
  *   Columnify("col@@umn!name") // => "col@@umnname"
  */
 export function Columnify(str: string): string {
-  return str.replace(columnifyRemoveRegex, "");
+  return str.replace(columnifyRemoveRegex, '')
 }
 
 // ---------------------------------------------------------------------------
@@ -52,15 +52,15 @@ export function Columnify(str: string): string {
  *   Sentenize("  hello world  ") // => "Hello world."
  */
 export function Sentenize(str: string): string {
-  str = str.trim();
-  if (str === "") {
-    return "";
+  str = str.trim()
+  if (str === '') {
+    return ''
   }
-  str = UcFirst(str);
-  if (!str.endsWith(".") && !str.endsWith("?") && !str.endsWith("!")) {
-    return str + ".";
+  str = UcFirst(str)
+  if (!str.endsWith('.') && !str.endsWith('?') && !str.endsWith('!')) {
+    return `${str}.`
   }
-  return str;
+  return str
 }
 
 // ---------------------------------------------------------------------------
@@ -77,10 +77,10 @@ export function Sentenize(str: string): string {
  */
 export function Sanitize(str: string, removePattern: string): string {
   try {
-    const re = new RegExp(removePattern, "g");
-    return str.replace(re, "");
+    const re = new RegExp(removePattern, 'g')
+    return str.replace(re, '')
   } catch {
-    throw new Error(`Sanitize: invalid regex pattern "${removePattern}"`);
+    throw new Error(`Sanitize: invalid regex pattern "${removePattern}"`)
   }
 }
 
@@ -99,33 +99,32 @@ export function Sanitize(str: string, removePattern: string): string {
  */
 export function Snakecase(str: string): string {
   // Split at any non-word character and underscore.
-  const words = str.split(/[\W_]+/);
+  const words = str.split(/[\W_]+/)
 
-  const parts: string[] = [];
+  const parts: string[] = []
 
   for (const word of words) {
-    if (word === "") {
-      continue;
+    if (word === '') {
+      continue
     }
 
-    let part = "";
+    let part = ''
     for (let i = 0; i < word.length; i++) {
-      const ch = word[i]!;
-      if (
-        ch >= "A" &&
-        ch <= "Z" &&
-        i > 0 &&
+      const ch = word[i]
+      if (ch === undefined) continue
+      if (ch >= 'A' && ch <= 'Z' && i > 0) {
         // Previous character is NOT uppercase (camelCase boundary)
-        !(word[i - 1]! >= "A" && word[i - 1]! <= "Z")
-      ) {
-        part += "_";
+        const prevCh = word[i - 1]
+        if (prevCh !== undefined && !(prevCh >= 'A' && prevCh <= 'Z')) {
+          part += '_'
+        }
       }
-      part += ch;
+      part += ch
     }
-    parts.push(part);
+    parts.push(part)
   }
 
-  return parts.join("_").toLowerCase();
+  return parts.join('_').toLowerCase()
 }
 
 // ---------------------------------------------------------------------------
@@ -141,26 +140,26 @@ export function Snakecase(str: string): string {
  *   Camelize("send_email") // => "SendEmail"
  */
 export function Camelize(str: string): string {
-  let result = "";
-  let isPrevSpecial = false;
+  let result = ''
+  let isPrevSpecial = false
 
   for (const ch of str) {
     if (!isAlphanumeric(ch)) {
-      isPrevSpecial = true;
-      continue;
+      isPrevSpecial = true
+      continue
     }
 
     if (isPrevSpecial || result.length === 0) {
-      isPrevSpecial = false;
-      result += ch.toUpperCase();
+      isPrevSpecial = false
+      result += ch.toUpperCase()
     } else {
-      result += ch;
+      result += ch
     }
   }
 
-  return result;
+  return result
 }
 
 function isAlphanumeric(ch: string): boolean {
-  return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9");
+  return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
 }

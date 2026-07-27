@@ -35,14 +35,14 @@ import { Store } from '~/tools/store/store'
 
 // Middleware
 import {
-  registerDefaultMiddleware,
-  registerActivityLogger,
-  securityHeaders,
   loadAuthToken,
+  registerActivityLogger,
+  registerDefaultMiddleware,
+  securityHeaders,
   wwwRedirect,
 } from './middlewares'
 import { bodyLimit, DEFAULT_MAX_BODY_SIZE } from './middlewares_body_limit'
-import { cors, type CORSConfig } from './middlewares_cors'
+import { type CORSConfig, cors } from './middlewares_cors'
 import { configureGzip } from './middlewares_gzip'
 
 // ---------------------------------------------------------------------------
@@ -87,10 +87,7 @@ export interface RouterOptions {
  * @param options   Optional configuration for middleware and routes.
  * @returns         A configured Elysia application.
  */
-export async function NewRouter(
-  app: App,
-  options: RouterOptions = {},
-): Promise<Elysia> {
+export async function NewRouter(app: App, options: RouterOptions = {}): Promise<Elysia> {
   const logger = new ConsoleLogger()
 
   const elysia = new Elysia({
@@ -105,10 +102,12 @@ export async function NewRouter(
 
   // ── CORS ──
   const applyCors = cors(options.corsConfig ?? { allowOrigins: ['*'] })
-  elysia.onRequest((ctx) => applyCors({
-    request: ctx.request,
-    set: ctx.set as Parameters<typeof applyCors>[0]['set'],
-  }))
+  elysia.onRequest((ctx) =>
+    applyCors({
+      request: ctx.request,
+      set: ctx.set as Parameters<typeof applyCors>[0]['set'],
+    }),
+  )
 
   // ── Gzip compression ──
   // Elysia v1.4+ provides built-in compression.
@@ -131,9 +130,7 @@ export async function NewRouter(
   // Per-group middleware
   api.onRequest(loadAuthToken())
   api.onRequest(securityHeaders())
-  api.onRequest(
-    bodyLimit(options.maxBodySize ?? DEFAULT_MAX_BODY_SIZE),
-  )
+  api.onRequest(bodyLimit(options.maxBodySize ?? DEFAULT_MAX_BODY_SIZE))
 
   // Route groups (mount as they are ported)
   // bindHealthApi(app, api)
@@ -201,10 +198,7 @@ export async function NewRouter(
  * app.get('/_/{path...}', staticHandler(fs, true))
  * ```
  */
-export function staticHandler(
-  _fsys: unknown,
-  _indexFallback: boolean,
-) {
+export function staticHandler(_fsys: unknown, _indexFallback: boolean) {
   return async (ctx: {
     params: Record<string, string>
     set: { status?: number }
@@ -220,15 +214,15 @@ export function staticHandler(
 // Re-exports
 // ---------------------------------------------------------------------------
 
-export { cors } from './middlewares_cors'
-export { bodyLimit, DEFAULT_MAX_BODY_SIZE } from './middlewares_body_limit'
 export {
+  loadAuthToken,
   requireAuth,
+  requireGuestOnly,
+  requireSameCollectionContextAuth,
   requireSuperuserAuth,
   requireSuperuserOrOwnerAuth,
-  requireSameCollectionContextAuth,
-  requireGuestOnly,
-  loadAuthToken,
   securityHeaders,
   wwwRedirect,
 } from './middlewares'
+export { bodyLimit, DEFAULT_MAX_BODY_SIZE } from './middlewares_body_limit'
+export { cors } from './middlewares_cors'

@@ -5,18 +5,18 @@
  * Layer 1 -- imports Layer 0 (~/tools/...).
  */
 
-import { DateTime } from "~/tools/types/datetime";
+import { DateTime } from '~/tools/types/datetime'
 
 /**
  * Function type for a macro that resolves to a value.
  */
-export type MacroFunc = () => unknown;
+export type MacroFunc = () => unknown
 
 /**
  * Returns the current UTC time.  Exported so tests can override it.
  */
 export function nowUTC(): Date {
-  return new Date();
+  return new Date()
 }
 
 /**
@@ -26,102 +26,82 @@ export function nowUTC(): Date {
  * references them (e.g. `@now`, `@year`, etc.).
  */
 export const identifierMacros: Record<string, MacroFunc> = {
-  "@now": () => {
-    const d = DateTime.ParseDateTime(nowUTC());
-    return d.String();
+  '@now': () => {
+    const d = DateTime.ParseDateTime(nowUTC())
+    return d.String()
   },
 
-  "@yesterday": () => {
-    const yesterday = new Date(nowUTC().getTime() - 86400000);
-    const d = DateTime.ParseDateTime(yesterday);
-    return d.String();
+  '@yesterday': () => {
+    const yesterday = new Date(nowUTC().getTime() - 86400000)
+    const d = DateTime.ParseDateTime(yesterday)
+    return d.String()
   },
 
-  "@tomorrow": () => {
-    const tomorrow = new Date(nowUTC().getTime() + 86400000);
-    const d = DateTime.ParseDateTime(tomorrow);
-    return d.String();
+  '@tomorrow': () => {
+    const tomorrow = new Date(nowUTC().getTime() + 86400000)
+    const d = DateTime.ParseDateTime(tomorrow)
+    return d.String()
   },
 
-  "@second": () => nowUTC().getUTCSeconds(),
+  '@second': () => nowUTC().getUTCSeconds(),
 
-  "@minute": () => nowUTC().getUTCMinutes(),
+  '@minute': () => nowUTC().getUTCMinutes(),
 
-  "@hour": () => nowUTC().getUTCHours(),
+  '@hour': () => nowUTC().getUTCHours(),
 
-  "@day": () => nowUTC().getUTCDate(),
+  '@day': () => nowUTC().getUTCDate(),
 
-  "@month": () => nowUTC().getUTCMonth() + 1, // JS months are 0-indexed
+  '@month': () => nowUTC().getUTCMonth() + 1, // JS months are 0-indexed
 
-  "@weekday": () => nowUTC().getUTCDay(), // 0=Sun, 6=Sat
+  '@weekday': () => nowUTC().getUTCDay(), // 0=Sun, 6=Sat
 
-  "@year": () => nowUTC().getUTCFullYear(),
+  '@year': () => nowUTC().getUTCFullYear(),
 
-  "@todayStart": () => {
-    const today = nowUTC();
+  '@todayStart': () => {
+    const today = nowUTC()
     const start = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        0,
-        0,
-        0,
-        0,
-      ),
-    );
-    const d = DateTime.ParseDateTime(start);
-    return d.String();
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0, 0),
+    )
+    const d = DateTime.ParseDateTime(start)
+    return d.String()
   },
 
-  "@todayEnd": () => {
-    const today = nowUTC();
+  '@todayEnd': () => {
+    const today = nowUTC()
     const end = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        23,
-        59,
-        59,
-        999,
-      ),
-    );
-    const d = DateTime.ParseDateTime(end);
-    return d.String();
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999),
+    )
+    const d = DateTime.ParseDateTime(end)
+    return d.String()
   },
 
-  "@monthStart": () => {
-    const today = nowUTC();
-    const start = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1, 0, 0, 0, 0),
-    );
-    const d = DateTime.ParseDateTime(start);
-    return d.String();
+  '@monthStart': () => {
+    const today = nowUTC()
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1, 0, 0, 0, 0))
+    const d = DateTime.ParseDateTime(start)
+    return d.String()
   },
 
-  "@monthEnd": () => {
-    const today = nowUTC();
+  '@monthEnd': () => {
+    const today = nowUTC()
     const end = new Date(
       Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0, 23, 59, 59, 999),
-    );
-    const d = DateTime.ParseDateTime(end);
-    return d.String();
+    )
+    const d = DateTime.ParseDateTime(end)
+    return d.String()
   },
 
-  "@yearStart": () => {
-    const today = nowUTC();
-    const start = new Date(Date.UTC(today.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
-    const d = DateTime.ParseDateTime(start);
-    return d.String();
+  '@yearStart': () => {
+    const today = nowUTC()
+    const start = new Date(Date.UTC(today.getUTCFullYear(), 0, 1, 0, 0, 0, 0))
+    const d = DateTime.ParseDateTime(start)
+    return d.String()
   },
 
-  "@yearEnd": () => {
-    const today = nowUTC();
-    const end = new Date(
-      Date.UTC(today.getUTCFullYear(), 11, 31, 23, 59, 59, 999),
-    );
-    const d = DateTime.ParseDateTime(end);
-    return d.String();
+  '@yearEnd': () => {
+    const today = nowUTC()
+    const end = new Date(Date.UTC(today.getUTCFullYear(), 11, 31, 23, 59, 59, 999))
+    const d = DateTime.ParseDateTime(end)
+    return d.String()
   },
-};
+}

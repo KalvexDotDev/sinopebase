@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 
 export const FieldTypeDate = 'date'
 
@@ -51,11 +51,11 @@ export class DateField implements Field {
     }
 
     if (this.min) {
-      schema['minDate'] = this.min
+      schema.minDate = this.min
     }
 
     if (this.max) {
-      schema['maxDate'] = this.max
+      schema.maxDate = this.max
     }
 
     return schema
@@ -70,20 +70,20 @@ export class DateField implements Field {
     if (!value) return null // nothing to check
 
     const timestamp = Date.parse(value)
-    if (isNaN(timestamp)) {
+    if (Number.isNaN(timestamp)) {
       return 'Must be a valid date/time value'
     }
 
     if (this.min) {
       const minTs = Date.parse(this.min)
-      if (!isNaN(minTs) && timestamp < minTs) {
+      if (!Number.isNaN(minTs) && timestamp < minTs) {
         return `Date must not be before ${this.min}`
       }
     }
 
     if (this.max) {
       const maxTs = Date.parse(this.max)
-      if (!isNaN(maxTs) && timestamp > maxTs) {
+      if (!Number.isNaN(maxTs) && timestamp > maxTs) {
         return `Date must not be after ${this.max}`
       }
     }
@@ -105,11 +105,11 @@ export class DateField implements Field {
       errors.push('help: must be between 1 and 300 characters')
     }
 
-    if (this.min && isNaN(Date.parse(this.min))) {
+    if (this.min && Number.isNaN(Date.parse(this.min))) {
       errors.push('min: invalid date format')
     }
 
-    if (this.max && isNaN(Date.parse(this.max))) {
+    if (this.max && Number.isNaN(Date.parse(this.max))) {
       errors.push('max: invalid date format')
     }
 

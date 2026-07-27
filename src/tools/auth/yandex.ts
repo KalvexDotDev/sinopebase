@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://login.yandex.ru/info response.
  *
  * @example
- * 
+ *
  */
 export class YandexProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

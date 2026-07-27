@@ -1,4 +1,4 @@
-import type { User, Session, AuthResponse } from '~/sdk/auth'
+import type { AuthResponse, Session, User } from '~/sdk/auth'
 
 /**
  * better-auth user shape (v1.6.23).

@@ -8,11 +8,11 @@
  * and return supabase-js compatible response shapes.
  */
 
-import type { PostgrestClient } from './database'
 import type { AuthClient } from './auth'
-import type { StorageClient } from './storage'
-import type { RealtimeClient } from './realtime'
+import type { PostgrestClient } from './database'
 import type { FunctionsClient } from './functions'
+import type { RealtimeClient } from './realtime'
+import type { StorageClient } from './storage'
 
 // ---------------------------------------------------------------------------
 // Response types — mirror supabase-js
@@ -115,8 +115,8 @@ class SinopebaseClientImpl implements SinopebaseClient {
 // Sub-client factories — real HTTP calls hit the backend
 // ---------------------------------------------------------------------------
 
-import { createPostgrestClient } from './database'
 import { createAuthClient } from './auth-impl'
-import { createStorageClient } from './storage-impl'
-import { createRealtimeClient } from './realtime-impl'
+import { createPostgrestClient } from './database'
 import { createFunctionsClient } from './functions'
+import { createRealtimeClient } from './realtime-impl'
+import { createStorageClient } from './storage-impl'

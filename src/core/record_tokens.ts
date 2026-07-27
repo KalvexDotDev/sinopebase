@@ -67,7 +67,7 @@ function buildSigningKey(record: RecordModel, tokenSecret: string): string {
 
 function tokenSigningKey(record: RecordModel, tokenKey: TokenConfigKey): string {
   const secret = record.collection.isAuth()
-    ? record.collection.authOptions?.[tokenKey].secret ?? ''
+    ? (record.collection.authOptions?.[tokenKey].secret ?? '')
     : ''
   return buildSigningKey(record, secret)
 }
@@ -112,7 +112,7 @@ function fileSigningKey(record: RecordModel): string {
  */
 function getTokenDuration(record: RecordModel, tokenKey: TokenConfigKey): number {
   return record.collection.isAuth()
-    ? record.collection.authOptions?.[tokenKey].duration ?? 3600
+    ? (record.collection.authOptions?.[tokenKey].duration ?? 3600)
     : 3600
 }
 

@@ -20,16 +20,16 @@
 export function fireAndForget(fn: () => void | Promise<void>, onDone?: () => void): void {
   queueMicrotask(async () => {
     try {
-      await fn();
+      await fn()
     } catch (err: unknown) {
-      console.error("[FireAndForget] unhandled error:", err);
+      console.error('[FireAndForget] unhandled error:', err)
       if (err instanceof Error && err.stack) {
-        console.error(err.stack);
+        console.error(err.stack)
       }
     } finally {
-      onDone?.();
+      onDone?.()
     }
-  });
+  })
 }
 
 /**
@@ -51,10 +51,10 @@ export function fireAndForget(fn: () => void | Promise<void>, onDone?: () => voi
 export function safeWrap<T>(fn: () => T | Promise<T>): () => Promise<T | Error> {
   return async (): Promise<T | Error> => {
     try {
-      return await fn();
+      return await fn()
     } catch (err: unknown) {
-      if (err instanceof Error) return err;
-      return new Error(String(err));
+      if (err instanceof Error) return err
+      return new Error(String(err))
     }
-  };
+  }
 }

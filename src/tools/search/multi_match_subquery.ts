@@ -9,9 +9,9 @@
  * A single SQL JOIN clause definition.
  */
 export interface JoinDef {
-  tableName: string;
-  tableAlias: string;
-  on: string; // SQL expression for the ON clause
+  tableName: string
+  tableAlias: string
+  on: string // SQL expression for the ON clause
 }
 
 /**
@@ -27,47 +27,47 @@ export class MultiMatchSubQuery {
   /**
    * Alias of the target table (the outer query's table).
    */
-  targetTableAlias: string;
+  targetTableAlias: string
 
   /**
    * Name of the from table for this subquery.
    */
-  fromTableName: string;
+  fromTableName: string
 
   /**
    * Alias of the from table for this subquery.
    */
-  fromTableAlias: string;
+  fromTableAlias: string
 
   /**
    * Identifier expression for the value column.
    */
-  valueIdentifier: string;
+  valueIdentifier: string
 
   /**
    * JOINs needed for this subquery.
    */
-  joins: JoinDef[] = [];
+  joins: JoinDef[] = []
 
   /**
    * Additional parameter placeholders for this subquery.
    */
-  params: Record<string, unknown> = {};
+  params: Record<string, unknown> = {}
 
   constructor(config: {
-    targetTableAlias?: string;
-    fromTableName?: string;
-    fromTableAlias?: string;
-    valueIdentifier?: string;
-    joins?: JoinDef[];
-    params?: Record<string, unknown>;
+    targetTableAlias?: string
+    fromTableName?: string
+    fromTableAlias?: string
+    valueIdentifier?: string
+    joins?: JoinDef[]
+    params?: Record<string, unknown>
   }) {
-    this.targetTableAlias = config.targetTableAlias ?? "";
-    this.fromTableName = config.fromTableName ?? "";
-    this.fromTableAlias = config.fromTableAlias ?? "";
-    this.valueIdentifier = config.valueIdentifier ?? "";
-    this.joins = config.joins ?? [];
-    this.params = config.params ?? {};
+    this.targetTableAlias = config.targetTableAlias ?? ''
+    this.fromTableName = config.fromTableName ?? ''
+    this.fromTableAlias = config.fromTableAlias ?? ''
+    this.valueIdentifier = config.valueIdentifier ?? ''
+    this.joins = config.joins ?? []
+    this.params = config.params ?? {}
   }
 
   /**
@@ -78,37 +78,33 @@ export class MultiMatchSubQuery {
    * @param params - Optional params map to merge into (mutated in place).
    */
   build(params?: Record<string, unknown>): string {
-    if (
-      !this.targetTableAlias ||
-      !this.fromTableName ||
-      !this.fromTableAlias
-    ) {
-      return "0=1";
+    if (!this.targetTableAlias || !this.fromTableName || !this.fromTableAlias) {
+      return '0=1'
     }
 
     // Merge params into the provided map (if any)
-    const target = params ?? this.params;
+    const target = params ?? this.params
     for (const [k, v] of Object.entries(this.params)) {
-      target[k] = v;
+      target[k] = v
     }
 
     // Build JOIN clauses
-    const joinClauses: string[] = [];
+    const joinClauses: string[] = []
     for (const j of this.joins) {
-      let clause = `LEFT JOIN "${j.tableName}" "${j.tableAlias}"`;
+      let clause = `LEFT JOIN "${j.tableName}" "${j.tableAlias}"`
       if (j.on) {
-        clause += ` ON ${j.on}`;
+        clause += ` ON ${j.on}`
       }
-      joinClauses.push(clause);
+      joinClauses.push(clause)
     }
 
-    const joinsStr = joinClauses.length > 0 ? " " + joinClauses.join(" ") : "";
+    const joinsStr = joinClauses.length > 0 ? ` ${joinClauses.join(' ')}` : ''
 
     return [
       `SELECT ${this.valueIdentifier} AS "multiMatchValue"`,
       `FROM "${this.fromTableName}" "${this.fromTableAlias}"`,
       joinsStr,
       `WHERE "${this.fromTableAlias}"."id" = "${this.targetTableAlias}"."id"`,
-    ].join(" ");
+    ].join(' ')
   }
 }

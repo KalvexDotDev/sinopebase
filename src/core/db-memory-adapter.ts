@@ -25,36 +25,23 @@ export class MemoryDatabaseAdapter implements IDatabase {
     this.database.dropTable(table)
   }
 
-  async insert(
-    table: string,
-    record: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     const inserted = this.database.insert(table, [record])[0]
     if (!inserted) throw new Error('Memory database did not return the inserted record')
     return inserted
   }
 
-  async upsert(
-    table: string,
-    record: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
     const upserted = this.database.upsert(table, [record])[0]
     if (!upserted) throw new Error('Memory database did not return the upserted record')
     return upserted
   }
 
-  async select(
-    table: string,
-    options: SelectOptions = {},
-  ): Promise<Record<string, unknown>[]> {
+  async select(table: string, options: SelectOptions = {}): Promise<Record<string, unknown>[]> {
     return this.database.select(table, {
       filters: toParsedFilters(options.filters),
-      orFilters: options.orFilters
-        ?.filter((group) => group.length > 0)
-        .map(toParsedFilters),
-      order: options.order
-        ?.map((order) => `${order.column}.${order.direction ?? 'asc'}`)
-        .join(','),
+      orFilters: options.orFilters?.filter((group) => group.length > 0).map(toParsedFilters),
+      order: options.order?.map((order) => `${order.column}.${order.direction ?? 'asc'}`).join(','),
       limit: options.limit,
       offset: options.offset,
     }).rows
@@ -68,10 +55,7 @@ export class MemoryDatabaseAdapter implements IDatabase {
     return this.database.update(table, toParsedFilters(filters), data)
   }
 
-  async delete(
-    table: string,
-    filters: Filter[],
-  ): Promise<Record<string, unknown>[]> {
+  async delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]> {
     return this.database.delete(table, toParsedFilters(filters))
   }
 

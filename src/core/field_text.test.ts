@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { TextField, FieldTypeText } from '~/core/field_text.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { FieldTypeText, TextField } from '~/core/field_text.ts'
 
 describe('TextField', () => {
   it('has type "text"', () => {
@@ -32,15 +32,15 @@ describe('TextField', () => {
     f.required = true
 
     const schema = f.settingsSchema
-    expect(schema['type']).toBe('string')
-    expect(schema['minLength']).toBe(3)
-    expect(schema['maxLength']).toBe(100)
-    expect(schema['pattern']).toBe('^[a-z]+$')
+    expect(schema.type).toBe('string')
+    expect(schema.minLength).toBe(3)
+    expect(schema.maxLength).toBe(100)
+    expect(schema.pattern).toBe('^[a-z]+$')
   })
 
   it('defaults maxLength to 5000', () => {
     const f = new TextField()
-    expect(f.settingsSchema['maxLength']).toBe(5000)
+    expect(f.settingsSchema.maxLength).toBe(5000)
   })
 
   it('default settings schema', () => {

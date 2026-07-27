@@ -10,7 +10,8 @@
 //   await plugin.register(app)
 // ---------------------------------------------------------------------------
 
-import { Elysia } from 'elysia'
+import type { Elysia } from 'elysia'
+import type { SinopebaseAuth } from '~/tools/auth-better'
 import type { DropFunctionsPluginOptions } from './config'
 import { DEFAULTS } from './config'
 import { createExecuteRoutes } from './routes/execute'
@@ -18,7 +19,7 @@ import { createManageRoutes } from './routes/manage'
 
 export class DropFunctionsPlugin {
   private options: Required<DropFunctionsPluginOptions>
-  private auth: any = null
+  private auth: SinopebaseAuth | null = null
 
   constructor(options: DropFunctionsPluginOptions = {}) {
     this.options = { ...DEFAULTS, ...options }
@@ -30,7 +31,7 @@ export class DropFunctionsPlugin {
    * @param app  The Elysia app instance (the `.server` on Sinopebase)
    * @param auth Optional better-auth instance for auth-required functions
    */
-  async register(app: Elysia, auth?: any): Promise<void> {
+  async register(app: Elysia, auth?: SinopebaseAuth | null): Promise<void> {
     this.auth = auth ?? null
 
     // Mount manage routes BEFORE execute routes so specific method handlers

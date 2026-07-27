@@ -25,9 +25,9 @@
  *   - privateKey: The contents of the .p8 private key file (PKCS#8 format)
  */
 
-import { SignJWT, importPKCS8 } from 'jose'
-import { BaseProvider } from '~/tools/auth/base_provider.ts'
+import { importPKCS8, SignJWT } from 'jose'
 import type { AuthUser, HttpClient } from '~/tools/auth/auth.ts'
+import { BaseProvider } from '~/tools/auth/base_provider.ts'
 
 /**
  * AppleProvider implements Sign In with Apple.
@@ -156,19 +156,17 @@ export class AppleProvider extends BaseProvider {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(
-        `Apple token exchange failed (${response.status}): ${errorText}`,
-      )
+      throw new Error(`Apple token exchange failed (${response.status}): ${errorText}`)
     }
 
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data['access_token'] as string) ?? '',
-      RefreshToken: (data['refresh_token'] as string) ?? '',
-      ExpiresIn: (data['expires_in'] as number) ?? 0,
+      AccessToken: (data.access_token as string) ?? '',
+      RefreshToken: (data.refresh_token as string) ?? '',
+      ExpiresIn: (data.expires_in as number) ?? 0,
       Raw: data,
-      IdToken: data['id_token'] as string | undefined,
+      IdToken: data.id_token as string | undefined,
     }
   }
 
@@ -177,9 +175,7 @@ export class AppleProvider extends BaseProvider {
    *
    * Generates a fresh client secret JWT for each refresh.
    */
-  override async RefreshToken(
-    refreshToken: string,
-  ): Promise<{
+  override async RefreshToken(refreshToken: string): Promise<{
     AccessToken: string
     RefreshToken: string
     ExpiresIn: number
@@ -202,19 +198,17 @@ export class AppleProvider extends BaseProvider {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(
-        `Apple token refresh failed (${response.status}): ${errorText}`,
-      )
+      throw new Error(`Apple token refresh failed (${response.status}): ${errorText}`)
     }
 
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data['access_token'] as string) ?? '',
-      RefreshToken: (data['refresh_token'] as string) ?? '',
-      ExpiresIn: (data['expires_in'] as number) ?? 0,
+      AccessToken: (data.access_token as string) ?? '',
+      RefreshToken: (data.refresh_token as string) ?? '',
+      ExpiresIn: (data.expires_in as number) ?? 0,
       Raw: data,
-      IdToken: data['id_token'] as string | undefined,
+      IdToken: data.id_token as string | undefined,
     }
   }
 
@@ -263,13 +257,10 @@ export class AppleProvider extends BaseProvider {
     ) as Record<string, unknown>
 
     return {
-      Id: (payload['sub'] as string) ?? '',
-      Name:
-        (payload['name'] as string) ??
-        (payload['email'] as string) ??
-        '',
-      Username: (payload['email'] as string) ?? '',
-      Email: (payload['email'] as string) ?? '',
+      Id: (payload.sub as string) ?? '',
+      Name: (payload.name as string) ?? (payload.email as string) ?? '',
+      Username: (payload.email as string) ?? '',
+      Email: (payload.email as string) ?? '',
       AvatarUrl: '',
       RawUser: payload,
     }

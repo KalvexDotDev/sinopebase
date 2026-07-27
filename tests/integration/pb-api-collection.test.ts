@@ -4,14 +4,32 @@
  * Tests for collection.ts and collection_import.ts handlers.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test'
-import { MemoryDatabase } from '../../src/core/db-memory'
+import { describe, expect, it } from 'bun:test'
 import { createCollectionPlugin } from '../../src/apis/collection'
 import { createCollectionImportPlugin } from '../../src/apis/collection_import'
+import { MemoryDatabase } from '../../src/core/db-memory'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Loose test-response accessor — narrower than `any`. */
+interface TestResponse {
+  items?: unknown
+  page?: unknown
+  perPage?: unknown
+  totalItems?: unknown
+  totalPages?: unknown
+  name?: unknown
+  type?: unknown
+  id?: unknown
+  schema?: unknown
+  fields?: unknown
+  rules?: unknown
+  code?: unknown
+  message?: unknown
+  [key: string]: unknown
+}
 
 /** Simulate a request against an Elysia app. */
 async function request(
@@ -33,7 +51,11 @@ async function request(
   let data: unknown = null
   const text = await response.text()
   if (text) {
-    try { data = JSON.parse(text) } catch { data = text }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
   }
   return { status, data }
 }
@@ -46,13 +68,13 @@ describe('Collection API', () => {
   const db = new MemoryDatabase()
   db.createTable('_collections')
 
-  const collectionPlugin = createCollectionPlugin(db as any, () => true)
+  const collectionPlugin = createCollectionPlugin(db as TestResponse, () => true)
   let createdId = ''
 
   it('GET /api/collections — lists collections (empty)', async () => {
     const { status, data } = await request(collectionPlugin, 'GET', '/api/collections')
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.items).toBeInstanceOf(Array)
     expect(result.items.length).toBe(0)
     expect(result.page).toBe(1)
@@ -67,7 +89,7 @@ describe('Collection API', () => {
     })
 
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.name).toBe('articles')
     expect(result.type).toBe('base')
     expect(result.id).toBeTruthy()
@@ -77,7 +99,7 @@ describe('Collection API', () => {
   it('GET /api/collections/:id — views a collection', async () => {
     const { status, data } = await request(collectionPlugin, 'GET', `/api/collections/${createdId}`)
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.name).toBe('articles')
     expect(result.id).toBe(createdId)
   })
@@ -88,12 +110,17 @@ describe('Collection API', () => {
   })
 
   it('PATCH /api/collections/:id — updates a collection', async () => {
-    const { status, data } = await request(collectionPlugin, 'PATCH', `/api/collections/${createdId}`, {
-      name: 'posts',
-    })
+    const { status, data } = await request(
+      collectionPlugin,
+      'PATCH',
+      `/api/collections/${createdId}`,
+      {
+        name: 'posts',
+      },
+    )
 
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.name).toBe('posts')
   })
 
@@ -103,21 +130,27 @@ describe('Collection API', () => {
       name: 'todelete',
       type: 'base',
     })
-    const deleteId = (createResp.data as any).id
+    const deleteId = (createResp.data as TestResponse).id
 
     const { status } = await request(collectionPlugin, 'DELETE', `/api/collections/${deleteId}`)
     expect(status).toBe(204)
   })
 
   it('blocks non-superusers from listing collections', async () => {
-    const restrictedPlugin = createCollectionPlugin(new MemoryDatabase() as any, () => false)
+    const restrictedPlugin = createCollectionPlugin(
+      new MemoryDatabase() as TestResponse,
+      () => false,
+    )
     const { status, data } = await request(restrictedPlugin, 'GET', '/api/collections')
     expect(status).toBe(403)
-    expect((data as any).message).toContain('superuser')
+    expect((data as TestResponse).message).toContain('superuser')
   })
 
   it('blocks non-superusers from creating collections', async () => {
-    const restrictedPlugin = createCollectionPlugin(new MemoryDatabase() as any, () => false)
+    const restrictedPlugin = createCollectionPlugin(
+      new MemoryDatabase() as TestResponse,
+      () => false,
+    )
     const { status } = await request(restrictedPlugin, 'POST', '/api/collections', { name: 'nope' })
     expect(status).toBe(403)
   })
@@ -131,13 +164,11 @@ describe('Collection Import API', () => {
   const db = new MemoryDatabase()
   db.createTable('_collections')
 
-  const importPlugin = createCollectionImportPlugin(db as any, () => true)
+  const importPlugin = createCollectionImportPlugin(db as TestResponse, () => true)
 
   it('POST /api/collections/import — imports collections', async () => {
     const { status } = await request(importPlugin, 'POST', '/api/collections/import', {
-      collections: [
-        { id: 'import1', name: 'imported-posts', type: 'base' },
-      ],
+      collections: [{ id: 'import1', name: 'imported-posts', type: 'base' }],
       deleteMissing: false,
     })
 
@@ -150,11 +181,14 @@ describe('Collection Import API', () => {
       deleteMissing: false,
     })
     expect(status).toBe(400)
-    expect((data as any).message).toContain('required')
+    expect((data as TestResponse).message).toContain('required')
   })
 
   it('blocks non-superusers', async () => {
-    const restrictedPlugin = createCollectionImportPlugin(new MemoryDatabase() as any, () => false)
+    const restrictedPlugin = createCollectionImportPlugin(
+      new MemoryDatabase() as TestResponse,
+      () => false,
+    )
     const { status } = await request(restrictedPlugin, 'POST', '/api/collections/import', {
       collections: [{ name: 'test' }],
     })

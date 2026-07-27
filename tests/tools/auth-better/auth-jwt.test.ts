@@ -7,12 +7,8 @@
  * - sid claim in payload
  */
 
-import { describe, it, expect } from 'bun:test'
-import {
-  generateAccessToken,
-  verifyAccessToken,
-  ACCESS_TOKEN_EXPIRES_IN,
-} from '~/apis/auth-jwt'
+import { describe, expect, it } from 'bun:test'
+import { ACCESS_TOKEN_EXPIRES_IN, generateAccessToken, verifyAccessToken } from '~/apis/auth-jwt'
 import { generateSessionId } from '~/apis/auth-utils'
 
 describe('JWT — issuer and audience enforcement', () => {
@@ -27,7 +23,9 @@ describe('JWT — issuer and audience enforcement', () => {
   it('generates a token with kid in protected header', async () => {
     const token = await generateAccessToken(mockUser, sessionId)
     const parts = token.split('.')
-    const header = JSON.parse(atob(parts[0]!))
+    const seg0 = parts[0]
+    if (!seg0) throw new Error('JWT missing header segment')
+    const header = JSON.parse(atob(seg0))
     expect(header.kid).toBe('sinopebase-v1')
   })
 
@@ -35,7 +33,9 @@ describe('JWT — issuer and audience enforcement', () => {
     const token = await generateAccessToken(mockUser, sessionId)
     // Decode without verifying to inspect claims
     const parts = token.split('.')
-    const payload = JSON.parse(atob(parts[1]!))
+    const seg1b = parts[1]
+    if (!seg1b) throw new Error('JWT missing payload segment')
+    const payload = JSON.parse(atob(seg1b))
     expect(payload.iss).toBe('sinopebase')
     expect(payload.aud).toBe('authenticated')
     expect(payload.sid).toBe(sessionId)
@@ -52,7 +52,7 @@ describe('JWT — issuer and audience enforcement', () => {
     // Manually craft a token with the wrong issuer
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const badToken = await new SignJWT({ sub: 'x', role: 'authenticated' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -68,7 +68,7 @@ describe('JWT — issuer and audience enforcement', () => {
   it('rejects a token with wrong audience', async () => {
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const badToken = await new SignJWT({ sub: 'x', role: 'authenticated' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -84,7 +84,7 @@ describe('JWT — issuer and audience enforcement', () => {
   it('rejects an expired token', async () => {
     const { SignJWT } = await import('jose')
     const secret = new TextEncoder().encode(
-      process.env['JWT_SECRET'] ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
+      process.env.JWT_SECRET ?? 'sinopebase-dev-jwt-secret-min-32-chars!!',
     )
     const expiredToken = await new SignJWT({ sub: 'x', role: 'authenticated' })
       .setProtectedHeader({ alg: 'HS256' })
@@ -100,7 +100,9 @@ describe('JWT — issuer and audience enforcement', () => {
   it('token expiry is set to 1 hour', async () => {
     const token = await generateAccessToken(mockUser, sessionId)
     const parts = token.split('.')
-    const payload = JSON.parse(atob(parts[1]!))
+    const seg1b = parts[1]
+    if (!seg1b) throw new Error('JWT missing payload segment')
+    const payload = JSON.parse(atob(seg1b))
     const lifetime = payload.exp - payload.iat
     expect(lifetime).toBe(ACCESS_TOKEN_EXPIRES_IN)
   })

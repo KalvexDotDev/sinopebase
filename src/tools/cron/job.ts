@@ -6,35 +6,35 @@
  * Wraps a function together with its schedule expression and unique id.
  */
 
-import type { Schedule } from "./schedule.ts";
+import type { Schedule } from './schedule.ts'
 
 /**
  * A single registered cron job.
  */
 export class Job {
   /** Unique identifier for this job. */
-  readonly id: string;
+  readonly id: string
 
   /** The parsed schedule this job runs on. */
-  readonly schedule: Schedule;
+  readonly schedule: Schedule
 
   /** The function to execute. */
-  readonly #run: () => void;
+  readonly #run: () => void
 
   constructor(id: string, schedule: Schedule, run: () => void) {
-    this.id = id;
-    this.schedule = schedule;
-    this.#run = run;
+    this.id = id
+    this.schedule = schedule
+    this.#run = run
   }
 
   /** Returns the raw cron expression. */
   get expression(): string {
-    return this.schedule.rawExpr;
+    return this.schedule.rawExpr
   }
 
   /** Executes the job function. */
   run(): void {
-    this.#run();
+    this.#run()
   }
 
   /**
@@ -45,6 +45,6 @@ export class Job {
     return {
       id: this.id,
       expression: this.expression,
-    };
+    }
   }
 }

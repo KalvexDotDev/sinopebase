@@ -12,8 +12,8 @@
  * contexts on its own due to potentially variable generated length.
  */
 
-import { randomInt } from 'node:crypto';
-import RandExp from 'randexp';
+import { randomInt } from 'node:crypto'
+import RandExp from 'randexp'
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -32,24 +32,21 @@ import RandExp from 'randexp';
  * @returns         A randomly generated string matching the pattern.
  * @throws          If the pattern is invalid or unsupported.
  */
-export function RandomStringByRegex(
-  pattern: string,
-  maxRepeat?: number,
-): string {
-  const randexp = new RandExp(pattern);
+export function RandomStringByRegex(pattern: string, maxRepeat?: number): string {
+  const randexp = new RandExp(pattern)
 
   // Override randInt to use cryptographically secure randomness,
   // matching Go's use of `crypto/rand` in random_by_regex.go.
   randexp.randInt = (from: number, to: number): number => {
     // crypto.randomInt(min, max) returns [min, max) — exclusive of max.
     // RandExp expects [from, to] inclusive, so we pass to + 1.
-    return randomInt(from, to + 1);
-  };
+    return randomInt(from, to + 1)
+  }
 
   // Cap unbounded repetitions (`*`, `+`, `{n,}`) to limit output length
   if (maxRepeat !== undefined) {
-    randexp.max = maxRepeat;
+    randexp.max = maxRepeat
   }
 
-  return randexp.gen();
+  return randexp.gen()
 }

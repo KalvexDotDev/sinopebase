@@ -5,7 +5,14 @@
  * Layer 2 — imports from ~/tools/security.
  */
 
-import { Record as RecordModel, FieldNamePassword, FieldNameTokenKey, FieldNameEmail, FieldNameEmailVisibility, FieldNameVerified } from '~/core/record_model.ts'
+import {
+  FieldNameEmail,
+  FieldNameEmailVisibility,
+  FieldNamePassword,
+  FieldNameTokenKey,
+  FieldNameVerified,
+  type Record as RecordModel,
+} from '~/core/record_model.ts'
 import { RandomString } from '~/tools/security/random.ts'
 
 // ---------------------------------------------------------------------------
@@ -114,7 +121,7 @@ export function setRecordRandomPassword(record: RecordModel): string {
   // Clear the plain value to skip field validators on save
   const raw = record.getRaw(FieldNamePassword)
   if (raw && typeof raw === 'object' && 'plain' in (raw as Record<string, unknown>)) {
-    ;(raw as Record<string, string>)['plain'] = ''
+    ;(raw as Record<string, string>).plain = ''
   }
   return pass
 }
@@ -129,7 +136,7 @@ export function validateRecordPassword(record: RecordModel, password: string): b
   if (!pv || typeof pv !== 'object') return false
   // Password validation delegates to the field value implementation
   // For now, do a basic check
-  if (typeof (pv as Record<string, unknown>)['validate'] === 'function') {
+  if (typeof (pv as Record<string, unknown>).validate === 'function') {
     return (pv as { validate: (pwd: string) => boolean }).validate(password)
   }
   return false

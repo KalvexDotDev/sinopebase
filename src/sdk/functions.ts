@@ -37,10 +37,7 @@ export interface FunctionsClient {
   ): Promise<FunctionResponse<T>>
 }
 
-export function createFunctionsClient(
-  baseUrl: string,
-  apiKey: string,
-): FunctionsClient {
+export function createFunctionsClient(baseUrl: string, apiKey: string): FunctionsClient {
   return {
     async invoke<T = unknown>(
       functionName: string,
@@ -60,8 +57,7 @@ export function createFunctionsClient(
           body: options?.body ? JSON.stringify(options.body) : undefined,
         })
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json = (await res.json()) as any
+        const json = (await res.json()) as Record<string, unknown>
 
         if (!res.ok) {
           return {

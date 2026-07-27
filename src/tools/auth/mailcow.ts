@@ -29,7 +29,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://YOUR-SERVER/api/v1/user response.
  *
  * @example
- * 
+ *
  */
 export class MailcowProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

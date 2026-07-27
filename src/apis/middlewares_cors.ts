@@ -86,7 +86,8 @@ function matchSubdomain(domain: string, pattern: string): boolean {
 
   for (let i = 0; i < domComp.length; i++) {
     if (patComp.length <= i) return false
-    const p = patComp[i]!
+    const p = patComp[i]
+    if (!p) return false
     if (p === '*') return true
     if (p !== domComp[i]) return false
   }
@@ -142,7 +143,7 @@ export function cors(config: CORSConfig = {}) {
     const origin = req.headers.get('origin') ?? ''
     const isPreflight = req.method === 'OPTIONS'
 
-    res.headers['vary'] = 'Origin'
+    res.headers.vary = 'Origin'
 
     if (!origin) {
       if (!isPreflight) return
@@ -203,7 +204,7 @@ export function cors(config: CORSConfig = {}) {
     }
 
     // Preflight
-    res.headers['vary'] = 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'
+    res.headers.vary = 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers'
     res.headers['access-control-allow-methods'] = allowMethods
 
     if (allowHeaders) {

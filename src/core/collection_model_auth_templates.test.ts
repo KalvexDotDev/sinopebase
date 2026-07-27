@@ -1,14 +1,14 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
+import { EmailTemplate } from '~/core/collection_model_auth_options.ts'
 import {
-  defaultVerificationTemplate,
-  defaultResetPasswordTemplate,
+  defaultAuthAlertTemplate,
   defaultConfirmEmailChangeTemplate,
   defaultOtpTemplate,
-  defaultAuthAlertTemplate,
+  defaultResetPasswordTemplate,
+  defaultVerificationTemplate,
   EmailPlaceholderAppName,
   EmailPlaceholderToken,
 } from '~/core/collection_model_auth_templates.ts'
-import { EmailTemplate } from '~/core/collection_model_auth_options.ts'
 
 describe('Auth Templates', () => {
   it('defaultVerificationTemplate has subject and body', () => {

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { AutodateField, FieldTypeAutodate } from '~/core/field_autodate.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { AutodateField, FieldTypeAutodate } from '~/core/field_autodate.ts'
 
 describe('AutodateField', () => {
   it('has type "autodate"', () => {
@@ -20,9 +20,9 @@ describe('AutodateField', () => {
 
   it('settings schema is readOnly date-time', () => {
     const f = new AutodateField()
-    expect(f.settingsSchema['type']).toBe('string')
-    expect(f.settingsSchema['format']).toBe('date-time')
-    expect(f.settingsSchema['readOnly']).toBe(true)
+    expect(f.settingsSchema.type).toBe('string')
+    expect(f.settingsSchema.format).toBe('date-time')
+    expect(f.settingsSchema.readOnly).toBe(true)
   })
 
   it('defaults to no onCreate/onUpdate', () => {

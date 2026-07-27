@@ -5,8 +5,8 @@
  * Layer 1 -- imports from Layer 0 tools.
  */
 
-import { Event } from "~/tools/hook/event.ts";
-import type { Hook } from "~/tools/hook/hook.ts";
+import { Event } from '~/tools/hook/event.ts'
+import type { Hook } from '~/tools/hook/hook.ts'
 
 // ---------------------------------------------------------------------------
 // Address
@@ -16,8 +16,8 @@ import type { Hook } from "~/tools/hook/hook.ts";
  * Represents an email address with an optional display name.
  */
 export interface Address {
-  name: string;
-  address: string;
+  name: string
+  address: string
 }
 
 // ---------------------------------------------------------------------------
@@ -28,16 +28,16 @@ export interface Address {
  * Defines a generic email message struct.
  */
 export class Message {
-  from: Address = { name: "", address: "" };
-  to: Address[] = [];
-  bcc: Address[] = [];
-  cc: Address[] = [];
-  subject = "";
-  html = "";
-  text = "";
-  headers: Record<string, string> = {};
-  attachments: Record<string, ReadableStream | Buffer> = {};
-  inlineAttachments: Record<string, ReadableStream | Buffer> = {};
+  from: Address = { name: '', address: '' }
+  to: Address[] = []
+  bcc: Address[] = []
+  cc: Address[] = []
+  subject = ''
+  html = ''
+  text = ''
+  headers: Record<string, string> = {}
+  attachments: Record<string, ReadableStream | Buffer> = {}
+  inlineAttachments: Record<string, ReadableStream | Buffer> = {}
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ export class Message {
  */
 export interface Mailer {
   /** Sends an email with the provided Message. */
-  send(message: Message): Promise<void>;
+  send(message: Message): Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ export interface Mailer {
  * Optional interface for registering mail send hooks.
  */
 export interface SendInterceptor {
-  onSend(): Hook<SendEvent>;
+  onSend(): Hook<SendEvent>
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ export class SendEvent extends Event {
   message: Message
 
   constructor(message: Message) {
-    super();
+    super()
     this.message = message
   }
 }
@@ -93,20 +93,18 @@ export class SendEvent extends Event {
  * the full `"Name <email>"` format is used. Otherwise only
  * the bare email part is returned.
  */
-export function addressToStrings(
-  addresses: Address[],
-  withName: boolean,
-): string[] {
+export function addressToStrings(addresses: Address[], withName: boolean): string[] {
   return addresses.map((addr) => {
-    if (withName && addr.name !== "") {
+    if (withName && addr.name !== '') {
       // RFC 5322: "Display Name" <email>
-      const encodedName = addr.name.includes('"') || addr.name.includes("\\")
-        ? addr.name
-        : addr.name.includes(",") || addr.name.includes(".")
-          ? `"${addr.name}"`
-          : addr.name;
-      return `${encodedName} <${addr.address}>`;
+      const encodedName =
+        addr.name.includes('"') || addr.name.includes('\\')
+          ? addr.name
+          : addr.name.includes(',') || addr.name.includes('.')
+            ? `"${addr.name}"`
+            : addr.name
+      return `${encodedName} <${addr.address}>`
     }
-    return addr.address;
-  });
+    return addr.address
+  })
 }

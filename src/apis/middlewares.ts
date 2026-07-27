@@ -17,13 +17,8 @@
  */
 
 import type { Context, Elysia, PreContext } from 'elysia'
+import { ApiError, BadRequestError, ForbiddenError, UnauthorizedError } from './api_error_aliases'
 import { verifyAccessToken } from './auth-jwt'
-import {
-  ApiError,
-  BadRequestError,
-  UnauthorizedError,
-  ForbiddenError,
-} from './api_error_aliases'
 
 // ---------------------------------------------------------------------------
 // Store keys
@@ -64,9 +59,7 @@ interface MiddlewareError {
   readonly stack?: string
 }
 
-function asAuthPayload(
-  payload: Awaited<ReturnType<typeof verifyAccessToken>>,
-): AuthPayload {
+function asAuthPayload(payload: Awaited<ReturnType<typeof verifyAccessToken>>): AuthPayload {
   return payload as AuthPayload
 }
 
@@ -115,11 +108,11 @@ export function requireAuth(...optCollectionNames: string[]) {
       const payload = asAuthPayload(await verifyAccessToken(token))
 
       // Store the decoded token payload so downstream handlers can read auth context
-      ctx.store['auth'] = payload
+      ctx.store.auth = payload
 
       // Check collection name if specified
       if (optCollectionNames.length > 0) {
-        const coll = (payload['collection'] as string) ?? (payload['collectionId'] as string) ?? ''
+        const coll = (payload.collection as string) ?? (payload.collectionId as string) ?? ''
         if (!optCollectionNames.includes(coll)) {
           throw new ForbiddenError('The authorized record is not allowed to perform this action.')
         }
@@ -159,15 +152,15 @@ export function requireSuperuserOrOwnerAuth(ownerIdPathParam = 'id') {
 
     try {
       const payload = asAuthPayload(await verifyAccessToken(token))
-      ctx.store['auth'] = payload
+      ctx.store.auth = payload
 
-      const coll = (payload['collection'] as string) ?? ''
+      const coll = (payload.collection as string) ?? ''
       if (coll === SuperusersCollectionName) {
         return // superuser — always allowed
       }
 
       const ownerId = ctx.params[ownerIdPathParam]
-      const recordId = payload['id'] as string | undefined
+      const recordId = payload.id as string | undefined
       if (!recordId || recordId !== ownerId) {
         throw new ForbiddenError('You are not allowed to perform this request.')
       }
@@ -196,10 +189,9 @@ export function requireSameCollectionContextAuth(collectionParam = 'collection')
 
     try {
       const payload = asAuthPayload(await verifyAccessToken(token))
-      ctx.store['auth'] = payload
+      ctx.store.auth = payload
 
-      const tokenCollectionId =
-        (payload['collectionId'] as string) ?? ''
+      const tokenCollectionId = (payload.collectionId as string) ?? ''
 
       // The collection param in the route — for now trust it's the collectionId
       // In PocketBase this resolves FindCachedCollectionByNameOrId
@@ -207,7 +199,7 @@ export function requireSameCollectionContextAuth(collectionParam = 'collection')
 
       if (tokenCollectionId !== routeCollection) {
         throw new ForbiddenError(
-          `The request requires auth record from ${payload['collection'] ?? 'the specified'} collection.`,
+          `The request requires auth record from ${payload.collection ?? 'the specified'} collection.`,
         )
       }
     } catch (err) {
@@ -222,10 +214,7 @@ export function requireSameCollectionContextAuth(collectionParam = 'collection')
  * Returns 403.
  */
 export function requireGuestOnly() {
-  return async (ctx: {
-    request: Request
-    store: Record<string, unknown>
-  }): Promise<void> => {
+  return async (ctx: { request: Request; store: Record<string, unknown> }): Promise<void> => {
     const token = getAuthTokenFromRequest(ctx.request)
     if (token) {
       try {
@@ -254,20 +243,18 @@ export function requireGuestOnly() {
  * This middleware is registered by default for all routes.
  */
 export function loadAuthToken() {
-  return async (
-    ctx: Pick<PreContext, 'request' | 'store'>,
-  ): Promise<void> => {
+  return async (ctx: Pick<PreContext, 'request' | 'store'>): Promise<void> => {
     const store = ctx.store as Record<string, unknown>
 
     // Already loaded by another middleware
-    if (store['auth'] != null) return
+    if (store.auth != null) return
 
     const token = getAuthTokenFromRequest(ctx.request)
     if (!token) return
 
     try {
       const payload = await verifyAccessToken(token)
-      store['auth'] = payload
+      store.auth = payload
     } catch {
       // Silently ignore — invalid/expired token
     }
@@ -285,27 +272,34 @@ export function loadAuthToken() {
  * If the token is missing or invalid the middleware silently continues,
  * exactly like `loadAuthToken()`.
  */
-export function loadAuthTokenWithBetterAuth(auth: any) {
-  return async (ctx: {
-    request: Request
-    store: Record<string, unknown>
-  }): Promise<void> => {
-    if (ctx.store['auth'] != null) return
+interface BetterAuthForMiddleware {
+  api: {
+    getSession(args: {
+      headers: Headers
+    }): Promise<{ user?: { id?: string; email?: string; role?: string } } | null>
+  }
+  [key: string]: unknown
+}
+
+export function loadAuthTokenWithBetterAuth(auth: BetterAuthForMiddleware) {
+  return async (ctx: { request: Request; store: Record<string, unknown> }): Promise<void> => {
+    if (ctx.store.auth != null) return
     const authHeader = ctx.request.headers.get('authorization') ?? ''
-    const token = authHeader.length > 7 && authHeader.slice(0, 7).toLowerCase() === 'bearer '
-      ? authHeader.slice(7)
-      : authHeader
+    const token =
+      authHeader.length > 7 && authHeader.slice(0, 7).toLowerCase() === 'bearer '
+        ? authHeader.slice(7)
+        : authHeader
     if (!token) return
     try {
       const result = await auth.api.getSession({
-        headers: new Headers({ authorization: 'Bearer ' + token }),
+        headers: new Headers({ authorization: `Bearer ${token}` }),
       })
-      if (result && result.user) {
+      if (result?.user) {
         // Map better-auth user to PocketBase auth store shape.
         // better-auth has no "collection" concept — we derive it from role.
         const role: string = result.user.role || 'authenticated'
         const isSuperuser = role === 'superuser' || role === 'admin'
-        ctx.store['auth'] = {
+        ctx.store.auth = {
           id: result.user.id,
           email: result.user.email,
           collection: isSuperuser ? '_superusers' : role,
@@ -358,22 +352,13 @@ export function activityLoggerStart() {
 }
 
 export function activityLoggerEnd() {
-  return (
-    ctx: Pick<Context, 'request' | 'set' | 'store'> & { response: unknown },
-  ): void => {
+  return (ctx: Pick<Context, 'request' | 'set' | 'store'> & { response: unknown }): void => {
     logRequest(ctx, null)
   }
 }
 
 export function activityLoggerError() {
-  return (
-    ctx: {
-      request: Request
-      set: Context['set']
-      store: object
-      error: unknown
-    },
-  ): void => {
+  return (ctx: { request: Request; set: Context['set']; store: object; error: unknown }): void => {
     logRequest(ctx, ctx.error)
   }
 }
@@ -398,12 +383,12 @@ function logRequest(
   const status = ctx.set?.status ?? (err ? 500 : 200)
 
   const meta: Record<string, unknown> = {}
-  if (execTime > 0) meta['execTime'] = execTime
+  if (execTime > 0) meta.execTime = execTime
 
-  const auth = store['auth'] as Record<string, unknown> | undefined
+  const auth = store.auth as Record<string, unknown> | undefined
   if (auth) {
-    meta['authCollection'] = auth['collection'] ?? ''
-    meta['authId'] = auth['id'] ?? ''
+    meta.authCollection = auth.collection ?? ''
+    meta.authId = auth.id ?? ''
   }
 
   const logData: Record<string, unknown> = {
@@ -411,13 +396,13 @@ function logRequest(
     method,
     url,
     status,
-    auth: auth ? (auth['collection'] ?? '') : '',
+    auth: auth ? (auth.collection ?? '') : '',
     execTime,
   }
 
   if (err) {
     const error = err as MiddlewareError
-    logData['error'] = error.message
+    logData.error = error.message
     console.error(`[API] ${method} ${url} ${status} ${execTime}ms`, logData)
   } else {
     console.log(`[API] ${method} ${url} ${status} ${execTime}ms`, logData)
@@ -463,13 +448,9 @@ export function wwwRedirect(redirectHosts: string[]) {
   return (ctx: Pick<PreContext, 'request' | 'set'>): void => {
     const host = ctx.request.headers.get('host') ?? ''
 
-    if (
-      host.startsWith('www.') &&
-      redirectHosts.includes(host)
-    ) {
-      const scheme = host.includes('https') || ctx.request.url.startsWith('https')
-        ? 'https://'
-        : 'http://'
+    if (host.startsWith('www.') && redirectHosts.includes(host)) {
+      const scheme =
+        host.includes('https') || ctx.request.url.startsWith('https') ? 'https://' : 'http://'
       const url = new URL(ctx.request.url)
       ctx.set.redirect = `${scheme}${host.slice(4)}${url.pathname}${url.search}`
       ctx.set.status = 307
@@ -488,9 +469,7 @@ export function wwwRedirect(redirectHosts: string[]) {
  * Register this as the outermost onError handler.
  */
 export function panicRecover() {
-  return (
-    ctx: { set: Context['set']; error: unknown },
-  ): void => {
+  return (ctx: { set: Context['set']; error: unknown }): void => {
     const error = ctx.error as MiddlewareError
     const stack = error.stack ?? ''
     console.error(`[PANIC RECOVER] ${error.message}`, stack.slice(0, 2048))
@@ -537,10 +516,9 @@ export function registerDefaultMiddleware(app: Elysia): void {
     .onRequest(securityHeaders())
     .onRequest(loadAuthToken())
     .onRequest(activityLoggerStart())
-    // The following are registered on specific route groups, not globally
-    // .onRequest(rateLimit(...)) — per-group
-    // .onRequest(bodyLimit(...)) — per-group
-    ;
+  // The following are registered on specific route groups, not globally
+  // .onRequest(rateLimit(...)) — per-group
+  // .onRequest(bodyLimit(...)) — per-group
 }
 
 /**
@@ -548,7 +526,5 @@ export function registerDefaultMiddleware(app: Elysia): void {
  * Call this after all routes are defined.
  */
 export function registerActivityLogger(app: Elysia): void {
-  app
-    .onAfterHandle(activityLoggerEnd())
-    .onError(activityLoggerError())
+  app.onAfterHandle(activityLoggerEnd()).onError(activityLoggerError())
 }

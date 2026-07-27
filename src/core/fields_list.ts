@@ -180,7 +180,8 @@ export class FieldsList {
     const total = this.items.length
     for (let i = 0; i < fields.length; i++) {
       const insertPos = pos < 0 ? -1 : pos > total ? total + i : pos + i
-      this.insertAt(insertPos, fields[i]!)
+      const f = fields[i]
+      if (f) this.insertAt(insertPos, f)
     }
   }
 
@@ -219,7 +220,8 @@ export class FieldsList {
 
     // Try to replace existing
     for (let i = 0; i < this.items.length; i++) {
-      const field = this.items[i]!
+      const field = this.items[i]
+      if (!field) continue
       if (replaceByName) {
         if (newField.name && field.name === newField.name) {
           // Reuse the original id
@@ -297,11 +299,8 @@ export class FieldsList {
           if (!(key in field)) continue
 
           // Skip getter-only properties (no setter)
-          const desc = Object.getOwnPropertyDescriptor(
-            Object.getPrototypeOf(field),
-            key,
-          )
-          if (desc && desc.get && !desc.set) continue
+          const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), key)
+          if (desc?.get && !desc.set) continue
 
           ;(field as Record<string, unknown>)[key] = item[key]
         }

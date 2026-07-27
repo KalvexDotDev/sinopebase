@@ -15,8 +15,8 @@
  * Default scopes: User.Read, openid, email, profile
  */
 
-import { BaseProvider } from '~/tools/auth/base_provider.ts'
 import type { AuthUser } from '~/tools/auth/auth.ts'
+import { BaseProvider } from '~/tools/auth/base_provider.ts'
 
 /**
  * MicrosoftProvider implements OAuth2 authentication via Microsoft
@@ -61,12 +61,10 @@ export class MicrosoftProvider extends BaseProvider {
   override MapUser(rawUser: unknown): AuthUser {
     const data = rawUser as Record<string, unknown>
     return {
-      Id: (data['id'] as string) ?? '',
-      Name: (data['displayName'] as string) ?? '',
-      Username:
-        (data['userPrincipalName'] as string) ?? (data['mail'] as string) ?? '',
-      Email:
-        (data['mail'] as string) ?? (data['userPrincipalName'] as string) ?? '',
+      Id: (data.id as string) ?? '',
+      Name: (data.displayName as string) ?? '',
+      Username: (data.userPrincipalName as string) ?? (data.mail as string) ?? '',
+      Email: (data.mail as string) ?? (data.userPrincipalName as string) ?? '',
       AvatarUrl: '',
       RawUser: rawUser,
     }

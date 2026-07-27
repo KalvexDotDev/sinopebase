@@ -10,7 +10,12 @@ interface TestInventory {
 }
 
 const IGNORED_DIRECTORIES = new Set([
-  '.git', '.claude', '.memento-staging', 'dist', 'node_modules', 'pb_data',
+  '.git',
+  '.claude',
+  '.memento-staging',
+  'dist',
+  'node_modules',
+  'pb_data',
 ])
 
 function normalizePath(path: string): string {
@@ -23,7 +28,7 @@ async function discoverTests(root: string, directory = root): Promise<string[]> 
     if (IGNORED_DIRECTORIES.has(entry.name)) continue
     const absolute = join(directory, entry.name)
     if (entry.isDirectory()) {
-      files.push(...await discoverTests(root, absolute))
+      files.push(...(await discoverTests(root, absolute)))
     } else if (entry.isFile() && entry.name.endsWith('.test.ts')) {
       files.push(normalizePath(relative(root, absolute)))
     }
@@ -34,7 +39,7 @@ async function discoverTests(root: string, directory = root): Promise<string[]> 
 export async function auditTestFoundation(root: string): Promise<{
   testCount: number
   unclassified: string[]
-  multiplyClassified: Array<{ file: string, suites: string[] }>
+  multiplyClassified: Array<{ file: string; suites: string[] }>
   hazards: TestHazard[]
   unreviewedHazards: TestHazard[]
   staleReviewedHazards: string[]
@@ -49,7 +54,7 @@ export async function auditTestFoundation(root: string): Promise<{
 
   const tests = await discoverTests(root)
   const unclassified: string[] = []
-  const multiplyClassified: Array<{ file: string, suites: string[] }> = []
+  const multiplyClassified: Array<{ file: string; suites: string[] }> = []
   for (const file of tests) {
     const suites = classifyTestFile(taxonomy, file).map((suite) => suite.id)
     if (suites.length === 0) unclassified.push(file)
@@ -84,10 +89,10 @@ if (import.meta.main) {
   console.log(JSON.stringify(summary, null, 2))
 
   if (
-    result.unclassified.length > 0
-    || result.multiplyClassified.length > 0
-    || result.unreviewedHazards.length > 0
-    || result.staleReviewedHazards.length > 0
+    result.unclassified.length > 0 ||
+    result.multiplyClassified.length > 0 ||
+    result.unreviewedHazards.length > 0 ||
+    result.staleReviewedHazards.length > 0
   ) {
     process.exitCode = 1
   }

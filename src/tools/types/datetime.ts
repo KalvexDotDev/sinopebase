@@ -11,8 +11,6 @@
  *   - Go's json.Marshaler  -> toJSON()
  */
 
-
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -24,9 +22,7 @@
  * Returns null if the string does not match the expected format.
  */
 function parseDateFromLayout(str: string): Date | null {
-  const match = str.match(
-    /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/,
-  )
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/)
   if (!match) return null
 
   return new Date(
@@ -85,7 +81,7 @@ export class DateTime {
    */
   constructor(date?: Date | null) {
     if (date !== null && date !== undefined) {
-      if (isNaN(date.getTime())) {
+      if (Number.isNaN(date.getTime())) {
         this.date = null
       } else {
         this.date = date
@@ -133,7 +129,7 @@ export class DateTime {
    */
   Add(durationMs: number): DateTime {
     if (this.IsZero()) return new DateTime(null)
-    return new DateTime(new Date(this.date!.getTime() + durationMs))
+    return new DateTime(new Date(this.date?.getTime() + durationMs))
   }
 
   /**
@@ -162,7 +158,7 @@ export class DateTime {
    */
   AddDate(years: number, months: number, days: number): DateTime {
     if (this.IsZero()) return new DateTime(null)
-    const d = new Date(this.date!.getTime())
+    const d = new Date(this.date?.getTime())
     d.setUTCFullYear(d.getUTCFullYear() + years)
     d.setUTCMonth(d.getUTCMonth() + months)
     d.setUTCDate(d.getUTCDate() + days)
@@ -180,7 +176,7 @@ export class DateTime {
    */
   After(u: DateTime): boolean {
     if (this.IsZero() || u.IsZero()) return false
-    return this.date!.getTime() > u.date!.getTime()
+    return this.date?.getTime() > u.date?.getTime()
   }
 
   /**
@@ -190,7 +186,7 @@ export class DateTime {
    */
   Before(u: DateTime): boolean {
     if (this.IsZero() || u.IsZero()) return false
-    return this.date!.getTime() < u.date!.getTime()
+    return this.date?.getTime() < u.date?.getTime()
   }
 
   /**
@@ -207,7 +203,7 @@ export class DateTime {
     if (this.IsZero()) return -1
     if (u.IsZero()) return 1
 
-    const diff = this.date!.getTime() - u.date!.getTime()
+    const diff = this.date?.getTime() - u.date?.getTime()
     if (diff < 0) return -1
     if (diff > 0) return 1
     return 0
@@ -224,7 +220,7 @@ export class DateTime {
   Equal(u: DateTime): boolean {
     if (this.IsZero() && u.IsZero()) return true
     if (this.IsZero() || u.IsZero()) return false
-    return this.date!.getTime() === u.date!.getTime()
+    return this.date?.getTime() === u.date?.getTime()
   }
 
   // --------------------------------------------------
@@ -239,7 +235,7 @@ export class DateTime {
    */
   Unix(): number {
     if (this.IsZero()) return 0
-    return Math.floor(this.date!.getTime() / 1000)
+    return Math.floor(this.date?.getTime() / 1000)
   }
 
   /**
@@ -251,7 +247,8 @@ export class DateTime {
    */
   String(): string {
     if (this.IsZero()) return ''
-    const d = this.date!
+    const d = this.date
+    if (d === null) return ''
     return formatToLayout(d)
   }
 
@@ -330,7 +327,7 @@ export class DateTime {
     }
 
     if (value instanceof Date) {
-      this.date = isNaN(value.getTime()) ? null : value
+      this.date = Number.isNaN(value.getTime()) ? null : value
       return
     }
 
@@ -354,7 +351,7 @@ export class DateTime {
 
       // Fallback to JavaScript Date.parse for other common formats
       const d = new Date(value)
-      this.date = isNaN(d.getTime()) ? new Date(NaN) : d
+      this.date = Number.isNaN(d.getTime()) ? new Date(NaN) : d
       return
     }
 
@@ -363,7 +360,7 @@ export class DateTime {
       // If the value is > 1e12, treat as milliseconds (more common in JS).
       const ms = value > 1e12 ? value : value * 1000
       const d = new Date(ms)
-      this.date = isNaN(d.getTime()) ? null : d
+      this.date = Number.isNaN(d.getTime()) ? null : d
       return
     }
 
@@ -373,7 +370,7 @@ export class DateTime {
       this.date = null
     } else {
       const d = new Date(str)
-      this.date = isNaN(d.getTime()) ? null : d
+      this.date = Number.isNaN(d.getTime()) ? null : d
     }
   }
 }

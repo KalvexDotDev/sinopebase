@@ -19,8 +19,8 @@
  *  MED  — #12 type safety — replaced unsafe double-cast with direct access
  */
 
-import { describe, it, expect, afterAll } from 'bun:test'
-import { RealtimeHub, type PostgresChange } from '../../src/apis/realtime'
+import { afterAll, describe, expect, it } from 'bun:test'
+import { type PostgresChange, RealtimeHub } from '../../src/apis/realtime'
 
 // ---------------------------------------------------------------------------
 // Test socket double
@@ -54,30 +54,18 @@ function lastSentJson(socket: TestSocket): unknown {
 }
 
 /** Assert the last sent message is a phx_reply with the given status. */
-function expectPhoenixReply(
-  socket: TestSocket,
-  status: string,
-  reason?: string,
-): void {
+function expectPhoenixReply(socket: TestSocket, status: string, reason?: string): void {
   const raw = socket.sent[socket.sent.length - 1]
   expect(typeof raw).toBe('string')
   const parsed = JSON.parse(raw as string)
   // Accept both v2 (array) and object format
   if (Array.isArray(parsed)) {
     expect(parsed[3]).toBe('phx_reply')
-    expect(parsed[4]).toMatchObject(
-      reason
-        ? { status, response: { reason } }
-        : { status },
-    )
+    expect(parsed[4]).toMatchObject(reason ? { status, response: { reason } } : { status })
   } else {
     const map = parsed as Record<string, unknown>
-    expect(map['event']).toBe('phx_reply')
-    expect(map['payload']).toMatchObject(
-      reason
-        ? { status, response: { reason } }
-        : { status },
-    )
+    expect(map.event).toBe('phx_reply')
+    expect(map.payload).toMatchObject(reason ? { status, response: { reason } } : { status })
   }
 }
 
@@ -91,7 +79,9 @@ describe('RealtimeHub — HIGH priority fixes', () => {
     it('logs an error when processMessage throws', async () => {
       const errors: unknown[] = []
       const origError = console.error
-      console.error = (...args: unknown[]) => { errors.push(...args) }
+      console.error = (...args: unknown[]) => {
+        errors.push(...args)
+      }
 
       try {
         const hub = new RealtimeHub<string>({
@@ -102,7 +92,10 @@ describe('RealtimeHub — HIGH priority fixes', () => {
         const client = new TestSocket('key')
 
         await hub.handleMessage(client, [
-          '1', '1', 'realtime:test', 'phx_join',
+          '1',
+          '1',
+          'realtime:test',
+          'phx_join',
           { config: { postgres_changes: [] } },
         ])
 
@@ -126,17 +119,11 @@ describe('RealtimeHub — HIGH priority fixes', () => {
       // Both clients subscribe to the same filter.
       const joinPayload = {
         config: {
-          postgres_changes: [
-            { event: '*', schema: 'public', table: 'items' },
-          ],
+          postgres_changes: [{ event: '*', schema: 'public', table: 'items' }],
         },
       }
-      await hub.handleMessage(good, [
-        '1', '1', 'realtime:test', 'phx_join', joinPayload,
-      ])
-      await hub.handleMessage(bad, [
-        '1', '1', 'realtime:test', 'phx_join', joinPayload,
-      ])
+      await hub.handleMessage(good, ['1', '1', 'realtime:test', 'phx_join', joinPayload])
+      await hub.handleMessage(bad, ['1', '1', 'realtime:test', 'phx_join', joinPayload])
 
       // Clear phx_reply messages.
       good.sent.length = 0
@@ -170,7 +157,7 @@ describe('RealtimeHub — HIGH priority fixes', () => {
         const msg = JSON.parse(raw as string)
         // Should be a postgres_changes array, not an error reply.
         if (Array.isArray(msg) && msg[3] === 'postgres_changes') {
-          expect((msg[4] as Record<string, unknown>)['data']).toBeDefined()
+          expect((msg[4] as Record<string, unknown>).data).toBeDefined()
         }
       }
     })
@@ -190,7 +177,10 @@ describe('RealtimeHub — HIGH priority fixes', () => {
 
       // Join — the token from ws.data.query.apikey is stored in lastToken.
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
 
@@ -199,10 +189,7 @@ describe('RealtimeHub — HIGH priority fixes', () => {
 
       // Heartbeat WITHOUT access_token — should fall back to stored token.
       const sentBefore = client.sent.length
-      await hub.handleMessage(client, [
-        '2', '2', 'realtime:test', 'phx_heartbeat',
-        {},
-      ])
+      await hub.handleMessage(client, ['2', '2', 'realtime:test', 'phx_heartbeat', {}])
 
       // The authorize callback was invoked with the stored token.
       expect(authCalls).toEqual(['session-token'])
@@ -224,42 +211,46 @@ describe('RealtimeHub — HIGH priority fixes', () => {
         authorize: async (token) => {
           callCount++
           // First call (join) succeeds; second call (heartbeat) fails.
-          return callCount === 1 ? (token || undefined) : undefined
+          return callCount === 1 ? token || undefined : undefined
         },
       })
       const client = new TestSocket('expiring-token')
 
       // Join — succeeds, token stored.
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
 
       const sentAfterJoin = client.sent.length
 
       // Heartbeat without token — should use stored token, which is now expired.
-      await hub.handleMessage(client, [
-        '2', '2', 'realtime:test', 'phx_heartbeat',
-        {},
-      ])
+      await hub.handleMessage(client, ['2', '2', 'realtime:test', 'phx_heartbeat', {}])
 
       // Should have received a phx_close and a phx_reply error.
       const newMessages = client.sent.slice(sentAfterJoin)
       const closeMsg = newMessages.find((raw) => {
         try {
           const p = JSON.parse(raw as string)
-          return (Array.isArray(p) ? p[3] : (p as Record<string, unknown>)['event']) === 'phx_close'
-        } catch { return false }
+          return (Array.isArray(p) ? p[3] : (p as Record<string, unknown>).event) === 'phx_close'
+        } catch {
+          return false
+        }
       })
       expect(closeMsg).toBeDefined()
 
       const errorReply = newMessages.find((raw) => {
         try {
           const p = JSON.parse(raw as string)
-          const event = Array.isArray(p) ? p[3] : (p as Record<string, unknown>)['event']
-          const payload = Array.isArray(p) ? p[4] : (p as Record<string, unknown>)['payload']
+          const event = Array.isArray(p) ? p[3] : (p as Record<string, unknown>).event
+          const payload = Array.isArray(p) ? p[4] : (p as Record<string, unknown>).payload
           return event === 'phx_reply' && (payload as Record<string, unknown>)?.status === 'error'
-        } catch { return false }
+        } catch {
+          return false
+        }
       })
       expect(errorReply).toBeDefined()
     })
@@ -275,7 +266,10 @@ describe('RealtimeHub — HIGH priority fixes', () => {
       const client = new TestSocket('key')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:forbidden', 'phx_join',
+        '1',
+        '1',
+        'realtime:forbidden',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
 
@@ -290,7 +284,10 @@ describe('RealtimeHub — HIGH priority fixes', () => {
       const client = new TestSocket('key')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:allowed', 'phx_join',
+        '1',
+        '1',
+        'realtime:allowed',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
 
@@ -309,14 +306,20 @@ describe('RealtimeHub — HIGH priority fixes', () => {
 
       // Join first.
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
       client.sent.length = 0
 
       // Broadcast with a disallowed event.
       await hub.handleMessage(client, [
-        '2', '2', 'realtime:test', 'broadcast',
+        '2',
+        '2',
+        'realtime:test',
+        'broadcast',
         { type: 'broadcast', event: 'forbidden', payload: { x: 1 } },
       ])
 
@@ -331,13 +334,19 @@ describe('RealtimeHub — HIGH priority fixes', () => {
       const client = new TestSocket('key')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
       client.sent.length = 0
 
       await hub.handleMessage(client, [
-        '2', '2', 'realtime:test', 'broadcast',
+        '2',
+        '2',
+        'realtime:test',
+        'broadcast',
         { type: 'broadcast', event: 'hello', payload: { x: 1 } },
       ])
 
@@ -362,16 +371,12 @@ describe('RealtimeHub — HIGH priority fixes', () => {
 
     it('throws when NODE_ENV=production and no authorize callback', () => {
       process.env.NODE_ENV = 'production'
-      expect(() => new RealtimeHub()).toThrow(
-        /authorize callback is required in production mode/,
-      )
+      expect(() => new RealtimeHub()).toThrow(/authorize callback is required in production mode/)
     })
 
     it('does not throw when NODE_ENV=production and authorize is provided', () => {
       process.env.NODE_ENV = 'production'
-      expect(
-        () => new RealtimeHub({ authorize: async () => 'ok' }),
-      ).not.toThrow()
+      expect(() => new RealtimeHub({ authorize: async () => 'ok' })).not.toThrow()
     })
 
     it('does not throw when not in production even without authorize', () => {
@@ -387,14 +392,20 @@ describe('RealtimeHub — HIGH priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:room', 'phx_join',
+        '1',
+        '1',
+        'realtime:room',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
       client.sent.length = 0
 
       // Broadcast with self:false.
       await hub.handleMessage(client, [
-        '2', '2', 'realtime:room', 'broadcast',
+        '2',
+        '2',
+        'realtime:room',
+        'broadcast',
         { type: 'broadcast', event: 'msg', payload: { hello: true }, self: false },
       ])
 
@@ -413,14 +424,20 @@ describe('RealtimeHub — HIGH priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:room', 'phx_join',
+        '1',
+        '1',
+        'realtime:room',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
       client.sent.length = 0
 
       // Broadcast without self flag (defaults to true).
       await hub.handleMessage(client, [
-        '2', '2', 'realtime:room', 'broadcast',
+        '2',
+        '2',
+        'realtime:room',
+        'broadcast',
         { type: 'broadcast', event: 'msg', payload: { hello: true } },
       ])
 
@@ -459,13 +476,13 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
 
       // Object-format encoding produces a JSON object, not an array.
       expect(Array.isArray(parsed)).toBe(false)
-      expect(parsed['topic']).toBe('realtime:test')
-      expect(parsed['event']).toBe('phx_reply')
-      expect(parsed['payload']).toMatchObject({ status: 'ok' })
+      expect(parsed.topic).toBe('realtime:test')
+      expect(parsed.event).toBe('phx_reply')
+      expect(parsed.payload).toMatchObject({ status: 'ok' })
       // join_ref should be present (Fix #9).
-      expect(parsed['join_ref']).toBe('custom-join-ref')
+      expect(parsed.join_ref).toBe('custom-join-ref')
       // ref should also be present.
-      expect(parsed['ref']).toBe('custom-ref')
+      expect(parsed.ref).toBe('custom-ref')
     })
   })
 
@@ -477,7 +494,10 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
 
       // Empty topic string should be treated as invalid message.
       await hub.handleMessage(client, [
-        '1', '1', '', 'phx_join',
+        '1',
+        '1',
+        '',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
 
@@ -506,7 +526,10 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [{ event: '*', schema: '', table: 'items' }] } },
       ])
 
@@ -517,8 +540,8 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
       expect(Array.isArray(reply)).toBe(true)
       if (Array.isArray(reply)) {
         const payload = reply[4] as Record<string, unknown>
-        expect(payload['status']).toBe('ok')
-        const bindings = (payload['response'] as Record<string, unknown>)['postgres_changes'] as unknown[]
+        expect(payload.status).toBe('ok')
+        const bindings = (payload.response as Record<string, unknown>).postgres_changes as unknown[]
         expect(bindings).toHaveLength(0)
       }
     })
@@ -529,14 +552,20 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
 
       // Join the channel.
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
       client.sent.length = 0
 
       // Broadcast with null payload — should be silently dropped.
       await hub.handleMessage(client, [
-        '2', '2', 'realtime:test', 'broadcast',
+        '2',
+        '2',
+        'realtime:test',
+        'broadcast',
         { type: 'broadcast', event: 'test', payload: null },
       ])
 
@@ -546,9 +575,7 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
         return Array.isArray(p)
       })
       // The only possible messages are broadcasts — none should exist.
-      const broadcastMsgs = allReplies.filter(
-        (p) => (p as unknown[])[3] === 'broadcast',
-      )
+      const broadcastMsgs = allReplies.filter((p) => (p as unknown[])[3] === 'broadcast')
       expect(broadcastMsgs.length).toBe(0)
     })
 
@@ -557,14 +584,20 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [] } },
       ])
       client.sent.length = 0
 
       // Omit payload entirely (undefined).
       await hub.handleMessage(client, [
-        '2', '2', 'realtime:test', 'broadcast',
+        '2',
+        '2',
+        'realtime:test',
+        'broadcast',
         { type: 'broadcast', event: 'test' },
       ])
 
@@ -583,7 +616,10 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [{ event: '*', schema: '*', table: 'items' }] } },
       ])
 
@@ -608,7 +644,10 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [{ event: '*', schema: '*', table: 'items' }] } },
       ])
 
@@ -636,7 +675,10 @@ describe('RealtimeHub — MEDIUM priority fixes', () => {
       const client = new TestSocket('anon')
 
       await hub.handleMessage(client, [
-        '1', '1', 'realtime:test', 'phx_join',
+        '1',
+        '1',
+        'realtime:test',
+        'phx_join',
         { config: { postgres_changes: [{ event: '*', schema: '*', table: 'items' }] } },
       ])
 

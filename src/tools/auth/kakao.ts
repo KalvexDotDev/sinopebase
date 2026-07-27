@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://kapi.kakao.com/v2/user/me response.
  *
  * @example
- * 
+ *
  */
 export class KakaoProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

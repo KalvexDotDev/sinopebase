@@ -1,12 +1,8 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
-import {
-  TestS3Filesystem,
-  S3FilesystemStorage,
-  S3FilesystemBackups,
-} from './test_s3_filesystem';
+import { beforeEach, describe, expect, it } from 'bun:test'
+import { S3FilesystemBackups, S3FilesystemStorage, TestS3Filesystem } from './test_s3_filesystem'
 
 describe('TestS3Filesystem', () => {
-  let form: TestS3Filesystem;
+  let form: TestS3Filesystem
 
   beforeEach(() => {
     // Create a form with a config resolver that returns a disabled config by default
@@ -18,44 +14,44 @@ describe('TestS3Filesystem', () => {
       accessKey: 'test-key',
       secret: 'test-secret',
       forcePathStyle: false,
-    }));
-  });
+    }))
+  })
 
   it('validates filesystem is required', () => {
-    const errors = form.validate();
-    expect(errors).not.toBeNull();
-    expect(errors!['filesystem']).toContain('required');
-  });
+    const errors = form.validate()
+    expect(errors).not.toBeNull()
+    expect(errors?.filesystem).toContain('required')
+  })
 
   it('validates filesystem must be storage or backups', () => {
-    form.filesystem = 'invalid';
-    const errors = form.validate();
-    expect(errors).not.toBeNull();
-    expect(errors!['filesystem']).toContain('storage');
-  });
+    form.filesystem = 'invalid'
+    const errors = form.validate()
+    expect(errors).not.toBeNull()
+    expect(errors?.filesystem).toContain('storage')
+  })
 
   it('accepts "storage" as valid filesystem', () => {
-    form.filesystem = S3FilesystemStorage;
-    const errors = form.validate();
-    expect(errors).toBeNull();
-  });
+    form.filesystem = S3FilesystemStorage
+    const errors = form.validate()
+    expect(errors).toBeNull()
+  })
 
   it('accepts "backups" as valid filesystem', () => {
-    form.filesystem = S3FilesystemBackups;
-    const errors = form.validate();
-    expect(errors).toBeNull();
-  });
+    form.filesystem = S3FilesystemBackups
+    const errors = form.validate()
+    expect(errors).toBeNull()
+  })
 
   it('submit returns error when filesystem not enabled', async () => {
-    form.filesystem = S3FilesystemStorage;
-    const error = await form.submit();
-    expect(error).toContain('not enabled');
-  });
+    form.filesystem = S3FilesystemStorage
+    const error = await form.submit()
+    expect(error).toContain('not enabled')
+  })
 
   it('submit returns validation errors when invalid', async () => {
-    const error = await form.submit();
-    expect(error).toBeTruthy();
-  });
+    const error = await form.submit()
+    expect(error).toBeTruthy()
+  })
 
   it('submit attempts connection test when enabled (override for test)', async () => {
     form = new TestS3Filesystem(() => ({
@@ -66,19 +62,19 @@ describe('TestS3Filesystem', () => {
       accessKey: 'test-key',
       secret: 'test-secret',
       forcePathStyle: false,
-    }));
-    form.filesystem = S3FilesystemStorage;
+    }))
+    form.filesystem = S3FilesystemStorage
 
     // Override simulateS3Operations to confirm it gets called
-    let operationsCalled = false;
-    form['simulateS3Operations'] = async () => {
-      operationsCalled = true;
-    };
+    let operationsCalled = false
+    form.simulateS3Operations = async () => {
+      operationsCalled = true
+    }
 
-    const error = await form.submit();
-    expect(error).toBeNull();
-    expect(operationsCalled).toBe(true);
-  });
+    const error = await form.submit()
+    expect(error).toBeNull()
+    expect(operationsCalled).toBe(true)
+  })
 
   it('submit fails when simulateS3Operations throws', async () => {
     form = new TestS3Filesystem(() => ({
@@ -89,18 +85,18 @@ describe('TestS3Filesystem', () => {
       accessKey: 'key',
       secret: 'secret',
       forcePathStyle: true,
-    }));
-    form.filesystem = S3FilesystemStorage;
-    form['simulateS3Operations'] = async () => {
-      throw new Error('Connection refused');
-    };
+    }))
+    form.filesystem = S3FilesystemStorage
+    form.simulateS3Operations = async () => {
+      throw new Error('Connection refused')
+    }
 
-    const error = await form.submit();
-    expect(error).toContain('Connection refused');
-  });
+    const error = await form.submit()
+    expect(error).toContain('Connection refused')
+  })
 
   it('simulateS3Operations can be overridden for testing', async () => {
-    let called = false;
+    let called = false
     form = new TestS3Filesystem(() => ({
       enabled: true,
       bucket: 'test',
@@ -109,22 +105,22 @@ describe('TestS3Filesystem', () => {
       accessKey: 'key',
       secret: 'secret',
       forcePathStyle: true,
-    }));
+    }))
 
     // Override the simulate method
-    form['simulateS3Operations'] = async () => {
-      called = true;
-    };
+    form.simulateS3Operations = async () => {
+      called = true
+    }
 
-    form.filesystem = S3FilesystemStorage;
-    const error = await form.submit();
-    expect(called).toBe(true);
-    expect(error).toBeNull();
-  });
+    form.filesystem = S3FilesystemStorage
+    const error = await form.submit()
+    expect(called).toBe(true)
+    expect(error).toBeNull()
+  })
 
   it('buildAuthHeaders returns basic auth headers', () => {
-    form.filesystem = S3FilesystemStorage;
-    const headers = form['buildAuthHeaders'](
+    form.filesystem = S3FilesystemStorage
+    const headers = form.buildAuthHeaders(
       {
         enabled: true,
         bucket: 'b',
@@ -136,9 +132,9 @@ describe('TestS3Filesystem', () => {
       },
       'GET',
       'http://example.com',
-    );
-    expect(headers['X-Auth-Token']).toContain('ak:sk');
-  });
+    )
+    expect(headers['X-Auth-Token']).toContain('ak:sk')
+  })
 
   it('parseListResponse extracts keys from XML', () => {
     const xml = `<?xml version="1.0"?>
@@ -149,14 +145,14 @@ describe('TestS3Filesystem', () => {
   <Contents>
     <Key>test/file2.txt</Key>
   </Contents>
-</ListBucketResult>`;
-    const keys = form['parseListResponse'](xml);
-    expect(keys).toEqual(['test/file1.txt', 'test/file2.txt']);
-  });
+</ListBucketResult>`
+    const keys = form.parseListResponse(xml)
+    expect(keys).toEqual(['test/file1.txt', 'test/file2.txt'])
+  })
 
   it('parseListResponse handles empty XML', () => {
-    const xml = '<?xml version="1.0"?><ListBucketResult></ListBucketResult>';
-    const keys = form['parseListResponse'](xml);
-    expect(keys).toEqual([]);
-  });
-});
+    const xml = '<?xml version="1.0"?><ListBucketResult></ListBucketResult>'
+    const keys = form.parseListResponse(xml)
+    expect(keys).toEqual([])
+  })
+})

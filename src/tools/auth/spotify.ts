@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.spotify.com/v1/me response.
  *
  * @example
- * 
+ *
  */
 export class SpotifyProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

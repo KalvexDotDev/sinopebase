@@ -8,12 +8,12 @@
  * PostgreSQL-compatible approach using the IDatabase interface.
  */
 
+import type { Collection } from '~/core/collection_model.ts'
 import {
   hasDatabaseSchemaCapability,
   type IDatabase,
   type SchemaDatabase,
 } from '~/core/db-interface.ts'
-import type { Collection } from '~/core/collection_model.ts'
 import type { FieldsList } from '~/core/fields_list.ts'
 import { PseudorandomString } from '~/tools/security/random.ts'
 
@@ -137,10 +137,7 @@ export async function syncRecordTableSchema(
 /**
  * Creates a record table for a new collection.
  */
-async function createRecordTable(
-  db: SchemaDatabase,
-  collection: Collection,
-): Promise<void> {
+async function createRecordTable(db: SchemaDatabase, collection: Collection): Promise<void> {
   await db.createTable(collection.name)
 
   // Add columns for each field
@@ -205,19 +202,16 @@ export function normalizeTableName(name: string): string {
 // Comparison helpers
 // ---------------------------------------------------------------------------
 
-function areFieldsEqual(
-  a: FieldsList,
-  b: FieldsList,
-): boolean {
+function areFieldsEqual(a: FieldsList, b: FieldsList): boolean {
   const aArr = a.all()
   const bArr = b.all()
 
   if (aArr.length !== bArr.length) return false
 
   for (let i = 0; i < aArr.length; i++) {
-    if (aArr[i]!.id !== bArr[i]!.id) return false
-    if (aArr[i]!.name !== bArr[i]!.name) return false
-    if (aArr[i]!.type !== bArr[i]!.type) return false
+    if (aArr[i]?.id !== bArr[i]?.id) return false
+    if (aArr[i]?.name !== bArr[i]?.name) return false
+    if (aArr[i]?.type !== bArr[i]?.type) return false
   }
 
   return true

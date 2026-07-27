@@ -1,23 +1,23 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
+import type { Field } from '~/core/field.ts'
 import {
-  FieldNameId,
+  CreateField,
   FieldNameCollectionId,
   FieldNameCollectionName,
-  FieldNameExpand,
   FieldNameEmail,
   FieldNameEmailVisibility,
-  FieldNameVerified,
-  FieldNameTokenKey,
+  FieldNameExpand,
+  FieldNameId,
   FieldNamePassword,
-  SystemDynamicFieldNames,
-  RegisterField,
+  FieldNameTokenKey,
+  FieldNameVerified,
   Fields,
-  CreateField,
-  ValidateFieldName,
-  ValidateFieldId,
   fieldNameRegex,
+  RegisterField,
+  SystemDynamicFieldNames,
+  ValidateFieldId,
+  ValidateFieldName,
 } from '~/core/field.ts'
-import type { Field } from '~/core/field.ts'
 
 describe('Field name constants', () => {
   it('defines all standard field names', () => {
@@ -57,7 +57,7 @@ describe('RegisterField / CreateField', () => {
 
     const field = CreateField(testType)
     expect(field).toBeDefined()
-    expect(field!.type).toBe(testType)
+    expect(field?.type).toBe(testType)
   })
 
   it('returns undefined for unknown type', () => {

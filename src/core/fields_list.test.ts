@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'bun:test'
-import { FieldsList } from '~/core/fields_list.ts'
-import { TextField } from '~/core/field_text.ts'
-import { NumberField } from '~/core/field_number.ts'
-import { BoolField } from '~/core/field_bool.ts'
+import { describe, expect, it } from 'bun:test'
 import { Fields } from '~/core/field.ts'
+import { BoolField } from '~/core/field_bool.ts'
+import { NumberField } from '~/core/field_number.ts'
+import { TextField } from '~/core/field_text.ts'
+import { FieldsList } from '~/core/fields_list.ts'
 
 describe('FieldsList', () => {
   it('creates an empty list', () => {
@@ -41,7 +41,7 @@ describe('FieldsList', () => {
 
     const found = list.getByName('title')
     expect(found).toBeDefined()
-    expect(found!.id).toBe('fld1')
+    expect(found?.id).toBe('fld1')
   })
 
   it('gets field by id', () => {
@@ -53,7 +53,7 @@ describe('FieldsList', () => {
 
     const found = list.getById('fld1')
     expect(found).toBeDefined()
-    expect(found!.name).toBe('title')
+    expect(found?.name).toBe('title')
   })
 
   it('returns all fields', () => {
@@ -114,8 +114,8 @@ describe('FieldsList', () => {
     list.add(f1)
 
     const map = list.asMap()
-    expect(map['title']).toBeDefined()
-    expect(map['title']!.id).toBe('fld1')
+    expect(map.title).toBeDefined()
+    expect(map.title?.id).toBe('fld1')
   })
 
   it('getAt returns field by index', () => {
@@ -125,7 +125,7 @@ describe('FieldsList', () => {
     f1.name = 'title'
     list.add(f1)
     expect(list.getAt(0)).toBeDefined()
-    expect(list.getAt(0)!.name).toBe('title')
+    expect(list.getAt(0)?.name).toBe('title')
     expect(list.getAt(1)).toBeUndefined()
   })
 
@@ -142,7 +142,7 @@ describe('FieldsList', () => {
     list.add(f2)
 
     expect(list.length).toBe(1)
-    expect(list.getById('fld1')!.name).toBe('renamed')
+    expect(list.getById('fld1')?.name).toBe('renamed')
   })
 
   it('replaces existing field by name when no id', () => {
@@ -185,9 +185,9 @@ describe('FieldsList', () => {
     list.addAt(1, f3)
 
     expect(list.length).toBe(3)
-    expect(list.getAt(0)!.name).toBe('first')
-    expect(list.getAt(1)!.name).toBe('middle')
-    expect(list.getAt(2)!.name).toBe('second')
+    expect(list.getAt(0)?.name).toBe('first')
+    expect(list.getAt(1)?.name).toBe('middle')
+    expect(list.getAt(2)?.name).toBe('second')
   })
 
   it('serializes to JSON', () => {
@@ -199,8 +199,8 @@ describe('FieldsList', () => {
 
     const json = list.toJSON()
     expect(json).toHaveLength(1)
-    expect(json[0]!['type']).toBe('text')
-    expect(json[0]!['name']).toBe('title')
+    expect(json[0]?.type).toBe('text')
+    expect(json[0]?.name).toBe('title')
   })
 
   it('toString returns JSON string', () => {
@@ -226,7 +226,7 @@ describe('FieldsList', () => {
     const cloned = list.clone()
     expect(cloned.length).toBe(1)
     expect(cloned.getByName('title')).toBeDefined()
-    expect(cloned.getByName('title')!.id).toBe('fld1')
+    expect(cloned.getByName('title')?.id).toBe('fld1')
     // Should be a different instance
     expect(cloned.getAt(0)).not.toBe(f1)
   })

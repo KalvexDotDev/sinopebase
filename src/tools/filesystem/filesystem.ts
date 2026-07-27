@@ -13,10 +13,10 @@
  * based on the provided config.
  */
 
+import type { FileInfo } from '~/tools/filesystem/file.ts'
+import { FileHandle } from '~/tools/filesystem/file.ts'
 import { LocalFileStore } from '~/tools/filesystem/store.ts'
 import { S3FileStore } from '~/tools/filesystem/store-s3.ts'
-import { FileHandle } from '~/tools/filesystem/file.ts'
-import type { FileInfo } from '~/tools/filesystem/file.ts'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -144,7 +144,7 @@ export class LocalSystem implements System {
     const files = await this.store.list(this.bucket, prefix)
     return files.map((f) => ({
       Name: f.name,
-      Size: (f.metadata?.['size'] as number) ?? 0,
+      Size: (f.metadata?.size as number) ?? 0,
       ContentType: guessContentType(f.name),
       CreatedAt: f.created_at ? new Date(f.created_at) : new Date(),
       UpdatedAt: f.updated_at ? new Date(f.updated_at) : new Date(),
@@ -230,11 +230,7 @@ export class S3System implements System {
   async CreateSignedUrl(name: string, durationMs: number): Promise<string> {
     // Delegate to the S3 store's presigned URL generation.
     // Uses the minio client's presignedGetObject under the hood.
-    const url = await this.store.presignedGetUrl(
-      this.bucket,
-      name,
-      Math.ceil(durationMs / 1000),
-    )
+    const url = await this.store.presignedGetUrl(this.bucket, name, Math.ceil(durationMs / 1000))
     return url
   }
 

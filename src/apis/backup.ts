@@ -43,10 +43,7 @@ export interface BackupManager {
  *
  * Most endpoints require superuser authentication.
  */
-export function createBackupPlugin(
-  backupManager: BackupManager,
-  isSuperuser: () => boolean,
-) {
+export function createBackupPlugin(backupManager: BackupManager, isSuperuser: () => boolean) {
   const app = new Elysia()
 
   // ── GET /api/backups — List backups ──

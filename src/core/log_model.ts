@@ -4,8 +4,8 @@
  * Port of PocketBase's models/log.go (Go -> TypeScript).
  */
 
+import type { DateTime } from '~/tools/types/datetime'
 import { BaseModel } from './db_model'
-import { DateTime } from '~/tools/types/datetime'
 
 /**
  * Log represents a single application log entry.

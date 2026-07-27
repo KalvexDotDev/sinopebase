@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { spawn } from 'node:child_process'
-import type { BackupManager, BackupFileInfo } from '~/apis/backup'
+import type { BackupFileInfo, BackupManager } from '~/apis/backup'
 
 export interface PGBackupConfig {
   /** PostgreSQL connection string */
@@ -36,7 +36,9 @@ export class PGBackupManager implements BackupManager {
 
     // Parse XML response from S3 ListObjectsV2
     const xml = await res.text()
-    const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]!)
+    const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)]
+      .map((m) => m[1])
+      .filter((k): k is string => k !== undefined)
 
     return keys.map((key) => ({
       key,
@@ -114,10 +116,14 @@ export class PGBackupManager implements BackupManager {
       }
 
       const args = [
-        '-h', url.hostname,
-        '-p', url.port || '5432',
-        '-U', url.username || 'sinopebase',
-        '-d', url.pathname.slice(1) || 'sinopebase',
+        '-h',
+        url.hostname,
+        '-p',
+        url.port || '5432',
+        '-U',
+        url.username || 'sinopebase',
+        '-d',
+        url.pathname.slice(1) || 'sinopebase',
         '--format=custom',
         '--no-owner',
         '--no-acl',
@@ -127,7 +133,9 @@ export class PGBackupManager implements BackupManager {
       const chunks: Buffer[] = []
       proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
       let stderr = ''
-      proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
 
       proc.on('close', (code) => {
         if (code !== 0) {
@@ -150,10 +158,14 @@ export class PGBackupManager implements BackupManager {
       }
 
       const args = [
-        '-h', url.hostname,
-        '-p', url.port || '5432',
-        '-U', url.username || 'sinopebase',
-        '-d', url.pathname.slice(1) || 'sinopebase',
+        '-h',
+        url.hostname,
+        '-p',
+        url.port || '5432',
+        '-U',
+        url.username || 'sinopebase',
+        '-d',
+        url.pathname.slice(1) || 'sinopebase',
         '--clean',
         '--if-exists',
         '--no-owner',
@@ -162,7 +174,9 @@ export class PGBackupManager implements BackupManager {
 
       const proc = spawn('pg_restore', args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
       let stderr = ''
-      proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString()
+      })
 
       proc.on('close', (code) => {
         if (code !== 0) reject(new Error(`pg_restore failed (${code}): ${stderr}`))

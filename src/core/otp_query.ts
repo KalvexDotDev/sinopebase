@@ -32,9 +32,7 @@ export function createOTPQuery(db: IDatabase) {
 
     /** Delete all OTP records linked to a record. */
     async deleteAllByRecord(recordId: string): Promise<void> {
-      await db.delete('_otps', [
-        { column: 'recordId', operator: 'eq', value: recordId },
-      ])
+      await db.delete('_otps', [{ column: 'recordId', operator: 'eq', value: recordId }])
     },
 
     /** Delete expired OTPs. */

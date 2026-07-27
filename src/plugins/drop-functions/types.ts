@@ -17,7 +17,11 @@ export interface FunctionContext {
   /** Frozen snapshot of environment variables */
   env: Record<string, string>
   /** Structured logger */
-  log: (level: 'debug' | 'info' | 'warn' | 'error', message: string, extra?: Record<string, unknown>) => void
+  log: (
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    extra?: Record<string, unknown>,
+  ) => void
 }
 
 /** Authenticated user context passed to edge functions. */
@@ -50,7 +54,7 @@ export interface FunctionModule {
 export type FunctionHandler = (
   req: FunctionRequest,
   ctx: FunctionContext,
-) => Promise<Response | Record<string, unknown> | string | void>
+) => Promise<Response | Record<string, unknown> | string | undefined>
 
 /** Result from the sandbox worker. */
 export interface SandboxResult {

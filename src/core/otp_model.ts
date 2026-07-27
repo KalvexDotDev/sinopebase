@@ -7,8 +7,8 @@
  * passwordless authentication or secondary verification.
  */
 
-import { BaseModel } from './db_model'
 import { DateTime } from '~/tools/types/datetime'
+import { BaseModel } from './db_model'
 
 /**
  * OTP represents a one-time password record.

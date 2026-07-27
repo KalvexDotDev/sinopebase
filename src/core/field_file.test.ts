@@ -1,6 +1,11 @@
-import { describe, it, expect } from 'bun:test'
-import { FileField, FieldTypeFile, DefaultFileFieldMaxSize, looseFilenameRegex } from '~/core/field_file.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import {
+  DefaultFileFieldMaxSize,
+  FieldTypeFile,
+  FileField,
+  looseFilenameRegex,
+} from '~/core/field_file.ts'
 
 describe('FileField', () => {
   it('has type "file"', () => {

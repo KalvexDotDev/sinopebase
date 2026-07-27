@@ -24,33 +24,34 @@
  * Used to mirror the Go sync.RWMutex semantics for async-safe access.
  */
 class Lock {
-  #locked = false;
-  #queue: Array<() => void> = [];
+  #locked = false
+  #queue: Array<() => void> = []
 
   async acquire(): Promise<void> {
     if (!this.#locked) {
-      this.#locked = true;
-      return;
+      this.#locked = true
+      return
     }
     return new Promise<void>((resolve) => {
       this.#queue.push(() => {
-        this.#locked = true;
-        resolve();
-      });
-    });
+        this.#locked = true
+        resolve()
+      })
+    })
   }
 
   release(): void {
     if (this.#queue.length > 0) {
-      const next = this.#queue.shift()!;
-      next();
+      const next = this.#queue.shift()
+      if (next === undefined) return
+      next()
     } else {
-      this.#locked = false;
+      this.#locked = false
     }
   }
 
   get isLocked(): boolean {
-    return this.#locked;
+    return this.#locked
   }
 }
 
@@ -63,25 +64,25 @@ class Lock {
  * Generic over key type K and value type V.
  */
 export class Store<K, V> {
-  #data: Map<K, V>;
-  #lock = new Lock();
-  #deleted = 0;
+  #data: Map<K, V>
+  #lock = new Lock()
+  #deleted = 0
 
   /**
    * Creates a new Store, optionally initialised with a shallow copy of the
    * provided entries.
    */
   constructor(entries?: ReadonlyMap<K, V> | Readonly<Record<string & K, V>> | null) {
-    this.#data = new Map<K, V>();
+    this.#data = new Map<K, V>()
 
     if (entries) {
       if (entries instanceof Map) {
         for (const [k, v] of entries) {
-          this.#data.set(k, v);
+          this.#data.set(k, v)
         }
       } else {
         for (const k of Object.keys(entries as Record<string, V>)) {
-          this.#data.set(k as unknown as K, (entries as Record<string, V>)[k] as V);
+          this.#data.set(k as unknown as K, (entries as Record<string, V>)[k] as V)
         }
       }
     }
@@ -92,14 +93,14 @@ export class Store<K, V> {
   // -----------------------------------------------------------------------
 
   /** @internal true when the shrink threshold has been reached. */
-  static readonly #SHRINK_THRESHOLD = 200;
+  static readonly #SHRINK_THRESHOLD = 200
 
   /** @internal Re-allocate the underlying map to let the old one be GC'd. */
   #maybeShrink(): void {
-    this.#deleted++;
-    if (this.#deleted < Store.#SHRINK_THRESHOLD) return;
-    this.#data = new Map(this.#data);
-    this.#deleted = 0;
+    this.#deleted++
+    if (this.#deleted < Store.#SHRINK_THRESHOLD) return
+    this.#data = new Map(this.#data)
+    this.#deleted = 0
   }
 
   // -----------------------------------------------------------------------
@@ -108,12 +109,12 @@ export class Store<K, V> {
 
   /** Acquire the exclusive write lock. */
   async lock(): Promise<void> {
-    return this.#lock.acquire();
+    return this.#lock.acquire()
   }
 
   /** Release the exclusive write lock. */
   unlock(): void {
-    this.#lock.release();
+    this.#lock.release()
   }
 
   // -----------------------------------------------------------------------
@@ -125,29 +126,29 @@ export class Store<K, V> {
    * provided data (if any).
    */
   reset(newData?: ReadonlyMap<K, V> | Readonly<Record<string & K, V>> | null): void {
-    this.#data = new Map<K, V>();
+    this.#data = new Map<K, V>()
     if (newData) {
       if (newData instanceof Map) {
         for (const [k, v] of newData) {
-          this.#data.set(k, v);
+          this.#data.set(k, v)
         }
       } else {
         for (const k of Object.keys(newData as Record<string, V>)) {
-          this.#data.set(k as unknown as K, (newData as Record<string, V>)[k] as V);
+          this.#data.set(k as unknown as K, (newData as Record<string, V>)[k] as V)
         }
       }
     }
-    this.#deleted = 0;
+    this.#deleted = 0
   }
 
   /** Returns the number of entries currently in the store. */
   get length(): number {
-    return this.#data.size;
+    return this.#data.size
   }
 
   /** Removes all entries from the store. */
   removeAll(): void {
-    this.reset();
+    this.reset()
   }
 
   /**
@@ -156,14 +157,14 @@ export class Store<K, V> {
    * (mirrors the Go ShrinkThreshold behaviour).
    */
   remove(key: K): void {
-    if (!this.#data.has(key)) return;
-    this.#data.delete(key);
-    this.#maybeShrink();
+    if (!this.#data.has(key)) return
+    this.#data.delete(key)
+    this.#maybeShrink()
   }
 
   /** Returns `true` when an entry for `key` exists. */
   has(key: K): boolean {
-    return this.#data.has(key);
+    return this.#data.has(key)
   }
 
   /**
@@ -171,7 +172,7 @@ export class Store<K, V> {
    * exist.
    */
   get(key: K): V | undefined {
-    return this.#data.get(key);
+    return this.#data.get(key)
   }
 
   /**
@@ -179,11 +180,11 @@ export class Store<K, V> {
    * key exists.
    */
   getOk(key: K): { value: V; ok: true } | { value: undefined; ok: false } {
-    const v = this.#data.get(key);
+    const v = this.#data.get(key)
     if (v !== undefined || this.#data.has(key)) {
-      return { value: v as V, ok: true };
+      return { value: v as V, ok: true }
     }
-    return { value: undefined, ok: false };
+    return { value: undefined, ok: false }
   }
 
   /**
@@ -191,19 +192,19 @@ export class Store<K, V> {
    * Note: key type K is coerced to `string` for the object representation.
    */
   getAll(): Map<K, V> {
-    return new Map(this.#data);
+    return new Map(this.#data)
   }
 
   /** Returns an array of all values currently in the store. */
   values(): V[] {
-    return [...this.#data.values()];
+    return [...this.#data.values()]
   }
 
   /**
    * Sets (or overwrites) a value for `key`.
    */
   set(key: K, value: V): void {
-    this.#data.set(key, value);
+    this.#data.set(key, value)
   }
 
   /**
@@ -216,7 +217,7 @@ export class Store<K, V> {
    * ```
    */
   setFunc(key: K, fn: (old: V | undefined) => V): void {
-    this.#data.set(key, fn(this.#data.get(key)));
+    this.#data.set(key, fn(this.#data.get(key)))
   }
 
   /**
@@ -228,23 +229,23 @@ export class Store<K, V> {
    */
   async getOrSet(key: K, setFunc: () => V | Promise<V>): Promise<V> {
     // Fast path – read without lock.
-    const existing = this.#data.get(key);
+    const existing = this.#data.get(key)
     if (existing !== undefined || this.#data.has(key)) {
-      return existing as V;
+      return existing as V
     }
 
     // Slow path – acquire the write lock and double-check.
-    await this.#lock.acquire();
+    await this.#lock.acquire()
     try {
-      const dup = this.#data.get(key);
+      const dup = this.#data.get(key)
       if (dup !== undefined || this.#data.has(key)) {
-        return dup as V;
+        return dup as V
       }
-      const value = await setFunc();
-      this.#data.set(key, value);
-      return value;
+      const value = await setFunc()
+      this.#data.set(key, value)
+      return value
     } finally {
-      this.#lock.release();
+      this.#lock.release()
     }
   }
 
@@ -257,14 +258,14 @@ export class Store<K, V> {
    */
   setIfLessThanLimit(key: K, value: V, maxAllowedElements: number): boolean {
     if (this.#data.has(key)) {
-      this.#data.set(key, value);
-      return true;
+      this.#data.set(key, value)
+      return true
     }
     if (this.#data.size >= maxAllowedElements) {
-      return false;
+      return false
     }
-    this.#data.set(key, value);
-    return true;
+    this.#data.set(key, value)
+    return true
   }
 
   // -----------------------------------------------------------------------
@@ -276,9 +277,9 @@ export class Store<K, V> {
    * are overwritten.
    */
   importJSON(json: string): void {
-    const raw = JSON.parse(json) as Record<string, V>;
+    const raw = JSON.parse(json) as Record<string, V>
     for (const k of Object.keys(raw)) {
-      this.#data.set(k as unknown as K, raw[k] as V);
+      this.#data.set(k as unknown as K, raw[k] as V)
     }
   }
 
@@ -286,10 +287,10 @@ export class Store<K, V> {
    * Exports the store data as a JSON string.
    */
   exportJSON(): string {
-    const obj: Record<string, V> = {};
+    const obj: Record<string, V> = {}
     for (const [k, v] of this.#data) {
-      obj[String(k)] = v;
+      obj[String(k)] = v
     }
-    return JSON.stringify(obj);
+    return JSON.stringify(obj)
   }
 }

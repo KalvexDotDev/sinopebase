@@ -5,8 +5,8 @@
 // for all 6 Mastra API routes.
 // ---------------------------------------------------------------------------
 
-import { lookupSessionByToken } from '~/tools/auth-better'
 import type { Elysia } from 'elysia'
+import { lookupSessionByToken, type SinopebaseAuth } from '~/tools/auth-better'
 
 /** Authenticated user context extracted from a valid Bearer token. */
 export interface AuthContext {
@@ -22,7 +22,7 @@ export interface AuthContext {
  * missing, invalid, or expired.
  */
 export async function validateAIRequest(
-  auth: any,
+  auth: SinopebaseAuth,
   request: Request,
 ): Promise<AuthContext | null> {
   if (!auth) return null
@@ -52,16 +52,16 @@ export async function validateAIRequest(
  * app.use(createAuthMiddleware(auth))
  * ```
  */
-export function createAuthMiddleware(auth: any): (app: Elysia) => Elysia {
+export function createAuthMiddleware(auth: SinopebaseAuth): (app: Elysia) => Elysia {
   return (app: Elysia): Elysia => {
-    app.onBeforeHandle(async ({ request, set }: any) => {
+    app.onBeforeHandle(async ({ request, set }) => {
       const ctx = await validateAIRequest(auth, request)
       if (!ctx) {
         set.status = 401
         return { error: 'Invalid or missing Authorization header', status: 401 }
       }
       // Attach to request so route handlers can pick it up
-      ;(request as unknown as Record<string, unknown>)['__authContext'] = ctx
+      ;(request as unknown as Record<string, unknown>).__authContext = ctx
     })
     return app as unknown as Elysia
   }

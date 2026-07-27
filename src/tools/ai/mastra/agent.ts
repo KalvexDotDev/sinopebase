@@ -44,12 +44,14 @@ let defaultProvider: AIProvider | null = null
 
 function getDefaultProvider(): AIProvider {
   if (!defaultProvider) {
-    const apiKey = process.env['OPENAI_API_KEY'] || ''
+    const apiKey = process.env.OPENAI_API_KEY || ''
     if (apiKey) {
       defaultProvider = new OpenAIProvider(apiKey)
     } else {
       // Lazy import to avoid circular deps
-      const { createMockProvider } = require('~/tools/ai/mock-provider') as { createMockProvider: () => AIProvider }
+      const { createMockProvider } = require('~/tools/ai/mock-provider') as {
+        createMockProvider: () => AIProvider
+      }
       defaultProvider = createMockProvider()
     }
   }
@@ -90,7 +92,7 @@ export class Agent {
     const toolCalls: AgentResult['toolCalls'] = []
 
     // Rebuild messages array to include system prompt for each step
-    let currentMessages = [...chatMessages]
+    const currentMessages = [...chatMessages]
 
     for (let step = 0; step < maxSteps; step++) {
       const response = await this.provider.chat(currentMessages, {
@@ -144,9 +146,7 @@ export class Agent {
   }
 
   /** Streaming generation (delegates to provider.chatStream). */
-  async *stream(
-    messages: Array<{ role: string; content: string }>,
-  ): AsyncIterable<ChatChunk> {
+  async *stream(messages: Array<{ role: string; content: string }>): AsyncIterable<ChatChunk> {
     const systemMsg: AIMessage = { role: 'system', content: this.instructions }
     const chatMessages: AIMessage[] = [
       systemMsg,
@@ -163,14 +163,21 @@ export class Agent {
       try {
         const parsed = JSON.parse(fnMatch[1])
         if (parsed.name) return { name: parsed.name, args: parsed.arguments || {} }
-      } catch { /* not valid JSON */ }
+      } catch {
+        /* not valid JSON */
+      }
     }
     // Try inline tool call format: [TOOL:name]{"args"}
     const inlineMatch = content.match(/\[TOOL:(\w+)\]\s*(\{.*?\})/)
     if (inlineMatch) {
       try {
-        return { name: inlineMatch[1]!, args: JSON.parse(inlineMatch[2]!) }
-      } catch { /* not valid JSON */ }
+        const name = inlineMatch[1]
+        const argsRaw = inlineMatch[2]
+        if (name === undefined || argsRaw === undefined) return null
+        return { name, args: JSON.parse(argsRaw) }
+      } catch {
+        /* not valid JSON */
+      }
     }
     return null
   }

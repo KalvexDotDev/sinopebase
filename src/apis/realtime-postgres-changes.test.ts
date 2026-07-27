@@ -4,10 +4,7 @@ import WebSocket from 'ws'
 import { MemoryDatabase } from '../core/db-memory'
 import { MemoryDatabaseAdapter } from '../core/db-memory-adapter'
 import { mountPostgrestRoutes } from './postgrest'
-import {
-  createRealtimeHub,
-  createRealtimeWebSocketHandler,
-} from './realtime'
+import { createRealtimeHub, createRealtimeWebSocketHandler } from './realtime'
 
 type PhoenixV2Message = [
   joinRef: string | null,
@@ -29,14 +26,13 @@ describe('Realtime postgres_changes compatibility', () => {
     const db = new MemoryDatabaseAdapter(memDb)
     const realtime = createRealtimeHub()
 
-    app = new Elysia()
-      .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
+    app = new Elysia().ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
     mountPostgrestRoutes(app, db, undefined, realtime)
     app.listen(0)
 
-    baseUrl = `http://127.0.0.1:${app.server!.port}`
+    baseUrl = `http://127.0.0.1:${app.server?.port}`
     socket = new WebSocket(
-      baseUrl.replace('http:', 'ws:') + '/realtime/v1/websocket?apikey=test-anon-key&vsn=2.0.0',
+      `${baseUrl.replace('http:', 'ws:')}/realtime/v1/websocket?apikey=test-anon-key&vsn=2.0.0`,
     )
     socket.on('message', (raw) => messages.push(JSON.parse(raw.toString())))
     await new Promise<void>((resolve, reject) => {
@@ -59,16 +55,25 @@ describe('Realtime postgres_changes compatibility', () => {
       filter: 'tenant_id=eq.tenant-a',
     }))
 
-    socket.send(JSON.stringify(['1', '1', topic, 'phx_join', {
-      config: {
-        broadcast: { ack: false, self: false },
-        presence: { enabled: false },
-        postgres_changes: filters,
-      },
-    }]))
+    socket.send(
+      JSON.stringify([
+        '1',
+        '1',
+        topic,
+        'phx_join',
+        {
+          config: {
+            broadcast: { ack: false, self: false },
+            presence: { enabled: false },
+            postgres_changes: filters,
+          },
+        },
+      ]),
+    )
 
-    const reply = await waitForMessage(messages, (message) =>
-      message[2] === topic && message[3] === 'phx_reply'
+    const reply = await waitForMessage(
+      messages,
+      (message) => message[2] === topic && message[3] === 'phx_reply',
     )
     expect(reply[4]).toMatchObject({
       status: 'ok',
@@ -93,7 +98,7 @@ describe('Realtime postgres_changes compatibility', () => {
     await mutate(baseUrl, 'DELETE', '/rest/v1/items?id=eq.item-a')
 
     const changes = await waitForChanges(messages, topic, 3)
-    expect(changes.map((message) => message[4]['data'])).toMatchObject([
+    expect(changes.map((message) => message[4].data)).toMatchObject([
       {
         type: 'INSERT',
         schema: 'public',
@@ -123,21 +128,22 @@ describe('Realtime subscriber visibility', () => {
   it('does not deliver a matching table event when subscriber RLS rejects the row', async () => {
     const hub = createRealtimeHub<string>({
       authorize: async (token) => token,
-      canRead: async (tenant, change) => change.new['tenant_id'] === tenant,
+      canRead: async (tenant, change) => change.new.tenant_id === tenant,
     })
     const tenantA = new TestSocket('tenant-a')
     const tenantB = new TestSocket('tenant-b')
-    const join = (tenant: TestSocket) => hub.handleMessage(tenant, [
-      '1',
-      '1',
-      'realtime:items',
-      'phx_join',
-      {
-        config: {
-          postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'items' }],
+    const join = (tenant: TestSocket) =>
+      hub.handleMessage(tenant, [
+        '1',
+        '1',
+        'realtime:items',
+        'phx_join',
+        {
+          config: {
+            postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'items' }],
+          },
         },
-      },
-    ])
+      ])
 
     await Promise.all([join(tenantA), join(tenantB)])
     tenantA.sent.length = 0
@@ -188,12 +194,12 @@ describe('Realtime subscriber visibility', () => {
 
     const payload = client.lastPostgresChangePayload()
     expect(payload).not.toBeNull()
-    const data = payload!['data'] as Record<string, unknown>
-    expect(data['record']).toEqual({ id: 'proj-1', label: 'visible' })
+    const data = payload?.data as Record<string, unknown>
+    expect(data.record).toEqual({ id: 'proj-1', label: 'visible' })
     // The 'secret' column must NOT be present in the projected record
-    expect((data['record'] as Record<string, unknown>)['secret']).toBeUndefined()
+    expect((data.record as Record<string, unknown>).secret).toBeUndefined()
     // old_record should be filtered too
-    expect(data['old_record']).toEqual({})
+    expect(data.old_record).toEqual({})
   })
 
   it('projects columns in UPDATE old_record and DELETE old_record', async () => {
@@ -227,9 +233,9 @@ describe('Realtime subscriber visibility', () => {
 
     const updatePayload = client.lastPostgresChangePayload()
     expect(updatePayload).not.toBeNull()
-    const updateData = updatePayload!['data'] as Record<string, unknown>
-    expect(updateData['record']).toEqual({ id: 'upd-1', status: 'done' })
-    expect(updateData['old_record']).toEqual({ id: 'upd-1', status: 'pending' })
+    const updateData = updatePayload?.data as Record<string, unknown>
+    expect(updateData.record).toEqual({ id: 'upd-1', status: 'done' })
+    expect(updateData.old_record).toEqual({ id: 'upd-1', status: 'pending' })
 
     client.sent.length = 0
 
@@ -244,10 +250,10 @@ describe('Realtime subscriber visibility', () => {
 
     const deletePayload = client.lastPostgresChangePayload()
     expect(deletePayload).not.toBeNull()
-    const deleteData = deletePayload!['data'] as Record<string, unknown>
-    expect(deleteData['record']).toEqual({})
-    expect(deleteData['old_record']).toEqual({ id: 'del-1', status: 'archived' })
-    expect((deleteData['old_record'] as Record<string, unknown>)['internal_note']).toBeUndefined()
+    const deleteData = deletePayload?.data as Record<string, unknown>
+    expect(deleteData.record).toEqual({})
+    expect(deleteData.old_record).toEqual({ id: 'del-1', status: 'archived' })
+    expect((deleteData.old_record as Record<string, unknown>).internal_note).toBeUndefined()
   })
 })
 
@@ -258,7 +264,10 @@ describe('Realtime auth enforcement', () => {
     })
     const client = new TestSocket('invalid-key')
     const msg: PhoenixV2Message = [
-      '1', '1', 'realtime:secret', 'phx_join',
+      '1',
+      '1',
+      'realtime:secret',
+      'phx_join',
       { config: { postgres_changes: [] } },
     ]
 
@@ -287,7 +296,10 @@ describe('Realtime auth enforcement', () => {
     // phx_join — will be rejected by authorize, but the entry still exists
     // with context=undefined and no topics.
     await hub.handleMessage(client, [
-      '1', '1', 'realtime:broadcast-test', 'phx_join',
+      '1',
+      '1',
+      'realtime:broadcast-test',
+      'phx_join',
       { config: { postgres_changes: [] } },
     ])
     // Clear the phx_reply so we can find the broadcast-reply
@@ -295,7 +307,10 @@ describe('Realtime auth enforcement', () => {
 
     // Try to broadcast (should fail — no topic joined, no auth context)
     await hub.handleMessage(client, [
-      '1', '2', 'realtime:broadcast-test', 'broadcast',
+      '1',
+      '2',
+      'realtime:broadcast-test',
+      'broadcast',
       { type: 'broadcast', event: 'test', payload: { msg: 'nope' } },
     ])
 
@@ -335,7 +350,9 @@ class TestSocket {
         if (Array.isArray(parsed) && parsed[3] === 'postgres_changes') {
           return parsed[4] as Record<string, unknown>
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
     return null
   }
@@ -377,8 +394,8 @@ async function waitForChanges(
 ): Promise<PhoenixV2Message[]> {
   const deadline = Date.now() + 2_000
   while (Date.now() < deadline) {
-    const changes = messages.filter((message) =>
-      message[2] === topic && message[3] === 'postgres_changes'
+    const changes = messages.filter(
+      (message) => message[2] === topic && message[3] === 'postgres_changes',
     )
     if (changes.length >= count) return changes
     await Bun.sleep(10)

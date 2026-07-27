@@ -15,17 +15,17 @@ import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 
 /** Base URL for the local Sinopebase backend (defaults to localhost:8090) */
 function getSinopebaseUrl(): string {
-  return process.env['SINOPEBASE_URL']?.trim() || 'http://127.0.0.1:8090'
+  return process.env.SINOPEBASE_URL?.trim() || 'http://127.0.0.1:8090'
 }
 
 /** Require SINOPEBASE_ANON_KEY — throws if not set */
 function getAnonKey(): string {
-  const value = process.env['SINOPEBASE_ANON_KEY']?.trim()
+  const value = process.env.SINOPEBASE_ANON_KEY?.trim()
   if (!value) {
     throw new Error(
       'SINOPEBASE_ANON_KEY must be set for infrastructure contract tests.\n' +
-      '  export SINOPEBASE_ANON_KEY=<your-anon-key>\n' +
-      '  This prevents silent fallback to a hard-coded test credential.',
+        '  export SINOPEBASE_ANON_KEY=<your-anon-key>\n' +
+        '  This prevents silent fallback to a hard-coded test credential.',
     )
   }
   return value
@@ -33,12 +33,12 @@ function getAnonKey(): string {
 
 /** Require SINOPEBASE_SERVICE_ROLE_KEY — throws if not set */
 function getServiceRoleKey(): string {
-  const value = process.env['SINOPEBASE_SERVICE_ROLE_KEY']?.trim()
+  const value = process.env.SINOPEBASE_SERVICE_ROLE_KEY?.trim()
   if (!value) {
     throw new Error(
       'SINOPEBASE_SERVICE_ROLE_KEY must be set for infrastructure contract tests.\n' +
-      '  export SINOPEBASE_SERVICE_ROLE_KEY=<your-service-role-key>\n' +
-      '  This prevents silent fallback to a hard-coded test credential.',
+        '  export SINOPEBASE_SERVICE_ROLE_KEY=<your-service-role-key>\n' +
+        '  This prevents silent fallback to a hard-coded test credential.',
     )
   }
   return value

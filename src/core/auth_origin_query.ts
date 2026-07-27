@@ -4,8 +4,8 @@
  * Port of PocketBase's daos (Go -> TypeScript).
  */
 
-import type { IDatabase } from './db-interface'
 import { AuthOrigin } from './auth_origin_model'
+import type { IDatabase } from './db-interface'
 
 /**
  * Creates an AuthOrigin query builder instance.
@@ -38,9 +38,7 @@ export function createAuthOriginQuery(db: IDatabase) {
 
     /** Delete all auth origins linked to a record. */
     async deleteAllByRecord(recordId: string): Promise<void> {
-      await db.delete('_authOrigins', [
-        { column: 'recordId', operator: 'eq', value: recordId },
-      ])
+      await db.delete('_authOrigins', [{ column: 'recordId', operator: 'eq', value: recordId }])
     },
   }
 }

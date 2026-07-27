@@ -34,11 +34,8 @@ export interface DbConnectConfig {
  * @param config - Optional connection configuration.
  * @returns A promise that resolves to an IDatabase instance.
  */
-export async function createDatabase(
-  config?: DbConnectConfig,
-): Promise<IDatabase> {
-  const postgresUrl =
-    config?.postgresUrl || process.env['POSTGRES_URL'] || ''
+export async function createDatabase(config?: DbConnectConfig): Promise<IDatabase> {
+  const postgresUrl = config?.postgresUrl || process.env.POSTGRES_URL || ''
 
   if (postgresUrl) {
     const db = new PostgresDatabase({
@@ -63,9 +60,7 @@ export async function createDatabase(
  * @param config - Optional connection configuration.
  * @returns A promise that resolves to an IDatabase instance.
  */
-export async function createAuxDatabase(
-  config?: DbConnectConfig,
-): Promise<IDatabase> {
+export async function createAuxDatabase(config?: DbConnectConfig): Promise<IDatabase> {
   // For now, same as the main database (PostgreSQL vs memory)
   return createDatabase(config)
 }

@@ -8,15 +8,12 @@
 
 import { betterAuth } from 'better-auth'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
-import pg from 'pg'
+import type pg from 'pg'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
 let tablesEnsured = false
 
-import {
-  createBetterAuthDB,
-  createAuthTables,
-} from './adapter'
+import { createAuthTables, createBetterAuthDB } from './adapter'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,9 +65,7 @@ export async function createAuth(
   }
 
   const secret =
-    options?.jwtSecret ||
-    process.env['JWT_SECRET'] ||
-    'sinopebase-dev-secret-min-32-chars!!'
+    options?.jwtSecret || process.env.JWT_SECRET || 'sinopebase-dev-secret-min-32-chars!!'
 
   const trustedOrigins = [
     'http://localhost:8090',
@@ -79,7 +74,7 @@ export async function createAuth(
   ]
 
   // Build plugins array
-  const plugins: any[] = []
+  const plugins: Record<string, unknown>[] = []
   if (options?.oauthProviders?.length) {
     plugins.push(
       genericOAuth({
@@ -106,7 +101,7 @@ export async function createAuth(
     emailAndPassword: { enabled: true },
     secret,
     trustedOrigins,
-    baseURL: process.env['BETTER_AUTH_URL'] || process.env['SINOPEBASE_URL'] || 'http://localhost:8090',
+    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
     plugins,
     // Social login links accounts by email by default
     account: {
@@ -119,9 +114,9 @@ export async function createAuth(
 
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).
-  ;(auth as any).__db = db
+  ;(auth as Record<string, unknown>).__db = db
 
-  return auth as any
+  return auth
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +157,9 @@ export async function lookupSessionByToken(
 ): Promise<SessionLookup | null> {
   if (!token) return null
   try {
-    const db = (auth as any).__db as import('kysely').Kysely<import('./adapter').BetterAuthDatabase> | undefined
+    const db = (auth as Record<string, unknown>).__db as
+      | import('kysely').Kysely<import('./adapter').BetterAuthDatabase>
+      | undefined
     if (!db) return null
     const rows = await db
       .selectFrom('session')

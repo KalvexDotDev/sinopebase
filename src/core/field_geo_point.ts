@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 
 export const FieldTypeGeoPoint = 'geo_point'
 
@@ -64,14 +64,14 @@ export class GeoPointField implements Field {
       return 'Must be a valid geo point object with lon and lat properties'
     }
 
-    const lon = (value as Record<string, unknown>)['lon']
-    const lat = (value as Record<string, unknown>)['lat']
+    const lon = (value as Record<string, unknown>).lon
+    const lat = (value as Record<string, unknown>).lat
 
-    if (typeof lon !== 'number' || !isFinite(lon) || Math.abs(lon) > 180) {
+    if (typeof lon !== 'number' || !Number.isFinite(lon) || Math.abs(lon) > 180) {
       return 'Longitude must be a finite number between -180 and 180'
     }
 
-    if (typeof lat !== 'number' || !isFinite(lat) || Math.abs(lat) > 90) {
+    if (typeof lat !== 'number' || !Number.isFinite(lat) || Math.abs(lat) > 90) {
       return 'Latitude must be a finite number between -90 and 90'
     }
 

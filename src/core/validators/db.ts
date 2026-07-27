@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { ValidationError, ValidationErrors } from '~/core/validators/validators.ts'
 import type { ValidationRule } from '~/core/validators/validators.ts'
+import { ValidationError, ValidationErrors } from '~/core/validators/validators.ts'
 
 /**
  * Database query interface for validator use.
@@ -30,8 +30,16 @@ export interface DbQuery {
  *   validateField(form.RelId, UniqueId(db, 'tbl_example'))
  */
 export function UniqueId(
-  db: { select: (cols: string) => { from: (table: string) => { where: (expr: Record<string, unknown>) => { limit: (n: number) => { row: () => Promise<unknown> } } } } },
-  tableName: string,
+  _db: {
+    select: (cols: string) => {
+      from: (table: string) => {
+        where: (expr: Record<string, unknown>) => {
+          limit: (n: number) => { row: () => Promise<unknown> }
+        }
+      }
+    }
+  },
+  _tableName: string,
 ): ValidationRule {
   return (value: unknown): ValidationError | null => {
     const v = typeof value === 'string' ? value : String(value ?? '')
@@ -79,10 +87,7 @@ export function NormalizeUniqueIndexError(
         msg.includes(pattern2.toLowerCase()) ||
         msg.includes(pattern3.toLowerCase())
       ) {
-        normalized[name] = new ValidationError(
-          'validation_not_unique',
-          'Value must be unique',
-        )
+        normalized[name] = new ValidationError('validation_not_unique', 'Value must be unique')
       }
     }
 

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { GeoPointField, FieldTypeGeoPoint } from '~/core/field_geo_point.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { FieldTypeGeoPoint, GeoPointField } from '~/core/field_geo_point.ts'
 
 describe('GeoPointField', () => {
   it('has type "geo_point"', () => {
@@ -21,14 +21,14 @@ describe('GeoPointField', () => {
   it('settings schema defines lon/lat properties', () => {
     const f = new GeoPointField()
     const schema = f.settingsSchema as Record<string, unknown>
-    expect(schema['type']).toBe('object')
-    const props = schema['properties'] as Record<string, unknown>
+    expect(schema.type).toBe('object')
+    const props = schema.properties as Record<string, unknown>
     expect(props).toHaveProperty('lon')
     expect(props).toHaveProperty('lat')
-    expect((props['lon'] as Record<string, unknown>)['minimum']).toBe(-180)
-    expect((props['lon'] as Record<string, unknown>)['maximum']).toBe(180)
-    expect((props['lat'] as Record<string, unknown>)['minimum']).toBe(-90)
-    expect((props['lat'] as Record<string, unknown>)['maximum']).toBe(90)
+    expect((props.lon as Record<string, unknown>).minimum).toBe(-180)
+    expect((props.lon as Record<string, unknown>).maximum).toBe(180)
+    expect((props.lat as Record<string, unknown>).minimum).toBe(-90)
+    expect((props.lat as Record<string, unknown>).maximum).toBe(90)
   })
 
   describe('validateValue', () => {

@@ -5,9 +5,9 @@
  * to/from a local directory with a manifest.json.
  */
 
-import { join } from 'node:path'
-import { mkdir, readdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { IFileStore } from '~/tools/filesystem/store-interface'
 
 // ---------------------------------------------------------------------------
@@ -73,9 +73,7 @@ export async function backupFileStore(
     for (const obj of objects) {
       fileCounter++
       const ext = obj.name.includes('.') ? obj.name.split('.').pop() : ''
-      const fileName = ext
-        ? `file_${fileCounter}.${ext}`
-        : `file_${fileCounter}`
+      const fileName = ext ? `file_${fileCounter}.${ext}` : `file_${fileCounter}`
 
       try {
         const data = await sourceStore.read(bucket.name, obj.name)
@@ -113,10 +111,7 @@ export async function backupFileStore(
  * @param targetStore - The file store to restore into.
  * @param backupDir   - Local directory containing the backup data.
  */
-export async function restoreFileStore(
-  targetStore: IFileStore,
-  backupDir: string,
-): Promise<void> {
+export async function restoreFileStore(targetStore: IFileStore, backupDir: string): Promise<void> {
   const manifestPath = join(backupDir, 'manifest.json')
   if (!existsSync(manifestPath)) {
     throw new Error(`Backup manifest not found: ${manifestPath}`)

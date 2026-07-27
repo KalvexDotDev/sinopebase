@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'bun:test'
-import { Record } from '~/core/record_model.ts'
+import { describe, expect, it } from 'bun:test'
 import { Collection } from '~/core/collection_model.ts'
+import { Record } from '~/core/record_model.ts'
 import {
   recordEmail,
-  setRecordEmail,
   recordTokenKey,
   refreshRecordTokenKey,
+  setRecordEmail,
   setRecordPassword,
   setRecordRandomPassword,
 } from '~/core/record_model_auth.ts'

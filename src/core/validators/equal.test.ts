@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { Equal } from '~/core/validators/equal.ts'
 
 describe('Equal', () => {
@@ -9,7 +9,7 @@ describe('Equal', () => {
   it('returns error for non-matching strings', () => {
     const err = Equal('abc')('xyz')
     expect(err).not.toBeNull()
-    expect(err!.code).toBe('validation_values_mismatch')
+    expect(err?.code).toBe('validation_values_mismatch')
   })
 
   it('returns null for matching numbers', () => {

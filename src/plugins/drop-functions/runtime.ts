@@ -3,7 +3,7 @@
 // Builds the FunctionContext object passed to every edge function invocation.
 // ---------------------------------------------------------------------------
 
-import type { FunctionContext, FunctionAuth } from './types'
+import type { FunctionAuth, FunctionContext } from './types'
 
 /**
  * Build the FunctionContext for a function invocation.

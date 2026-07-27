@@ -41,10 +41,7 @@ export interface CronManager {
  *
  * Both endpoints require superuser authentication.
  */
-export function createCronPlugin(
-  cronManager: CronManager,
-  isSuperuser: () => boolean,
-) {
+export function createCronPlugin(cronManager: CronManager, isSuperuser: () => boolean) {
   const app = new Elysia()
 
   // ── GET /api/crons — List cron jobs ──

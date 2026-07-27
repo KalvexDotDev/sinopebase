@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://graph.facebook.com/v19.0/me?fields=id,name,email,picture response.
  *
  * @example
- * 
+ *
  */
 export class FacebookProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

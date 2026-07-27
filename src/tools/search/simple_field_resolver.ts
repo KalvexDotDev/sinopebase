@@ -5,8 +5,8 @@
  * Layer 1 -- imports Layer 0 (~/tools/...).
  */
 
-import { Columnify } from "~/tools/inflector/inflector";
-import { ExistInSliceWithRegex } from "~/tools/list/list";
+import { Columnify } from '~/tools/inflector/inflector'
+import { ExistInSliceWithRegex } from '~/tools/list/list'
 
 // ---------------------------------------------------------------------------
 // Enums and interfaces
@@ -22,9 +22,10 @@ export const NullFallbackPreference = {
   Disabled: 1,
   /** Always prefer COALESCE or NULL fallbacks when needed. */
   Enforced: 2,
-} as const;
+} as const
 
-export type NullFallbackPreference = (typeof NullFallbackPreference)[keyof typeof NullFallbackPreference];
+export type NullFallbackPreference =
+  (typeof NullFallbackPreference)[keyof typeof NullFallbackPreference]
 
 /**
  * Result of a successful field resolution.
@@ -33,28 +34,28 @@ export interface ResolverResult {
   /**
    * The SQL identifier/column expression for use in the final expression.
    */
-  identifier: string;
+  identifier: string
 
   /**
    * Preference for how NULL or empty values should be resolved.
    * Defaults to Auto.
    */
-  nullFallback?: NullFallbackPreference;
+  nullFallback?: NullFallbackPreference
 
   /**
    * Parameter placeholder → value pairs for the query.
    */
-  params?: Record<string, unknown>;
+  params?: Record<string, unknown>
 
   /**
    * Optional sub-query for multi-match relation fields.
    */
-  multiMatchSubQuery?: unknown;
+  multiMatchSubQuery?: unknown
 
   /**
    * Optional callback invoked after the expression is built.
    */
-  afterBuild?: ((sql: string) => string) | null;
+  afterBuild?: ((sql: string) => string) | null
 }
 
 /**
@@ -65,7 +66,7 @@ export interface FieldResolver {
    * Allows the resolver to modify the base query (e.g. add JOINs)
    * before the search executes.
    */
-  updateQuery(query: unknown): Promise<void> | void;
+  updateQuery(query: unknown): Promise<void> | void
 
   /**
    * Resolves a field name to a SQL identifier/expression.
@@ -73,7 +74,7 @@ export interface FieldResolver {
    * @param field - The field name to resolve (e.g. "name", "relation.field").
    * @returns A ResolverResult, or an Error if the field cannot be resolved.
    */
-  resolve(field: string): ResolverResult | Error;
+  resolve(field: string): ResolverResult | Error
 }
 
 // ---------------------------------------------------------------------------
@@ -116,44 +117,46 @@ export class SimpleFieldResolver implements FieldResolver {
   resolve(field: string): ResolverResult | Error {
     // If allowedFields is empty, no field filtering is applied (all fields allowed).
     if (this.allowedFields.length > 0 && !ExistInSliceWithRegex(field, this.allowedFields)) {
-      return new Error(`failed to resolve field "${field}"`);
+      return new Error(`failed to resolve field "${field}"`)
     }
 
-    const parts = field.split(".");
+    const parts = field.split('.')
+
+    const firstPart = parts[0]
+    if (firstPart === undefined) {
+      return new Error(`failed to resolve field "${field}"`)
+    }
 
     // Single regular field
     if (parts.length === 1) {
       return {
-        identifier: `[[${Columnify(parts[0]!)}]]`,
-      };
+        identifier: `[[${Columnify(firstPart)}]]`,
+      }
     }
 
     // Treat as JSON path using PostgreSQL jsonb operators
-    const root = Columnify(parts[0]!);
-    const rest = parts.slice(1);
+    const root = Columnify(firstPart)
+    const rest = parts.slice(1)
 
     // Build PostgreSQL jsonb path using -> and ->>
-    let expr = `[[${root}]]`;
+    let expr = `[[${root}]]`
     for (let i = 0; i < rest.length; i++) {
-      const seg = rest[i]!;
-      const isArrayIndex = /^\d+$/.test(seg);
-      const isLast = i === rest.length - 1;
+      const seg = rest[i]
+      if (seg === undefined) continue
+      const isArrayIndex = /^\d+$/.test(seg)
+      const isLast = i === rest.length - 1
       if (isLast) {
         // Last segment: use ->> for text extraction
-        expr = isArrayIndex
-          ? `${expr}->>${seg}`
-          : `${expr}->>'${Columnify(seg)}'`;
+        expr = isArrayIndex ? `${expr}->>${seg}` : `${expr}->>'${Columnify(seg)}'`
       } else {
         // Non-last segment: use -> for jsonb object navigation
-        expr = isArrayIndex
-          ? `${expr}->${seg}`
-          : `${expr}->'${Columnify(seg)}'`;
+        expr = isArrayIndex ? `${expr}->${seg}` : `${expr}->'${Columnify(seg)}'`
       }
     }
 
     return {
       nullFallback: NullFallbackPreference.Disabled,
       identifier: expr,
-    };
+    }
   }
 }

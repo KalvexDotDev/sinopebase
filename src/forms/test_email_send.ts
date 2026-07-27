@@ -8,17 +8,17 @@
  * available templates.
  */
 
-import { Type } from '@sinclair/typebox';
+import { Type } from '@sinclair/typebox'
 
 // ---------------------------------------------------------------------------
 // Template constants
 // ---------------------------------------------------------------------------
 
-export const TestTemplateVerification = 'verification';
-export const TestTemplatePasswordReset = 'password-reset';
-export const TestTemplateEmailChange = 'email-change';
-export const TestTemplateOTP = 'otp';
-export const TestTemplateAuthAlert = 'login-alert';
+export const TestTemplateVerification = 'verification'
+export const TestTemplatePasswordReset = 'password-reset'
+export const TestTemplateEmailChange = 'email-change'
+export const TestTemplateOTP = 'otp'
+export const TestTemplateAuthAlert = 'login-alert'
 
 /** All valid template identifiers. */
 export const ValidTestTemplates = [
@@ -27,7 +27,7 @@ export const ValidTestTemplates = [
   TestTemplateEmailChange,
   TestTemplateOTP,
   TestTemplateAuthAlert,
-] as const;
+] as const
 
 // ---------------------------------------------------------------------------
 // Collection stub for validation
@@ -37,9 +37,9 @@ export const ValidTestTemplates = [
  * Minimal collection interface for email test validation.
  */
 export interface EmailTestCollectionStub {
-  id: string;
-  name: string;
-  isAuth(): boolean;
+  id: string
+  name: string
+  isAuth(): boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -52,23 +52,23 @@ export interface EmailTestCollectionStub {
  */
 export class TestEmailSend {
   /** Recipient email address. */
-  email = '';
+  email = ''
 
   /** Email template to use for the test. */
-  template = '';
+  template = ''
 
   /** Optional auth collection name/id (defaults to _superusers). */
-  collection = '';
+  collection = ''
 
   /** Resolver to find auth collections by name or id. */
-  protected collectionResolver: (nameOrId: string) => EmailTestCollectionStub | null;
+  protected collectionResolver: (nameOrId: string) => EmailTestCollectionStub | null
 
   /** Resolver to send the actual email. */
   protected emailSender: (params: {
-    email: string;
-    template: string;
-    collection: EmailTestCollectionStub;
-  }) => Promise<void>;
+    email: string
+    template: string
+    collection: EmailTestCollectionStub
+  }) => Promise<void>
 
   /**
    * @param collectionResolver - Resolves collection name/id to collection stub.
@@ -77,17 +77,17 @@ export class TestEmailSend {
   constructor(
     collectionResolver?: (nameOrId: string) => EmailTestCollectionStub | null,
     emailSender?: (params: {
-      email: string;
-      template: string;
-      collection: EmailTestCollectionStub;
+      email: string
+      template: string
+      collection: EmailTestCollectionStub
     }) => Promise<void>,
   ) {
-    this.collectionResolver = collectionResolver ?? (() => null);
+    this.collectionResolver = collectionResolver ?? (() => null)
     this.emailSender =
       emailSender ??
       (async () => {
-        throw new Error('No email sender configured');
-      });
+        throw new Error('No email sender configured')
+      })
   }
 
   /**
@@ -108,7 +108,7 @@ export class TestEmailSend {
         maxLength: 255,
       }),
     ),
-  });
+  })
 
   /**
    * Validates the form data.
@@ -116,38 +116,37 @@ export class TestEmailSend {
    * Returns null if valid, or a map of field → error message.
    */
   validate(): Record<string, string> | null {
-    const errors: Record<string, string> = {};
+    const errors: Record<string, string> = {}
 
     // Email
     if (!this.email) {
-      errors['email'] = 'Email is required';
+      errors.email = 'Email is required'
     } else if (this.email.length > 255) {
-      errors['email'] = 'Email must be at most 255 characters';
+      errors.email = 'Email must be at most 255 characters'
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email)) {
-      errors['email'] = 'Invalid email format';
+      errors.email = 'Invalid email format'
     }
 
     // Template
     if (!this.template) {
-      errors['template'] = 'Template is required';
+      errors.template = 'Template is required'
     } else if (!(ValidTestTemplates as readonly string[]).includes(this.template)) {
-      errors['template'] = `Template must be one of: ${ValidTestTemplates.join(', ')}`;
+      errors.template = `Template must be one of: ${ValidTestTemplates.join(', ')}`
     }
 
     // Collection (optional)
     if (this.collection) {
       if (this.collection.length > 255) {
-        errors['collection'] = 'Collection must be at most 255 characters';
+        errors.collection = 'Collection must be at most 255 characters'
       } else {
-        const c = this.collectionResolver(this.collection);
-        if (!c || !c.isAuth()) {
-          errors['collection'] =
-            'Must be a valid auth collection id or name';
+        const c = this.collectionResolver(this.collection)
+        if (!c?.isAuth()) {
+          errors.collection = 'Must be a valid auth collection id or name'
         }
       }
     }
 
-    return Object.keys(errors).length > 0 ? errors : null;
+    return Object.keys(errors).length > 0 ? errors : null
   }
 
   /**
@@ -156,16 +155,16 @@ export class TestEmailSend {
    * Returns null on success, or an error message on failure.
    */
   async submit(): Promise<string | null> {
-    const errors = this.validate();
+    const errors = this.validate()
     if (errors) {
-      return Object.values(errors).join('; ');
+      return Object.values(errors).join('; ')
     }
 
     // Resolve collection
-    const collectionIdOrName = this.collection || '_superusers';
-    const collection = this.collectionResolver(collectionIdOrName);
+    const collectionIdOrName = this.collection || '_superusers'
+    const collection = this.collectionResolver(collectionIdOrName)
     if (!collection) {
-      return `Failed to find collection "${collectionIdOrName}"`;
+      return `Failed to find collection "${collectionIdOrName}"`
     }
 
     try {
@@ -173,10 +172,10 @@ export class TestEmailSend {
         email: this.email,
         template: this.template,
         collection,
-      });
-      return null;
+      })
+      return null
     } catch (err) {
-      return `Failed to send test email: ${(err as Error).message}`;
+      return `Failed to send test email: ${(err as Error).message}`
     }
   }
 }

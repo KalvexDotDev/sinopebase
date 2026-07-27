@@ -138,7 +138,7 @@ export class BaseModel {
     for (const b of randomBytes) {
       hex += b.toString(16).padStart(2, '0')
     }
-    return 'r' + hex
+    return `r${hex}`
   }
 
   // -----------------------------------------------------------------------

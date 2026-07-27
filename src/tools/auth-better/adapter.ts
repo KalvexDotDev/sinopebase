@@ -7,7 +7,7 @@
  */
 
 import { Kysely, PostgresDialect, sql } from 'kysely'
-import pg from 'pg'
+import type pg from 'pg'
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -83,9 +83,7 @@ export function createBetterAuthDB(pool: pg.Pool): Kysely<BetterAuthDatabase> {
  *
  * Safe to call on every startup — each statement uses `IF NOT EXISTS`.
  */
-export async function createAuthTables(
-  db: Kysely<BetterAuthDatabase>,
-): Promise<void> {
+export async function createAuthTables(db: Kysely<BetterAuthDatabase>): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS "user" (
       "id"            varchar(36) PRIMARY KEY,

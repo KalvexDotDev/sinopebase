@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import { Elysia } from 'elysia'
-import { createStoragePlugin } from './file'
-import type { Bucket, FileObject, IFileStore } from '../tools/filesystem/store-interface'
 import type { PostgresRequestContext } from '../core/db-postgres'
+import type { Bucket, FileObject, IFileStore } from '../tools/filesystem/store-interface'
+import { createStoragePlugin } from './file'
 import {
   StorageAccessError,
   type StorageAccessPolicy,
@@ -29,19 +29,29 @@ class TestFileStore implements IFileStore {
     return [...this.files.keys()]
       .filter((key) => key.startsWith(`${bucket}/${prefix}`))
       .map((key) => ({
-        name: key.slice(bucket.length + 1), id: key, updated_at: null,
-        created_at: null, last_accessed_at: null, metadata: null,
+        name: key.slice(bucket.length + 1),
+        id: key,
+        updated_at: null,
+        created_at: null,
+        last_accessed_at: null,
+        metadata: null,
       }))
   }
-  async listBuckets(): Promise<Bucket[]> { return [] }
-  async createBucket(name: string): Promise<string> { return name }
+  async listBuckets(): Promise<Bucket[]> {
+    return []
+  }
+  async createBucket(name: string): Promise<string> {
+    return name
+  }
   async ensureBucket(_name: string): Promise<void> {}
 }
 
 function storageApp(
   store = new TestFileStore(),
   access?: StorageAccessPolicy,
-  resolveContext: (request: Request) => PostgresRequestContext | undefined = () => ({ role: 'service_role' }),
+  resolveContext: (request: Request) => PostgresRequestContext | undefined = () => ({
+    role: 'service_role',
+  }),
 ) {
   return { app: new Elysia().use(createStoragePlugin(store, { access, resolveContext })), store }
 }
@@ -49,36 +59,67 @@ function storageApp(
 class TestStorageAccess implements StorageAccessPolicy {
   owners = new Map<string, string>()
   lastUpload?: StorageUploadInput
-  async isAvailable() { return true }
-  async listBuckets() { return [] }
-  async createBucket(_context: PostgresRequestContext, _input: StorageBucketInput, persist: () => Promise<unknown>) { await persist() }
-  async listObjects() { return [] }
-  async upload(context: PostgresRequestContext, input: StorageUploadInput, persist: () => Promise<unknown>) {
+  async isAvailable() {
+    return true
+  }
+  async listBuckets() {
+    return []
+  }
+  async createBucket(
+    _context: PostgresRequestContext,
+    _input: StorageBucketInput,
+    persist: () => Promise<unknown>,
+  ) {
+    await persist()
+  }
+  async listObjects() {
+    return []
+  }
+  async upload(
+    context: PostgresRequestContext,
+    input: StorageUploadInput,
+    persist: () => Promise<unknown>,
+  ) {
     this.lastUpload = input
     await persist()
     this.owners.set(`${input.bucket}/${input.path}`, context.userId ?? '')
   }
-  async download(context: PostgresRequestContext, bucket: string, path: string, read: () => Promise<Buffer>) {
+  async download(
+    context: PostgresRequestContext,
+    bucket: string,
+    path: string,
+    read: () => Promise<Buffer>,
+  ) {
     if (this.owners.get(`${bucket}/${path}`) !== context.userId) {
       throw new StorageAccessError(404, '404', 'Object not found')
     }
     return read()
   }
-  async remove(context: PostgresRequestContext, bucket: string, paths: string[], persist: (paths: string[]) => Promise<string[]>) {
+  async remove(
+    context: PostgresRequestContext,
+    bucket: string,
+    paths: string[],
+    persist: (paths: string[]) => Promise<string[]>,
+  ) {
     const allowed = paths.filter((path) => this.owners.get(`${bucket}/${path}`) === context.userId)
     return persist(allowed)
   }
   async authorizeSignedUrl() {}
-  async downloadPublic(_bucket: string, _path: string, read: () => Promise<Buffer>) { return read() }
+  async downloadPublic(_bucket: string, _path: string, read: () => Promise<Buffer>) {
+    return read()
+  }
 }
 
 describe('Supabase Storage HTTP compatibility', () => {
   it('accepts the raw binary body sent by storage-js for Buffer uploads', async () => {
     const { app, store } = storageApp()
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/evidence/tenant/control/policy.pdf',
-      { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: 'policy' },
-    ))
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/evidence/tenant/control/policy.pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf' },
+        body: 'policy',
+      }),
+    )
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
@@ -94,10 +135,12 @@ describe('Supabase Storage HTTP compatibility', () => {
     form.append('cacheControl', '3600')
     form.append('', new Blob(['logo'], { type: 'image/png' }))
 
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/company-logos/tenant/profile/logo.png',
-      { method: 'POST', body: form },
-    ))
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/company-logos/tenant/profile/logo.png', {
+        method: 'POST',
+        body: form,
+      }),
+    )
 
     expect(response.status).toBe(200)
     expect(store.files.get('company-logos/tenant/profile/logo.png')?.toString()).toBe('logo')
@@ -107,16 +150,22 @@ describe('Supabase Storage HTTP compatibility', () => {
     const { app, store } = storageApp()
     store.files.set('evidence/tenant/a.pdf', Buffer.from('a'))
 
-    const list = await app.handle(new Request(
-      'http://localhost/storage/v1/object/list/evidence',
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prefix: 'tenant/' }) },
-    ))
+    const list = await app.handle(
+      new Request('http://localhost/storage/v1/object/list/evidence', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prefix: 'tenant/' }),
+      }),
+    )
     expect(await list.json()).toEqual([expect.objectContaining({ name: 'tenant/a.pdf' })])
 
-    const remove = await app.handle(new Request(
-      'http://localhost/storage/v1/object/evidence',
-      { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prefixes: ['tenant/a.pdf'] }) },
-    ))
+    const remove = await app.handle(
+      new Request('http://localhost/storage/v1/object/evidence', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prefixes: ['tenant/a.pdf'] }),
+      }),
+    )
     expect(remove.status).toBe(200)
     expect(await remove.json()).toEqual([{ name: 'tenant/a.pdf', bucket_id: 'evidence' }])
     expect(store.files.has('evidence/tenant/a.pdf')).toBe(false)
@@ -126,9 +175,9 @@ describe('Supabase Storage HTTP compatibility', () => {
     const { app, store } = storageApp()
     store.files.set('evidence/tenant/a.pdf', Buffer.from('download me'))
 
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/evidence/tenant/a.pdf',
-    ))
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/evidence/tenant/a.pdf'),
+    )
 
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('download me')
@@ -136,11 +185,17 @@ describe('Supabase Storage HTTP compatibility', () => {
 
   it('fails closed for authenticated storage when metadata policy support is unavailable', async () => {
     const store = new TestFileStore()
-    const { app } = storageApp(store, undefined, () => ({ role: 'authenticated', userId: 'member-a' }))
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/evidence/tenant/a.pdf',
-      { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: 'private' },
-    ))
+    const { app } = storageApp(store, undefined, () => ({
+      role: 'authenticated',
+      userId: 'member-a',
+    }))
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/evidence/tenant/a.pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf' },
+        body: 'private',
+      }),
+    )
 
     expect(response.status).toBe(503)
     expect(store.files.size).toBe(0)
@@ -148,19 +203,24 @@ describe('Supabase Storage HTTP compatibility', () => {
 
   it('passes verified identity and upload metadata to policy enforcement', async () => {
     const access = new TestStorageAccess()
-    const { app, store } = storageApp(
-      new TestFileStore(),
-      access,
-      () => ({ role: 'authenticated', userId: 'member-a' }),
+    const { app, store } = storageApp(new TestFileStore(), access, () => ({
+      role: 'authenticated',
+      userId: 'member-a',
+    }))
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/evidence/tenant/a.pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf' },
+        body: 'private',
+      }),
     )
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/evidence/tenant/a.pdf',
-      { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: 'private' },
-    ))
 
     expect(response.status).toBe(200)
     expect(access.lastUpload).toMatchObject({
-      bucket: 'evidence', path: 'tenant/a.pdf', contentType: 'application/pdf', upsert: false,
+      bucket: 'evidence',
+      path: 'tenant/a.pdf',
+      contentType: 'application/pdf',
+      upsert: false,
     })
     expect(access.lastUpload?.data.byteLength).toBe(7)
     expect(store.files.has('evidence/tenant/a.pdf')).toBe(true)
@@ -175,10 +235,11 @@ describe('Supabase Storage HTTP compatibility', () => {
       role: 'authenticated',
       userId: request.headers.get('x-test-user') ?? '',
     }))
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/evidence/tenant/a.pdf',
-      { headers: { 'x-test-user': 'member-b' } },
-    ))
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/evidence/tenant/a.pdf', {
+        headers: { 'x-test-user': 'member-b' },
+      }),
+    )
 
     expect(response.status).toBe(404)
     expect(await response.json()).toMatchObject({ message: 'Object not found' })
@@ -186,17 +247,23 @@ describe('Supabase Storage HTTP compatibility', () => {
 
   it('rejects objects exceeding bucket size or outside its MIME allow-list', () => {
     const bucket = { fileSizeLimit: 4, allowedMimeTypes: ['application/pdf', 'image/*'] }
-    expect(() => validateBucketConstraints(bucket, {
-      data: new Uint8Array(5).buffer,
-      contentType: 'application/pdf',
-    })).toThrow('file size limit')
-    expect(() => validateBucketConstraints(bucket, {
-      data: new Uint8Array(4).buffer,
-      contentType: 'text/plain',
-    })).toThrow('MIME type text/plain is not allowed')
-    expect(() => validateBucketConstraints(bucket, {
-      data: new Uint8Array(4).buffer,
-      contentType: 'image/png',
-    })).not.toThrow()
+    expect(() =>
+      validateBucketConstraints(bucket, {
+        data: new Uint8Array(5).buffer,
+        contentType: 'application/pdf',
+      }),
+    ).toThrow('file size limit')
+    expect(() =>
+      validateBucketConstraints(bucket, {
+        data: new Uint8Array(4).buffer,
+        contentType: 'text/plain',
+      }),
+    ).toThrow('MIME type text/plain is not allowed')
+    expect(() =>
+      validateBucketConstraints(bucket, {
+        data: new Uint8Array(4).buffer,
+        contentType: 'image/png',
+      }),
+    ).not.toThrow()
   })
 })

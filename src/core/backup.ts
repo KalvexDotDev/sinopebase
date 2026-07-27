@@ -5,9 +5,9 @@
  * verification, listing, and cleanup. No new npm dependencies.
  */
 
+import { existsSync } from 'node:fs'
 import { readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,11 +71,11 @@ function parsePgUrl(connectionString: string): ParsedPgUrl {
   )
 
   return {
-    host: parts['host'] || 'localhost',
-    port: parts['port'] || '5432',
-    user: parts['user'] || '',
-    password: parts['password'] || '',
-    database: parts['dbname'] || '',
+    host: parts.host || 'localhost',
+    port: parts.port || '5432',
+    user: parts.user || '',
+    password: parts.password || '',
+    database: parts.dbname || '',
   }
 }
 
@@ -89,26 +89,27 @@ function parsePgUrl(connectionString: string): ParsedPgUrl {
  *
  * Returns the outputPath on success.
  */
-export async function pgDump(
-  connectionString: string,
-  outputPath: string,
-): Promise<string> {
+export async function pgDump(connectionString: string, outputPath: string): Promise<string> {
   const parsed = parsePgUrl(connectionString)
 
   const env: Record<string, string> = {
-    ...process.env as Record<string, string>,
+    ...(process.env as Record<string, string>),
   }
   if (parsed.password) {
-    env['PGPASSWORD'] = parsed.password
+    env.PGPASSWORD = parsed.password
   }
 
   const proc = Bun.spawn(
     [
       'pg_dump',
-      '-h', parsed.host,
-      '-p', parsed.port,
-      '-U', parsed.user,
-      '-d', parsed.database,
+      '-h',
+      parsed.host,
+      '-p',
+      parsed.port,
+      '-U',
+      parsed.user,
+      '-d',
+      parsed.database,
       '--clean',
       '--if-exists',
       '--no-owner',
@@ -124,9 +125,7 @@ export async function pgDump(
   const exitCode = await proc.exitCode
 
   if (exitCode !== 0) {
-    throw new Error(
-      `pg_dump failed (exit ${exitCode}): ${err || '(no stderr)'}`,
-    )
+    throw new Error(`pg_dump failed (exit ${exitCode}): ${err || '(no stderr)'}`)
   }
 
   // Write the dump to disk
@@ -144,17 +143,14 @@ export async function pgDump(
  *
  * Runs `psql < inputPath` against the given connection string.
  */
-export async function pgRestore(
-  connectionString: string,
-  inputPath: string,
-): Promise<void> {
+export async function pgRestore(connectionString: string, inputPath: string): Promise<void> {
   const parsed = parsePgUrl(connectionString)
 
   const env: Record<string, string> = {
-    ...process.env as Record<string, string>,
+    ...(process.env as Record<string, string>),
   }
   if (parsed.password) {
-    env['PGPASSWORD'] = parsed.password
+    env.PGPASSWORD = parsed.password
   }
 
   const file = Bun.file(inputPath)
@@ -166,13 +162,7 @@ export async function pgRestore(
   const content = await file.arrayBuffer()
 
   const proc = Bun.spawn(
-    [
-      'psql',
-      '-h', parsed.host,
-      '-p', parsed.port,
-      '-U', parsed.user,
-      '-d', parsed.database,
-    ],
+    ['psql', '-h', parsed.host, '-p', parsed.port, '-U', parsed.user, '-d', parsed.database],
     {
       env,
       stdio: ['pipe', 'ignore', 'pipe'],
@@ -187,9 +177,7 @@ export async function pgRestore(
   const exitCode = await proc.exitCode
 
   if (exitCode !== 0) {
-    throw new Error(
-      `psql restore failed (exit ${exitCode}): ${err || '(no stderr)'}`,
-    )
+    throw new Error(`psql restore failed (exit ${exitCode}): ${err || '(no stderr)'}`)
   }
 }
 
@@ -221,7 +209,9 @@ export async function verifyBackup(path: string): Promise<boolean> {
   // pg_dump plain format always starts with a comment line.
   // Accept any printable-first-byte as a loose validation so
   // custom-format dumps also pass.
-  return /[\x20-\x7E\t\n\r]/.test(sample[0]!)
+  const first = sample[0]
+  if (!first) return true // empty content is valid (no-op restore)
+  return /[\x20-\x7E\t\n\r]/.test(first)
 }
 
 // ---------------------------------------------------------------------------
@@ -232,9 +222,7 @@ export async function verifyBackup(path: string): Promise<boolean> {
  * List backup files in a directory, sorted by modified time descending
  * (newest first). Returns an array of BackupFileInfo.
  */
-export async function listBackups(
-  backupDir: string,
-): Promise<BackupFileInfo[]> {
+export async function listBackups(backupDir: string): Promise<BackupFileInfo[]> {
   if (!existsSync(backupDir)) return []
 
   const entries = await readdir(backupDir, { withFileTypes: true })
@@ -258,9 +246,7 @@ export async function listBackups(
   }
 
   // Sort newest first
-  files.sort(
-    (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime(),
-  )
+  files.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
 
   return files
 }
@@ -276,10 +262,7 @@ export async function listBackups(
  * convention (those listed by listBackups). Returns the list of deleted
  * file paths.
  */
-export async function cleanupOldBackups(
-  backupDir: string,
-  keepCount: number,
-): Promise<string[]> {
+export async function cleanupOldBackups(backupDir: string, keepCount: number): Promise<string[]> {
   const backups = await listBackups(backupDir)
   const deleted: string[] = []
 

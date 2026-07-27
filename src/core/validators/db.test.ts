@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { NormalizeUniqueIndexError } from '~/core/validators/db.ts'
 import { ValidationErrors } from '~/core/validators/validators.ts'
 
@@ -8,7 +8,9 @@ describe('NormalizeUniqueIndexError', () => {
   })
 
   it('returns ValidationErrors as-is', () => {
-    const ve = new ValidationErrors({ name: new (require('~/core/validators/validators.ts').ValidationError)('test', 'test') })
+    const ve = new ValidationErrors({
+      name: new (require('~/core/validators/validators.ts').ValidationError)('test', 'test'),
+    })
     expect(NormalizeUniqueIndexError(ve, 'table', ['name'])).toBe(ve)
   })
 

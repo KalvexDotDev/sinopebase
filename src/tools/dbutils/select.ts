@@ -9,7 +9,7 @@
  * Regexp for matching AS aliases in column or table identifiers.
  * Same pattern as used in dbx/Kysely for identifier parsing.
  */
-const selectRegex = /(?i:\s+as\s+|\s+)([\w\-\.]+)$/;
+const selectRegex = /(?i:\s+as\s+|\s+)([\w\-.]+)$/
 
 /**
  * AliasOrIdentifier returns the alias from a column or table identifier.
@@ -23,9 +23,9 @@ const selectRegex = /(?i:\s+as\s+|\s+)([\w\-\.]+)$/;
  * Returns the identifier unmodified if no alias was found.
  */
 export function aliasOrIdentifier(columnOrTableIdentifier: string): string {
-  const matches = selectRegex.exec(columnOrTableIdentifier);
-  if (matches && matches[1]) {
-    return matches[1]!;
+  const matches = selectRegex.exec(columnOrTableIdentifier)
+  if (matches?.[1]) {
+    return matches[1]
   }
-  return columnOrTableIdentifier;
+  return columnOrTableIdentifier
 }

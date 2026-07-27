@@ -2,9 +2,15 @@
 // Log Retention Plugin — periodic cleanup + activity logger → DB bridge
 // ---------------------------------------------------------------------------
 
-import { Elysia } from 'elysia'
+import type { Elysia } from 'elysia'
 import { BatchLogHandler } from '~/tools/logger/batch_handler'
 import type { LogEntry } from '~/tools/logger/log'
+
+interface DbClient {
+  insert(table: string, data: Record<string, unknown>): Promise<unknown>
+  delete(table: string, conditions: unknown[]): Promise<unknown>
+  count(table: string): Promise<number>
+}
 
 export interface LogRetentionOptions {
   /** Days to retain logs (default: 30) */
@@ -28,7 +34,7 @@ export class LogRetentionPlugin {
     }
   }
 
-  async register(app: Elysia, db: any): Promise<void> {
+  async register(app: Elysia, db: DbClient): Promise<void> {
     if (!db) return
 
     // Bridge activity logger → _logs table using BatchLogHandler
@@ -79,7 +85,7 @@ export class LogRetentionPlugin {
   }
 
   /** Trigger an immediate cleanup. */
-  async cleanupNow(db: any): Promise<number> {
+  async cleanupNow(db: DbClient): Promise<number> {
     if (!db) return 0
     const cutoff = new Date(Date.now() - this.options.retentionDays * 24 * 60 * 60 * 1000)
     const before = await db.count('_logs')

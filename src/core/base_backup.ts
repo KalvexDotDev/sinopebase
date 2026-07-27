@@ -34,10 +34,7 @@ export interface BackupOptions {
  * @param db - The database instance to back up.
  * @param options - Backup options.
  */
-export async function createBackup(
-  _db: IDatabase,
-  options: BackupOptions,
-): Promise<void> {
+export async function createBackup(_db: IDatabase, options: BackupOptions): Promise<void> {
   const { name } = options
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const backupName = `${name}_${timestamp}`
@@ -53,10 +50,7 @@ export async function createBackup(
  * @param db - The database instance to restore to.
  * @param options - Backup restore options.
  */
-export async function restoreBackup(
-  db: IDatabase,
-  options: BackupOptions,
-): Promise<void> {
+export async function restoreBackup(_db: IDatabase, options: BackupOptions): Promise<void> {
   const { name } = options
   console.log(`Backup restored: ${name}`)
 }

@@ -5,13 +5,12 @@
  * Layer 4 — imports from ~/core/*, ~/tools/*.
  */
 
-import type { IDatabase } from '~/core/db-interface'
 import type { Collection } from '~/core/collection_model'
-import { Record as RecordModel } from '~/core/record_model'
-import { canAccessRecord } from '~/core/record_query'
-import { expandRecord } from '~/core/record_query_expand'
-import { findAuthRecordByToken } from '~/core/record_query'
 import { findCollectionByNameOrId } from '~/core/collection_query'
+import type { IDatabase } from '~/core/db-interface'
+import type { Record as RecordModel } from '~/core/record_model'
+import { canAccessRecord, findAuthRecordByToken } from '~/core/record_query'
+import { expandRecord } from '~/core/record_query_expand'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,7 +51,7 @@ export async function resolveRecordRequest(
     hasCollectionAuth: false,
   }
 
-  if (!authToken || !authToken.startsWith('Bearer ')) {
+  if (!authToken?.startsWith('Bearer ')) {
     return info
   }
 
@@ -123,12 +122,12 @@ export async function enrichRecord(
  * Resolves pagination parameters from query string.
  */
 export function parsePagination(query: Record<string, string | undefined>): PaginationInfo {
-  const page = Math.max(1, parseInt(query['page'] ?? '1', 10) || 1)
+  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1)
   const perPage = Math.min(
     1000,
-    Math.max(1, parseInt(query['perPage'] ?? query['per_page'] ?? '30', 10) || 30),
+    Math.max(1, parseInt(query.perPage ?? query.per_page ?? '30', 10) || 30),
   )
-  const skipTotal = query['skipTotal'] === 'true'
+  const skipTotal = query.skipTotal === 'true'
   return { page, perPage, skipTotal }
 }
 
@@ -136,7 +135,7 @@ export function parsePagination(query: Record<string, string | undefined>): Pagi
  * Resolves expand parameter from query string.
  */
 export function parseExpands(query: Record<string, string | undefined>): string[] {
-  const expand = query['expand'] ?? ''
+  const expand = query.expand ?? ''
   return expand
     .split(',')
     .map((s) => s.trim())
@@ -152,7 +151,10 @@ export async function resolveCollection(
 ): Promise<Collection | null> {
   return findCollectionByNameOrId(
     db,
-    { id: collectionParam, fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} } } as unknown as Collection,
+    {
+      id: collectionParam,
+      fields: { getByName: () => undefined, [Symbol.iterator]: function* () {} },
+    } as unknown as Collection,
     collectionParam,
   ) as unknown as Promise<Collection | null>
 }

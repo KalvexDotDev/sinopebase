@@ -42,7 +42,16 @@ export class S3FileStore implements IFileStore {
   // Bucket operations
   // -----------------------------------------------------------------------
 
-  async listBuckets(): Promise<Array<{ id: string; name: string; owner: string; public: boolean; created_at: string; updated_at: string }>> {
+  async listBuckets(): Promise<
+    Array<{
+      id: string
+      name: string
+      owner: string
+      public: boolean
+      created_at: string
+      updated_at: string
+    }>
+  > {
     const buckets = await this.client.listBuckets()
     return buckets.map((b) => ({
       id: b.name,

@@ -14,20 +14,20 @@
  * `gcm.Seal(nonce, nonce, data, nil)` convention.
  */
 
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** AES-256-GCM algorithm identifier for Node/Bun crypto. */
-const ALGORITHM = 'aes-256-gcm';
+const ALGORITHM = 'aes-256-gcm'
 
 /** GCM standard nonce (IV) size in bytes — 12 bytes (96 bits). */
-const IV_LENGTH = 12;
+const IV_LENGTH = 12
 
 /** GCM authentication tag size in bytes — 16 bytes (128 bits). */
-const TAG_LENGTH = 16;
+const TAG_LENGTH = 16
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -42,19 +42,19 @@ const TAG_LENGTH = 16;
  */
 export function Encrypt(data: Uint8Array, key: string): string {
   if (key.length !== 32) {
-    throw new RangeError('AES key must be exactly 32 characters (256 bits)');
+    throw new RangeError('AES key must be exactly 32 characters (256 bits)')
   }
 
-  const keyBuffer = Buffer.from(key, 'utf-8');
-  const iv = randomBytes(IV_LENGTH);
+  const keyBuffer = Buffer.from(key, 'utf-8')
+  const iv = randomBytes(IV_LENGTH)
 
-  const cipher = createCipheriv(ALGORITHM, keyBuffer, iv);
+  const cipher = createCipheriv(ALGORITHM, keyBuffer, iv)
 
-  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-  const tag = cipher.getAuthTag();
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+  const tag = cipher.getAuthTag()
 
   // Format: iv(12) || ciphertext || tag(16)
-  return Buffer.concat([iv, encrypted, tag]).toString('base64');
+  return Buffer.concat([iv, encrypted, tag]).toString('base64')
 }
 
 /**
@@ -66,23 +66,23 @@ export function Encrypt(data: Uint8Array, key: string): string {
  */
 export function Decrypt(cipherText: string, key: string): Buffer {
   if (key.length !== 32) {
-    throw new RangeError('AES key must be exactly 32 characters (256 bits)');
+    throw new RangeError('AES key must be exactly 32 characters (256 bits)')
   }
 
-  const keyBuffer = Buffer.from(key, 'utf-8');
+  const keyBuffer = Buffer.from(key, 'utf-8')
 
-  const data = Buffer.from(cipherText, 'base64');
+  const data = Buffer.from(cipherText, 'base64')
 
   if (data.length < IV_LENGTH + TAG_LENGTH) {
-    throw new Error('ciphertext too short');
+    throw new Error('ciphertext too short')
   }
 
-  const iv = data.subarray(0, IV_LENGTH);
-  const tag = data.subarray(data.length - TAG_LENGTH);
-  const encrypted = data.subarray(IV_LENGTH, data.length - TAG_LENGTH);
+  const iv = data.subarray(0, IV_LENGTH)
+  const tag = data.subarray(data.length - TAG_LENGTH)
+  const encrypted = data.subarray(IV_LENGTH, data.length - TAG_LENGTH)
 
-  const decipher = createDecipheriv(ALGORITHM, keyBuffer, iv);
-  decipher.setAuthTag(tag);
+  const decipher = createDecipheriv(ALGORITHM, keyBuffer, iv)
+  decipher.setAuthTag(tag)
 
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()])
 }

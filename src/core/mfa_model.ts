@@ -6,8 +6,8 @@
  * MFA represents a multi-factor authentication challenge record.
  */
 
-import { BaseModel } from './db_model'
 import { DateTime } from '~/tools/types/datetime'
+import { BaseModel } from './db_model'
 
 /**
  * MFA represents a multi-factor authentication record.

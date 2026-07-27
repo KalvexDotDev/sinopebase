@@ -27,7 +27,7 @@ export function jsonEach(column: string): string {
     `THEN [[${column}]] ` +
     `ELSE jsonb_build_array([[${column}]]) END` +
     `)`
-  );
+  )
 }
 
 /**
@@ -46,7 +46,7 @@ export function jsonArrayLength(column: string): string {
     `THEN jsonb_build_array() ` +
     `ELSE jsonb_build_array([[${column}]]) END) END` +
     `)`
-  );
+  )
 }
 
 /**
@@ -67,26 +67,27 @@ export function jsonExtract(column: string, path: string): string {
 
   if (!path) {
     // Root extraction: cast to text
-    return `[[${column}]]::text`;
+    return `[[${column}]]::text`
   }
 
   // Split the path into segments
-  const segments = path.split(".").filter(Boolean);
+  const segments = path.split('.').filter(Boolean)
 
   if (segments.length === 0) {
-    return `[[${column}]]::text`;
+    return `[[${column}]]::text`
   }
 
   // Build nested access: for all but the last segment use -> (returns jsonb),
   // for the last segment use ->> (returns text)
-  let expr = `[[${column}]]`;
+  let expr = `[[${column}]]`
   for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i]!;
-    const isLast = i === segments.length - 1;
+    const seg = segments[i]
+    if (seg === undefined) break
+    const isLast = i === segments.length - 1
     // Array index check (numeric segments = array indices)
-    const isArrayIndex = /^\d+$/.test(seg);
-    const key = isArrayIndex ? seg : `'${seg}'`;
-    expr = isLast ? `${expr}->>${key}` : `${expr}->${key}`;
+    const isArrayIndex = /^\d+$/.test(seg)
+    const key = isArrayIndex ? seg : `'${seg}'`
+    expr = isLast ? `${expr}->>${key}` : `${expr}->${key}`
   }
 
   // Handle non-json columns by wrapping with a CASE
@@ -94,7 +95,7 @@ export function jsonExtract(column: string, path: string): string {
     `(CASE WHEN jsonb_typeof([[${column}]]) IS NOT NULL ` +
     `THEN ${expr} ` +
     `ELSE CAST(jsonb_build_object('pb', [[${column}]])->>'pb' AS text) END)`
-  );
+  )
 }
 
 /**
@@ -106,15 +107,15 @@ export function jsonExtract(column: string, path: string): string {
  */
 export function jsonExtractObject(column: string, path: string): string {
   if (!path) {
-    return `[[${column}]]`;
+    return `[[${column}]]`
   }
 
-  const segments = path.split(".").filter(Boolean);
-  let expr = `[[${column}]]`;
+  const segments = path.split('.').filter(Boolean)
+  let expr = `[[${column}]]`
   for (const seg of segments) {
-    const isArrayIndex = /^\d+$/.test(seg);
-    expr = isArrayIndex ? `${expr}->${seg}` : `${expr}->'${seg}'`;
+    const isArrayIndex = /^\d+$/.test(seg)
+    expr = isArrayIndex ? `${expr}->${seg}` : `${expr}->'${seg}'`
   }
 
-  return expr;
+  return expr
 }

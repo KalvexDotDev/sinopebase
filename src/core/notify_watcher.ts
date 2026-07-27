@@ -7,9 +7,9 @@
  * Useful for development auto-reload when pb_data or migrations change.
  */
 
-import { watch } from 'fs'
-import { resolve } from 'path'
-import type { FSWatcher } from 'fs'
+import type { FSWatcher } from 'node:fs'
+import { watch } from 'node:fs'
+import { resolve } from 'node:path'
 
 /**
  * Watcher event types.

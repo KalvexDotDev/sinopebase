@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://www.strava.com/api/v3/athlete response.
  *
  * @example
- * 
+ *
  */
 export class StravaProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

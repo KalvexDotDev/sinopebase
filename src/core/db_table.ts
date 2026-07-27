@@ -62,7 +62,7 @@ export const ColumnTypeMap: Record<string, string> = {
  * Maps a PocketBase column type string to its PostgreSQL equivalent.
  */
 export function mapColumnType(goType: string): string {
-  return ColumnTypeMap[goType.toLowerCase()] ?? ColumnTypeMap['default']
+  return ColumnTypeMap[goType.toLowerCase()] ?? ColumnTypeMap.default
 }
 
 // ---------------------------------------------------------------------------
@@ -103,10 +103,7 @@ export interface TableInfoRow {
  * @param tableName - The table name to check.
  * @returns True if the table exists.
  */
-export async function hasTable(
-  db: IDatabase,
-  tableName: string,
-): Promise<boolean> {
+export async function hasTable(db: IDatabase, tableName: string): Promise<boolean> {
   return db.hasTable(tableName)
 }
 
@@ -117,10 +114,7 @@ export async function hasTable(
  * @param tableName - The table name.
  * @returns Array of TableInfoRow.
  */
-export async function tableColumns(
-  db: IDatabase,
-  tableName: string,
-): Promise<TableInfoRow[]> {
+export async function tableColumns(db: IDatabase, tableName: string): Promise<TableInfoRow[]> {
   if (!(await db.hasTable(tableName))) {
     return []
   }

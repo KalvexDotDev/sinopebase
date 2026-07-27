@@ -30,11 +30,11 @@
  * expressions match against.
  */
 export interface Moment {
-  minute: number;
-  hour: number;
-  day: number;
-  month: number;
-  dayOfWeek: number;
+  minute: number
+  hour: number
+  day: number
+  month: number
+  dayOfWeek: number
 }
 
 /**
@@ -45,21 +45,21 @@ export interface Moment {
  */
 export function newMoment(date: Date, timezone: string): Moment {
   // Use Intl.DateTimeFormat to obtain components in the target timezone.
-  const formatter = new Intl.DateTimeFormat("en-US", {
+  const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    minute: "numeric",
-    hour: "numeric",
+    minute: 'numeric',
+    hour: 'numeric',
     hour12: false,
-    day: "numeric",
-    month: "numeric",
-    weekday: "long",
-  });
-  const parts = formatter.formatToParts(date);
+    day: 'numeric',
+    month: 'numeric',
+    weekday: 'long',
+  })
+  const parts = formatter.formatToParts(date)
 
   const getNumeric = (type: string): number => {
-    const p = parts.find((part) => part.type === type);
-    return p ? Number.parseInt(p.value, 10) : 0;
-  };
+    const p = parts.find((part) => part.type === type)
+    return p ? Number.parseInt(p.value, 10) : 0
+  }
 
   // JS weekday → cron day-of-week (0 = Sunday).
   const weekdayMap: Record<string, number> = {
@@ -70,17 +70,17 @@ export function newMoment(date: Date, timezone: string): Moment {
     Thursday: 4,
     Friday: 5,
     Saturday: 6,
-  };
+  }
 
-  const weekdayStr = parts.find((p) => p.type === "weekday")?.value ?? "Sunday";
+  const weekdayStr = parts.find((p) => p.type === 'weekday')?.value ?? 'Sunday'
 
   return {
-    minute: getNumeric("minute"),
-    hour: getNumeric("hour"),
-    day: getNumeric("day"),
-    month: getNumeric("month"),
+    minute: getNumeric('minute'),
+    hour: getNumeric('hour'),
+    day: getNumeric('day'),
+    month: getNumeric('month'),
     dayOfWeek: weekdayMap[weekdayStr] ?? 0,
-  };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -93,32 +93,32 @@ export function newMoment(date: Date, timezone: string): Moment {
  */
 export class Schedule {
   /** Acceptable minute values (0–59). */
-  readonly minutes: ReadonlySet<number>;
+  readonly minutes: ReadonlySet<number>
   /** Acceptable hour values (0–23). */
-  readonly hours: ReadonlySet<number>;
+  readonly hours: ReadonlySet<number>
   /** Acceptable day-of-month values (1–31). */
-  readonly days: ReadonlySet<number>;
+  readonly days: ReadonlySet<number>
   /** Acceptable month values (1–12). */
-  readonly months: ReadonlySet<number>;
+  readonly months: ReadonlySet<number>
   /** Acceptable day-of-week values (0–6, 0 = Sunday). */
-  readonly daysOfWeek: ReadonlySet<number>;
+  readonly daysOfWeek: ReadonlySet<number>
   /** The original raw expression. */
-  readonly rawExpr: string;
+  readonly rawExpr: string
 
   constructor(opts: {
-    minutes: Set<number>;
-    hours: Set<number>;
-    days: Set<number>;
-    months: Set<number>;
-    daysOfWeek: Set<number>;
-    rawExpr: string;
+    minutes: Set<number>
+    hours: Set<number>
+    days: Set<number>
+    months: Set<number>
+    daysOfWeek: Set<number>
+    rawExpr: string
   }) {
-    this.minutes = opts.minutes;
-    this.hours = opts.hours;
-    this.days = opts.days;
-    this.months = opts.months;
-    this.daysOfWeek = opts.daysOfWeek;
-    this.rawExpr = opts.rawExpr;
+    this.minutes = opts.minutes
+    this.hours = opts.hours
+    this.days = opts.days
+    this.months = opts.months
+    this.daysOfWeek = opts.daysOfWeek
+    this.rawExpr = opts.rawExpr
   }
 
   /**
@@ -126,12 +126,12 @@ export class Schedule {
    * **All** fields must match (logical AND).
    */
   isDue(m: Moment): boolean {
-    if (!this.minutes.has(m.minute)) return false;
-    if (!this.hours.has(m.hour)) return false;
-    if (!this.days.has(m.day)) return false;
-    if (!this.daysOfWeek.has(m.dayOfWeek)) return false;
-    if (!this.months.has(m.month)) return false;
-    return true;
+    if (!this.minutes.has(m.minute)) return false
+    if (!this.hours.has(m.hour)) return false
+    if (!this.days.has(m.day)) return false
+    if (!this.daysOfWeek.has(m.dayOfWeek)) return false
+    if (!this.months.has(m.month)) return false
+    return true
   }
 }
 
@@ -140,14 +140,14 @@ export class Schedule {
 // ---------------------------------------------------------------------------
 
 const MACROS: Record<string, string> = {
-  "@yearly": "0 0 1 1 *",
-  "@annually": "0 0 1 1 *",
-  "@monthly": "0 0 1 * *",
-  "@weekly": "0 0 * * 0",
-  "@daily": "0 0 * * *",
-  "@midnight": "0 0 * * *",
-  "@hourly": "0 * * * *",
-};
+  '@yearly': '0 0 1 1 *',
+  '@annually': '0 0 1 1 *',
+  '@monthly': '0 0 1 * *',
+  '@weekly': '0 0 * * 0',
+  '@daily': '0 0 * * *',
+  '@midnight': '0 0 * * *',
+  '@hourly': '0 * * * *',
+}
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -168,20 +168,34 @@ const MACROS: Record<string, string> = {
  */
 export function newSchedule(cronExpr: string): Schedule {
   // Expand macros.
-  const expr = MACROS[cronExpr] ?? cronExpr;
+  const expr = MACROS[cronExpr] ?? cronExpr
 
-  const segments = expr.trim().split(/\s+/);
+  const segments = expr.trim().split(/\s+/)
   if (segments.length !== 5) {
     throw new Error(
-      "Invalid cron expression – must be a valid macro or have exactly 5 space-separated segments",
-    );
+      'Invalid cron expression – must be a valid macro or have exactly 5 space-separated segments',
+    )
   }
 
-  const minutes = parseCronSegment(segments[0]!, 0, 59);
-  const hours = parseCronSegment(segments[1]!, 0, 23);
-  const days = parseCronSegment(segments[2]!, 1, 31);
-  const months = parseCronSegment(segments[3]!, 1, 12);
-  const daysOfWeek = parseCronSegment(segments[4]!, 0, 6);
+  const segMinute = segments[0]
+  const segHour = segments[1]
+  const segDay = segments[2]
+  const segMonth = segments[3]
+  const segDayOfWeek = segments[4]
+  if (
+    segMinute === undefined ||
+    segHour === undefined ||
+    segDay === undefined ||
+    segMonth === undefined ||
+    segDayOfWeek === undefined
+  ) {
+    throw new Error('Invalid cron expression – insufficient segments')
+  }
+  const minutes = parseCronSegment(segMinute, 0, 59)
+  const hours = parseCronSegment(segHour, 0, 23)
+  const days = parseCronSegment(segDay, 1, 31)
+  const months = parseCronSegment(segMonth, 1, 12)
+  const daysOfWeek = parseCronSegment(segDayOfWeek, 0, 6)
 
   return new Schedule({
     minutes,
@@ -190,7 +204,7 @@ export function newSchedule(cronExpr: string): Schedule {
     months,
     daysOfWeek,
     rawExpr: expr,
-  });
+  })
 }
 
 /**
@@ -204,84 +218,101 @@ export function newSchedule(cronExpr: string): Schedule {
  * @returns A set of matching integer slots.
  */
 function parseCronSegment(segment: string, min: number, max: number): Set<number> {
-  const slots = new Set<number>();
-  const list = segment.split(",");
+  const slots = new Set<number>()
+  const list = segment.split(',')
 
   for (const item of list) {
-    const stepParts = item.split("/");
+    const stepParts = item.split('/')
 
     // ---- step ----
-    let step: number;
+    let step: number
     if (stepParts.length === 1) {
-      step = 1;
+      step = 1
     } else if (stepParts.length === 2) {
-      const parsedStep = Number.parseInt(stepParts[1]!, 10);
-      if (Number.isNaN(parsedStep) || parsedStep < 1 || parsedStep > max) {
-        throw new Error(
-          `Invalid segment step – must be between 1 and ${max}, got "${stepParts[1]}"`,
-        );
+      const stepVal = stepParts[1]
+      if (stepVal === undefined) {
+        throw new Error(`Invalid segment step format in "${item}"`)
       }
-      step = parsedStep;
+      const parsedStep = Number.parseInt(stepVal, 10)
+      if (Number.isNaN(parsedStep) || parsedStep < 1 || parsedStep > max) {
+        throw new Error(`Invalid segment step – must be between 1 and ${max}, got "${stepVal}"`)
+      }
+      step = parsedStep
     } else {
       throw new Error(
         `Invalid segment step format - expected "asterisk/n" or "1-30/n", got "${item}"`,
-      );
+      )
     }
 
     // ---- range ----
-    let rangeMin: number;
-    let rangeMax: number;
+    let rangeMin: number
+    let rangeMax: number
 
-    if (stepParts[0] === "*") {
-      rangeMin = min;
-      rangeMax = max;
+    const rangeBase = stepParts[0]
+    if (rangeBase === undefined) {
+      throw new Error(`Invalid segment format in "${item}"`)
+    }
+
+    if (rangeBase === '*') {
+      rangeMin = min
+      rangeMax = max
     } else {
-      const rangeParts = stepParts[0]!.split("-");
+      const rangeParts = rangeBase.split('-')
 
       if (rangeParts.length === 1) {
         if (step !== 1) {
           throw new Error(
             `Invalid segment step – step > 1 requires wildcard or range format, got "${item}"`,
-          );
+          )
         }
-        const val = Number.parseInt(rangeParts[0]!, 10);
+        const valStr = rangeParts[0]
+        if (valStr === undefined) {
+          throw new Error(`Invalid segment value in "${item}"`)
+        }
+        const val = Number.parseInt(valStr, 10)
         if (Number.isNaN(val) || val < min || val > max) {
           throw new Error(
-            `Invalid segment value – must be between ${min} and ${max}, got "${rangeParts[0]}"`,
-          );
+            `Invalid segment value – must be between ${min} and ${max}, got "${valStr}"`,
+          )
         }
-        rangeMin = val;
-        rangeMax = val;
+        rangeMin = val
+        rangeMax = val
       } else if (rangeParts.length === 2) {
-        const pMin = Number.parseInt(rangeParts[0]!, 10);
+        const pMinStr = rangeParts[0]
+        if (pMinStr === undefined) {
+          throw new Error(`Invalid segment range minimum in "${item}"`)
+        }
+        const pMin = Number.parseInt(pMinStr, 10)
         if (Number.isNaN(pMin) || pMin < min || pMin > max) {
           throw new Error(
-            `Invalid segment range minimum – must be between ${min} and ${max}, got "${rangeParts[0]}"`,
-          );
+            `Invalid segment range minimum – must be between ${min} and ${max}, got "${pMinStr}"`,
+          )
         }
-        rangeMin = pMin;
+        rangeMin = pMin
 
-        const pMax = Number.parseInt(rangeParts[1]!, 10);
+        const pMaxStr = rangeParts[1]
+        if (pMaxStr === undefined) {
+          throw new Error(`Invalid segment range maximum in "${item}"`)
+        }
+        const pMax = Number.parseInt(pMaxStr, 10)
         if (Number.isNaN(pMax) || pMax < rangeMin || pMax > max) {
           throw new Error(
-            `Invalid segment range maximum – must be between ${rangeMin} and ${max}, got "${rangeParts[1]}"`,
-          );
+            `Invalid segment range maximum – must be between ${rangeMin} and ${max}, got "${pMaxStr}"`,
+          )
         }
-        rangeMax = pMax;
+        rangeMax = pMax
       } else {
-        throw new Error(
-          `Invalid segment range format – expected 1 or 2 parts, got "${stepParts[0]}"`,
-        );
+        throw new Error(`Invalid segment range format – expected 1 or 2 parts, got "${rangeBase}"`)
       }
     }
 
     // ---- fill slots ----
     for (let i = rangeMin; i <= rangeMax; i += step) {
-      slots.add(i);
+      slots.add(i)
     }
   }
 
-  return slots;
+  return slots
 }
 
-export { MACROS };
+export { MACROS }

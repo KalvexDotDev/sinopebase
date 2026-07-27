@@ -21,10 +21,7 @@ export class Message {
   readonly name: string
   readonly data: Uint8Array
 
-  constructor(
-    name: string,
-    data: Uint8Array,
-  ) {
+  constructor(name: string, data: Uint8Array) {
     this.name = name
     this.data = data
   }
@@ -36,14 +33,14 @@ export class Message {
     return {
       name: this.name,
       data: new TextDecoder().decode(this.data),
-    };
+    }
   }
 
   /**
    * Deserializes a plain object into a Message.
    */
   static fromJSON(json: { name: string; data: string }): Message {
-    return new Message(json.name, new TextEncoder().encode(json.data));
+    return new Message(json.name, new TextEncoder().encode(json.data))
   }
 
   /**
@@ -56,14 +53,8 @@ export class Message {
    *   \n
    */
   writeSSE(eventId: string): string {
-    const decoder = new TextDecoder();
-    const dataStr = decoder.decode(this.data);
-    return [
-      `id:${eventId}`,
-      `event:${this.name}`,
-      `data:${dataStr}`,
-      "",
-      "",
-    ].join("\n");
+    const decoder = new TextDecoder()
+    const dataStr = decoder.decode(this.data)
+    return [`id:${eventId}`, `event:${this.name}`, `data:${dataStr}`, '', ''].join('\n')
   }
 }

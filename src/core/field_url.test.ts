@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'bun:test'
-import { URLField, FieldTypeURL } from '~/core/field_url.ts'
+import { describe, expect, it } from 'bun:test'
 import { CreateField } from '~/core/field.ts'
+import { FieldTypeURL, URLField } from '~/core/field_url.ts'
 
 describe('URLField', () => {
   it('has type "url"', () => {
@@ -20,8 +20,8 @@ describe('URLField', () => {
 
   it('settings schema is string with uri format', () => {
     const f = new URLField()
-    expect(f.settingsSchema['type']).toBe('string')
-    expect(f.settingsSchema['format']).toBe('uri')
+    expect(f.settingsSchema.type).toBe('string')
+    expect(f.settingsSchema.format).toBe('uri')
   })
 
   describe('validateValue', () => {

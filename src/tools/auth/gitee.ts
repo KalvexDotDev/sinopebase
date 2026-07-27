@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://gitee.com/api/v5/user response.
  *
  * @example
- * 
+ *
  */
 export class GiteeProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

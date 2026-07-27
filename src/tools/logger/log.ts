@@ -37,18 +37,18 @@ export const LogLevel = {
   Warn: 4,
   /** Error level (error events that might still allow the app to continue). */
   Error: 8,
-} as const;
+} as const
 
 /** Numeric LogLevel type. */
-export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
+export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel]
 
 /** Human-readable label for each log level. */
 const LogLevelLabel: Record<number, string> = {
-  [LogLevel.Debug]: "DEBUG",
-  [LogLevel.Info]: "INFO",
-  [LogLevel.Warn]: "WARN",
-  [LogLevel.Error]: "ERROR",
-};
+  [LogLevel.Debug]: 'DEBUG',
+  [LogLevel.Info]: 'INFO',
+  [LogLevel.Warn]: 'WARN',
+  [LogLevel.Error]: 'ERROR',
+}
 
 // --------------------------------------------------
 // Types
@@ -61,13 +61,13 @@ const LogLevelLabel: Record<number, string> = {
  */
 export interface LogEntry {
   /** Timestamp of the log event. */
-  time: Date;
+  time: Date
   /** Log severity level. */
-  level: LogLevel;
+  level: LogLevel
   /** Log message. */
-  message: string;
+  message: string
   /** Optional structured data associated with the log entry. */
-  data?: Record<string, unknown>;
+  data?: Record<string, unknown>
 }
 
 // --------------------------------------------------
@@ -87,7 +87,7 @@ export interface Logger {
    * @param message - The log message.
    * @param data    - Optional structured key-value data.
    */
-  Write(level: LogLevel, message: string, data?: Record<string, unknown>): void;
+  Write(level: LogLevel, message: string, data?: Record<string, unknown>): void
 }
 
 // --------------------------------------------------
@@ -112,20 +112,16 @@ export class ConsoleLogger implements Logger {
    * @param message - The log message.
    * @param data    - Optional structured key-value data.
    */
-  Write(
-    level: LogLevel,
-    message: string,
-    data?: Record<string, unknown>,
-  ): void {
-    const timestamp = new Date().toISOString();
-    const label = LogLevelLabel[level] ?? "UNKNOWN";
-    const dataStr = data !== undefined ? ` ${JSON.stringify(data)}` : "";
-    const line = `${timestamp} [${label}] ${message}${dataStr}`;
+  Write(level: LogLevel, message: string, data?: Record<string, unknown>): void {
+    const timestamp = new Date().toISOString()
+    const label = LogLevelLabel[level] ?? 'UNKNOWN'
+    const dataStr = data !== undefined ? ` ${JSON.stringify(data)}` : ''
+    const line = `${timestamp} [${label}] ${message}${dataStr}`
 
     if (level >= LogLevel.Warn) {
-      console.error(line);
+      console.error(line)
     } else {
-      console.log(line);
+      console.log(line)
     }
   }
 }

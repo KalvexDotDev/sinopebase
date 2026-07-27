@@ -5,13 +5,10 @@
  * Routes mirror the Supabase Storage API for SDK compatibility.
  */
 import { Elysia } from 'elysia'
-import type { IFileStore } from '../tools/filesystem/store-interface'
 import type { PostgresRequestContext } from '../core/db-postgres'
-import {
-  StorageAccessError,
-  type StorageAccessPolicy,
-} from './storage-access'
-import { signUrl, verifySignedUrl, SignedUrlError } from './signed-url'
+import type { IFileStore } from '../tools/filesystem/store-interface'
+import { SignedUrlError, signUrl, verifySignedUrl } from './signed-url'
+import { StorageAccessError, type StorageAccessPolicy } from './storage-access'
 
 interface ParsedUploadBody {
   data: ArrayBuffer
@@ -25,13 +22,20 @@ export interface StoragePluginOptions {
 }
 
 function exactArrayBuffer(buffer: Buffer): ArrayBuffer {
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  ) as ArrayBuffer
 }
 
 function isParsedUploadBody(value: unknown): value is ParsedUploadBody {
-  return typeof value === 'object' && value !== null
-    && 'data' in value && value.data instanceof ArrayBuffer
-    && 'fields' in value
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'data' in value &&
+    value.data instanceof ArrayBuffer &&
+    'fields' in value
+  )
 }
 
 async function parseUploadBody(request: Request, contentType: string): Promise<ParsedUploadBody> {
@@ -75,7 +79,7 @@ async function parseUploadBody(request: Request, contentType: string): Promise<P
 async function resolveStorageAccess(options: StoragePluginOptions, request: Request) {
   const context = options.resolveContext?.(request)
   if (!context) throw new StorageAccessError(401, '401', 'Authorization required')
-  if (options.access && await options.access.isAvailable()) {
+  if (options.access && (await options.access.isAvailable())) {
     return { context, access: options.access }
   }
   if (context.role === 'service_role') return { context, access: undefined }
@@ -89,9 +93,10 @@ async function storageOperation<T>(
   try {
     return await operation()
   } catch (error) {
-    const failure = error instanceof StorageAccessError
-      ? error
-      : new StorageAccessError(500, '500', 'Storage operation failed')
+    const failure =
+      error instanceof StorageAccessError
+        ? error
+        : new StorageAccessError(500, '500', 'Storage operation failed')
     set.status = failure.status
     return { statusCode: failure.code, error: failure.code, message: failure.message }
   }
@@ -114,80 +119,83 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
   })
 
   // POST /storage/v1/bucket — Create a bucket
-  app.post(
-    '/storage/v1/bucket',
-    async ({ body, request, set }) => {
-      const b = (body ?? {}) as Record<string, unknown>
-      const name = b['name']
-      if (!name || typeof name !== 'string') {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Bucket name is required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.post('/storage/v1/bucket', async ({ body, request, set }) => {
+    const b = (body ?? {}) as Record<string, unknown>
+    const name = b.name
+    if (!name || typeof name !== 'string') {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Bucket name is required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      return storageOperation(set, async () => {
-        const { context, access } = await resolveStorageAccess(options, request)
-        if (access) {
-          await access.createBucket(context, {
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      if (access) {
+        await access.createBucket(
+          context,
+          {
             name,
-            public: b['public'] === true,
-            fileSizeLimit: typeof b['file_size_limit'] === 'number'
-              ? b['file_size_limit']
-              : typeof b['fileSizeLimit'] === 'number' ? b['fileSizeLimit'] : null,
-            allowedMimeTypes: Array.isArray(b['allowed_mime_types'])
-              ? b['allowed_mime_types'] as string[]
-              : Array.isArray(b['allowedMimeTypes']) ? b['allowedMimeTypes'] as string[] : null,
-          }, () => store.createBucket(name))
-        } else {
-          await store.createBucket(name)
-        }
-        return { name }
-      })
-    },
-  )
+            public: b.public === true,
+            fileSizeLimit:
+              typeof b.file_size_limit === 'number'
+                ? b.file_size_limit
+                : typeof b.fileSizeLimit === 'number'
+                  ? b.fileSizeLimit
+                  : null,
+            allowedMimeTypes: Array.isArray(b.allowed_mime_types)
+              ? (b.allowed_mime_types as string[])
+              : Array.isArray(b.allowedMimeTypes)
+                ? (b.allowedMimeTypes as string[])
+                : null,
+          },
+          () => store.createBucket(name),
+        )
+      } else {
+        await store.createBucket(name)
+      }
+      return { name }
+    })
+  })
 
   // ── Object operations ──
 
   // POST /storage/v1/object/list/:bucket — List objects in a bucket
-  app.post(
-    '/storage/v1/object/list/:bucket',
-    async ({ params, body, request, set }) => {
-      const bucket = params['bucket']
-      if (!bucket) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Bucket is required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.post('/storage/v1/object/list/:bucket', async ({ params, body, request, set }) => {
+    const bucket = params.bucket
+    if (!bucket) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Bucket is required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      const b = (body ?? {}) as Record<string, unknown>
-      const prefix = b['prefix'] as string | undefined
-      return storageOperation(set, async () => {
-        const { context, access } = await resolveStorageAccess(options, request)
-        if (access) return access.listObjects(context, bucket, prefix)
-        await store.ensureBucket(bucket)
-        return store.list(bucket, prefix)
-      })
-    },
-  )
+    }
+    const b = (body ?? {}) as Record<string, unknown>
+    const prefix = b.prefix as string | undefined
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      if (access) return access.listObjects(context, bucket, prefix)
+      await store.ensureBucket(bucket)
+      return store.list(bucket, prefix)
+    })
+  })
 
   // POST /storage/v1/object/:bucket/* — Upload a file
   // Supports the raw and multipart bodies emitted by storage-js.
   app.post(
     '/storage/v1/object/:bucket/*',
     async ({ body, params, request, set }) => {
-      const bucket = params['bucket']
+      const bucket = params.bucket
       const path = params['*']
       if (!bucket || !path) {
         set.status = 400
@@ -215,9 +223,10 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       } else if (body instanceof ArrayBuffer) {
         data = body
       } else if (contentType.startsWith('multipart/form-data')) {
-        const values = body instanceof FormData
-          ? [...body.values()]
-          : Object.values((body ?? {}) as Record<string, unknown>)
+        const values =
+          body instanceof FormData
+            ? [...body.values()]
+            : Object.values((body ?? {}) as Record<string, unknown>)
         const file = values.find((value) => value instanceof Blob)
         if (file instanceof Blob) data = await file.arrayBuffer()
       } else if (body instanceof Blob) {
@@ -244,17 +253,22 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       return storageOperation(set, async () => {
         const { context, access } = await resolveStorageAccess(options, request)
         if (access) {
-          await access.upload(context, {
-            bucket,
-            path,
-            data,
-            contentType: uploadContentType,
-            cacheControl: fields['cacheControl'] ?? request.headers.get('cache-control') ?? undefined,
-            upsert: fields['upsert'] === 'true' || request.headers.get('x-upsert') === 'true',
-          }, async () => {
-            await store.ensureBucket(bucket)
-            return store.save(bucket, path, data)
-          })
+          await access.upload(
+            context,
+            {
+              bucket,
+              path,
+              data,
+              contentType: uploadContentType,
+              cacheControl:
+                fields.cacheControl ?? request.headers.get('cache-control') ?? undefined,
+              upsert: fields.upsert === 'true' || request.headers.get('x-upsert') === 'true',
+            },
+            async () => {
+              await store.ensureBucket(bucket)
+              return store.save(bucket, path, data)
+            },
+          )
         } else {
           await store.ensureBucket(bucket)
           await store.save(bucket, path, data)
@@ -270,187 +284,177 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
   )
 
   // GET /storage/v1/object/:bucket/* — Download a file
-  app.get(
-    '/storage/v1/object/:bucket/*',
-    async ({ params, request, set }) => {
-      const bucket = params['bucket']
-      const path = params['*']
-      if (!bucket || !path) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Bucket and path are required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.get('/storage/v1/object/:bucket/*', async ({ params, request, set }) => {
+    const bucket = params.bucket
+    const path = params['*']
+    if (!bucket || !path) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Bucket and path are required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      return storageOperation(set, async () => {
-        const { context, access } = await resolveStorageAccess(options, request)
-        const buffer = access
-          ? await access.download(context, bucket, path, () => store.read(bucket, path))
-          : await store.read(bucket, path)
-        return new Response(buffer, {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(buffer.length),
-          },
-        })
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      const buffer = access
+        ? await access.download(context, bucket, path, () => store.read(bucket, path))
+        : await store.read(bucket, path)
+      return new Response(buffer, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(buffer.length),
+        },
       })
-    },
-  )
+    })
+  })
 
   // DELETE /storage/v1/object/:bucket — Delete objects
   // Read raw body because Elysia may skip parsing for DELETE requests
-  app.delete(
-    '/storage/v1/object/:bucket',
-    async ({ request, params, set }) => {
-      const bucket = params['bucket']
-      if (!bucket) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Bucket is required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.delete('/storage/v1/object/:bucket', async ({ request, params, set }) => {
+    const bucket = params.bucket
+    if (!bucket) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Bucket is required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      const raw = await request.text()
-      const b = JSON.parse(raw || '{}') as Record<string, unknown>
-      // Supabase storage-js calls this field `prefixes`. Keep `paths` as an
-      // alias for Sinopebase's bundled SDK and older clients.
-      const paths = b['prefixes'] ?? b['paths']
-      if (!Array.isArray(paths)) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'paths array is required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+    }
+    const raw = await request.text()
+    const b = JSON.parse(raw || '{}') as Record<string, unknown>
+    // Supabase storage-js calls this field `prefixes`. Keep `paths` as an
+    // alias for Sinopebase's bundled SDK and older clients.
+    const paths = b.prefixes ?? b.paths
+    if (!Array.isArray(paths)) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'paths array is required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      return storageOperation(set, async () => {
-        const { context, access } = await resolveStorageAccess(options, request)
-        const deleted = access
-          ? await access.remove(context, bucket, paths as string[], (allowed) => store.delete(bucket, allowed))
-          : await store.delete(bucket, paths as string[])
-        return deleted.map((name: string) => ({ name, bucket_id: bucket }))
-      })
-    },
-  )
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      const deleted = access
+        ? await access.remove(context, bucket, paths as string[], (allowed) =>
+            store.delete(bucket, allowed),
+          )
+        : await store.delete(bucket, paths as string[])
+      return deleted.map((name: string) => ({ name, bucket_id: bucket }))
+    })
+  })
 
   // GET /storage/v1/object/public/:bucket/* — Public URL redirect
-  app.get(
-    '/storage/v1/object/public/:bucket/*',
-    async ({ params, set }) => {
-      const bucket = params['bucket']
-      const path = params['*']
-      if (!bucket || !path) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Bucket and path are required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.get('/storage/v1/object/public/:bucket/*', async ({ params, set }) => {
+    const bucket = params.bucket
+    const path = params['*']
+    if (!bucket || !path) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Bucket and path are required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      return storageOperation(set, async () => {
-        if (!options.access || !(await options.access.isAvailable())) {
-          throw new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')
-        }
-        const buffer = await options.access.downloadPublic(bucket, path, () => store.read(bucket, path))
-        return new Response(buffer, {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(buffer.length),
-          },
-        })
+    }
+    return storageOperation(set, async () => {
+      if (!options.access || !(await options.access.isAvailable())) {
+        throw new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')
+      }
+      const buffer = await options.access.downloadPublic(bucket, path, () =>
+        store.read(bucket, path),
+      )
+      return new Response(buffer, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(buffer.length),
+        },
       })
-    },
-  )
+    })
+  })
 
   // POST /storage/v1/object/sign/:bucket/* — Create HMAC-signed URL
-  app.post(
-    '/storage/v1/object/sign/:bucket/*',
-    async ({ params, body, request, set }) => {
-      const bucket = params['bucket']
-      const path = params['*']
-      if (!bucket || !path) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Bucket and path are required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.post('/storage/v1/object/sign/:bucket/*', async ({ params, body, request, set }) => {
+    const bucket = params.bucket
+    const path = params['*']
+    if (!bucket || !path) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Bucket and path are required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      const b = (body ?? {}) as Record<string, unknown>
-      const rawExpiresIn = b['expiresIn']
-      return storageOperation(set, async () => {
-        const { context, access } = await resolveStorageAccess(options, request)
-        if (access) await access.authorizeSignedUrl(context, bucket, path)
-        const expiresInSec = typeof rawExpiresIn === 'number'
+    }
+    const b = (body ?? {}) as Record<string, unknown>
+    const rawExpiresIn = b.expiresIn
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      if (access) await access.authorizeSignedUrl(context, bucket, path)
+      const expiresInSec =
+        typeof rawExpiresIn === 'number'
           ? rawExpiresIn
           : typeof rawExpiresIn === 'string'
             ? parseInt(rawExpiresIn, 10) || 3600
             : 3600
-        const token = signUrl(bucket, path, expiresInSec)
-        const signedURL = `/storage/v1/object/signed/${token}`
-        return { signedURL }
-      })
-    },
-  )
+      const token = signUrl(bucket, path, expiresInSec)
+      const signedURL = `/storage/v1/object/signed/${token}`
+      return { signedURL }
+    })
+  })
 
   // GET /storage/v1/object/signed/:token — Verify HMAC token and stream file
-  app.get(
-    '/storage/v1/object/signed/:token',
-    async ({ params, set }) => {
-      const token = params['token']
-      if (!token) {
-        set.status = 400
-        return {
-          data: null,
-          error: {
-            message: 'Token is required',
-            details: '',
-            hint: '',
-            code: '400',
-          },
-        }
+  app.get('/storage/v1/object/signed/:token', async ({ params, set }) => {
+    const token = params.token
+    if (!token) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Token is required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
       }
-      return storageOperation(set, async () => {
-        let bucket: string
-        let path: string
-        try {
-          ({ bucket, path } = verifySignedUrl(token))
-        } catch (err) {
-          const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
-          throw new StorageAccessError(403, '403', message)
-        }
-        const buffer = await store.read(bucket, path)
-        return new Response(buffer, {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(buffer.length),
-          },
-        })
+    }
+    return storageOperation(set, async () => {
+      let bucket: string
+      let path: string
+      try {
+        ;({ bucket, path } = verifySignedUrl(token))
+      } catch (err) {
+        const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
+        throw new StorageAccessError(403, '403', message)
+      }
+      const buffer = await store.read(bucket, path)
+      return new Response(buffer, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(buffer.length),
+        },
       })
-    },
-  )
+    })
+  })
 
   return app
 }

@@ -57,10 +57,10 @@ export class GeoPoint {
   ) {
     this.lon = lon
     this.lat = lat
-    if (!isFinite(lon) || Math.abs(lon) > 180) {
+    if (!Number.isFinite(lon) || Math.abs(lon) > 180) {
       throw new RangeError(`[GeoPoint] invalid longitude: ${lon}`)
     }
-    if (!isFinite(lat) || Math.abs(lat) > 90) {
+    if (!Number.isFinite(lat) || Math.abs(lat) > 90) {
       throw new RangeError(`[GeoPoint] invalid latitude: ${lat}`)
     }
   }
@@ -154,17 +154,15 @@ export class GeoPoint {
 
     // Array — reject explicitly to avoid [lng, lat] confusion
     if (Array.isArray(value)) {
-      throw new Error(
-        '[GeoPoint] array format is not accepted; use { lon, lat } object',
-      )
+      throw new Error('[GeoPoint] array format is not accepted; use { lon, lat } object')
     }
 
     // Plain object with lon/lat properties
     if (typeof value === 'object') {
       const obj = value as Record<string, unknown>
-      if (typeof obj['lon'] === 'number' && typeof obj['lat'] === 'number') {
-        this.lon = obj['lon']
-        this.lat = obj['lat']
+      if (typeof obj.lon === 'number' && typeof obj.lat === 'number') {
+        this.lon = obj.lon
+        this.lat = obj.lat
         this.validate()
         return true
       }
@@ -192,10 +190,10 @@ export class GeoPoint {
    * @throws {RangeError} if coordinates are out of range.
    */
   private validate(): void {
-    if (!isFinite(this.lon) || Math.abs(this.lon) > 180) {
+    if (!Number.isFinite(this.lon) || Math.abs(this.lon) > 180) {
       throw new RangeError(`[GeoPoint] invalid longitude: ${this.lon}`)
     }
-    if (!isFinite(this.lat) || Math.abs(this.lat) > 90) {
+    if (!Number.isFinite(this.lat) || Math.abs(this.lat) > 90) {
       throw new RangeError(`[GeoPoint] invalid latitude: ${this.lat}`)
     }
   }

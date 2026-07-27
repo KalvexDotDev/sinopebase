@@ -2,8 +2,8 @@
 // DropFunctions — Auth & rate-limiting middleware
 // ---------------------------------------------------------------------------
 
-import type { FunctionAuth } from './types'
 import { lookupSessionByToken } from '~/tools/auth-better'
+import type { FunctionAuth } from './types'
 
 /**
  * Extract and validate a Bearer token via direct DB lookup.
@@ -15,7 +15,7 @@ import { lookupSessionByToken } from '~/tools/auth-better'
  * Returns the auth context or null if the token is invalid/missing.
  */
 export async function validateFunctionAuth(
-  auth: any,
+  auth: unknown,
   token: string | null,
 ): Promise<FunctionAuth | null> {
   if (!token) return null
@@ -94,11 +94,16 @@ export function parseWindow(window: string): number {
   const value = Number(match[1])
   const unit = match[2]
   switch (unit) {
-    case 's': return value * 1000
-    case 'm': return value * 60_000
-    case 'h': return value * 3_600_000
-    case 'd': return value * 86_400_000
-    default: return 60_000
+    case 's':
+      return value * 1000
+    case 'm':
+      return value * 60_000
+    case 'h':
+      return value * 3_600_000
+    case 'd':
+      return value * 86_400_000
+    default:
+      return 60_000
   }
 }
 

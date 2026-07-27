@@ -8,12 +8,12 @@
  * - Timing-safe comparison via source inspection
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { createHmac } from 'node:crypto'
 import { Elysia } from 'elysia'
-import { signUrl, verifySignedUrl, SignedUrlError } from '~/apis/signed-url'
 import { createStoragePlugin } from '~/apis/file'
-import type { IFileStore, Bucket, FileObject } from '~/tools/filesystem/store-interface'
+import { SignedUrlError, signUrl, verifySignedUrl } from '~/apis/signed-url'
+import type { Bucket, FileObject, IFileStore } from '~/tools/filesystem/store-interface'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,7 +22,7 @@ import type { IFileStore, Bucket, FileObject } from '~/tools/filesystem/store-in
 const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 
 function getTestSecret(): string {
-  return process.env['JWT_SECRET'] ?? JWT_DEV_FALLBACK
+  return process.env.JWT_SECRET ?? JWT_DEV_FALLBACK
 }
 
 function base64url(buf: Buffer): string {
@@ -59,20 +59,30 @@ class TestFileStore implements IFileStore {
     return [...this.files.keys()]
       .filter((k) => k.startsWith(`${bucket}/${prefix}`))
       .map((k) => ({
-        name: k.slice(bucket.length + 1), id: k, updated_at: null,
-        created_at: null, last_accessed_at: null, metadata: null,
+        name: k.slice(bucket.length + 1),
+        id: k,
+        updated_at: null,
+        created_at: null,
+        last_accessed_at: null,
+        metadata: null,
       }))
   }
-  async listBuckets(): Promise<Bucket[]> { return [] }
-  async createBucket(name: string): Promise<string> { return name }
+  async listBuckets(): Promise<Bucket[]> {
+    return []
+  }
+  async createBucket(name: string): Promise<string> {
+    return name
+  }
   async ensureBucket(_name: string): Promise<void> {}
 }
 
 function storageApp(store = new TestFileStore()) {
   return {
-    app: new Elysia().use(createStoragePlugin(store, {
-      resolveContext: () => ({ role: 'service_role' }),
-    })),
+    app: new Elysia().use(
+      createStoragePlugin(store, {
+        resolveContext: () => ({ role: 'service_role' }),
+      }),
+    ),
     store,
   }
 }
@@ -105,7 +115,7 @@ describe('signUrl / verifySignedUrl — pure functions', () => {
   it('rejects a token with tampered signature', () => {
     const token = signUrl('b', 'f', 3600)
     // Flip the last character of the signature portion
-    const dot = token.lastIndexOf('.')
+    const _dot = token.lastIndexOf('.')
     const tampered = token.slice(0, -1) + (token[token.length - 1] === 'a' ? 'b' : 'a')
     expect(() => verifySignedUrl(tampered)).toThrow(SignedUrlError)
     expect(() => verifySignedUrl(tampered)).toThrow('Invalid signature')
@@ -134,21 +144,30 @@ describe('signUrl / verifySignedUrl — pure functions', () => {
 
   it('rejects a token with non-JSON payload', () => {
     const payloadB64 = base64url(Buffer.from('this-is-not-json', 'utf-8'))
-    const sig = base64url(createHmac('sha256', getTestSecret()).update(payloadB64, 'utf-8').digest())
+    const sig = base64url(
+      createHmac('sha256', getTestSecret()).update(payloadB64, 'utf-8').digest(),
+    )
     expect(() => verifySignedUrl(`${payloadB64}.${sig}`)).toThrow(SignedUrlError)
     expect(() => verifySignedUrl(`${payloadB64}.${sig}`)).toThrow('Malformed payload')
   })
 
   it('rejects a token with payload missing required fields', () => {
     const payloadB64 = base64url(Buffer.from(JSON.stringify({ foo: 'bar' }), 'utf-8'))
-    const sig = base64url(createHmac('sha256', getTestSecret()).update(payloadB64, 'utf-8').digest())
+    const sig = base64url(
+      createHmac('sha256', getTestSecret()).update(payloadB64, 'utf-8').digest(),
+    )
     expect(() => verifySignedUrl(`${payloadB64}.${sig}`)).toThrow(SignedUrlError)
   })
 
   it('rejects a token with wrong secret (signature mismatch)', () => {
     // Craft with one secret, verify uses the global JWT_SECRET — only works
     // in tests where they are the same. Instead, craft with a different key.
-    const payloadB64 = base64url(Buffer.from(JSON.stringify({ bucket: 'b', path: 'f', exp: Math.floor(Date.now() / 1000) + 3600 }), 'utf-8'))
+    const payloadB64 = base64url(
+      Buffer.from(
+        JSON.stringify({ bucket: 'b', path: 'f', exp: Math.floor(Date.now() / 1000) + 3600 }),
+        'utf-8',
+      ),
+    )
     const wrongSecret = 'this-is-a-completely-different-secret-key!!'
     const sig = base64url(createHmac('sha256', wrongSecret).update(payloadB64, 'utf-8').digest())
     const token = `${payloadB64}.${sig}`
@@ -164,19 +183,18 @@ describe('signUrl / verifySignedUrl — pure functions', () => {
 describe('POST /storage/v1/object/sign/:bucket/* — signed URL creation', () => {
   it('returns an HMAC-signed URL path', async () => {
     const { app } = storageApp()
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/sign/evidence/tenant/report.pdf',
-      {
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/sign/evidence/tenant/report.pdf', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ expiresIn: 7200 }),
-      },
-    ))
+      }),
+    )
 
     expect(response.status).toBe(200)
-    const body = await response.json() as Record<string, unknown>
+    const body = (await response.json()) as Record<string, unknown>
     expect(body).toHaveProperty('signedURL')
-    const signedURL = body['signedURL'] as string
+    const signedURL = body.signedURL as string
     // Must point to the /signed/ endpoint, not a plain path
     expect(signedURL).toMatch(/^\/storage\/v1\/object\/signed\//)
     // The token portion should contain a dot (payload.separator.signature)
@@ -186,17 +204,16 @@ describe('POST /storage/v1/object/sign/:bucket/* — signed URL creation', () =>
 
   it('defaults to 1 hour when expiresIn is omitted', async () => {
     const { app } = storageApp()
-    const response = await app.handle(new Request(
-      'http://localhost/storage/v1/object/sign/evidence/doc.pdf',
-      {
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/sign/evidence/doc.pdf', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
-      },
-    ))
+      }),
+    )
 
     expect(response.status).toBe(200)
-    const body = await response.json() as Record<string, unknown>
+    const body = (await response.json()) as Record<string, unknown>
     expect(body).toHaveProperty('signedURL')
   })
 })
@@ -207,9 +224,9 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
     store.files.set('evidence/report.pdf', Buffer.from('signed-download-content'))
 
     const token = signUrl('evidence', 'report.pdf', 3600)
-    const response = await app.handle(new Request(
-      `http://localhost/storage/v1/object/signed/${token}`,
-    ))
+    const response = await app.handle(
+      new Request(`http://localhost/storage/v1/object/signed/${token}`),
+    )
 
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('signed-download-content')
@@ -221,13 +238,13 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
 
     const past = Math.floor(Date.now() / 1000) - 60
     const token = craftToken('evidence', 'report.pdf', past)
-    const response = await app.handle(new Request(
-      `http://localhost/storage/v1/object/signed/${token}`,
-    ))
+    const response = await app.handle(
+      new Request(`http://localhost/storage/v1/object/signed/${token}`),
+    )
 
     expect(response.status).toBe(403)
-    const body = await response.json() as Record<string, unknown>
-    expect(body['message'] as string).toMatch(/expired/i)
+    const body = (await response.json()) as Record<string, unknown>
+    expect(body.message as string).toMatch(/expired/i)
   })
 
   it('returns 403 for a tampered signature', async () => {
@@ -236,9 +253,9 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
 
     const token = signUrl('evidence', 'report.pdf', 3600)
     const tampered = token.slice(0, -1) + (token[token.length - 1] === 'a' ? 'b' : 'a')
-    const response = await app.handle(new Request(
-      `http://localhost/storage/v1/object/signed/${tampered}`,
-    ))
+    const response = await app.handle(
+      new Request(`http://localhost/storage/v1/object/signed/${tampered}`),
+    )
 
     expect(response.status).toBe(403)
   })
@@ -253,9 +270,9 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
     const sigPart = token.slice(dot + 1)
     const tamperedPayload = (payloadPart[0] === 'a' ? 'b' : 'a') + payloadPart.slice(1)
     const tampered = `${tamperedPayload}.${sigPart}`
-    const response = await app.handle(new Request(
-      `http://localhost/storage/v1/object/signed/${tampered}`,
-    ))
+    const response = await app.handle(
+      new Request(`http://localhost/storage/v1/object/signed/${tampered}`),
+    )
 
     expect(response.status).toBe(403)
   })
@@ -263,9 +280,9 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
   it('returns 403 when the file does not exist (valid token, missing file)', async () => {
     const { app } = storageApp()
     const token = signUrl('evidence', 'nonexistent.pdf', 3600)
-    const response = await app.handle(new Request(
-      `http://localhost/storage/v1/object/signed/${token}`,
-    ))
+    const response = await app.handle(
+      new Request(`http://localhost/storage/v1/object/signed/${token}`),
+    )
 
     expect(response.status).toBe(500) // storageOperation wraps non-StorageAccessError as 500
   })
@@ -280,9 +297,7 @@ describe('timing-safe comparison', () => {
     // Verify by inspecting the source — the implementation must use
     // timingSafeEqual. The structural check ensures we don't regress
     // to a non-constant-time comparison.
-    const source = await Bun.file(
-      new URL('../../src/apis/signed-url.ts', import.meta.url),
-    ).text()
+    const source = await Bun.file(new URL('../../src/apis/signed-url.ts', import.meta.url)).text()
     expect(source).toContain('timingSafeEqual')
   })
 })

@@ -18,7 +18,13 @@ export interface TestHazard {
 }
 
 const IGNORED_DIRECTORIES = new Set([
-  '.git', '.claude', '.memento-staging', 'dist', 'node_modules', 'pb_data', 'tests/harness',
+  '.git',
+  '.claude',
+  '.memento-staging',
+  'dist',
+  'node_modules',
+  'pb_data',
+  'tests/harness',
 ])
 
 function normalizePath(path: string): string {
@@ -32,7 +38,7 @@ async function sourceFiles(root: string, directory = root): Promise<string[]> {
     const relativePath = normalizePath(relative(root, absolute))
     if (entry.isDirectory()) {
       if (!IGNORED_DIRECTORIES.has(relativePath) && !IGNORED_DIRECTORIES.has(entry.name)) {
-        files.push(...await sourceFiles(root, absolute))
+        files.push(...(await sourceFiles(root, absolute)))
       }
     } else if (entry.isFile() && entry.name.endsWith('.ts')) {
       files.push(absolute)
@@ -69,7 +75,10 @@ function testHazards(file: string, source: string): TestHazard[] {
       }
       if (ambient.length > 0) add('ambient-infrastructure', ambient.join('; '))
     }
-    if (file.startsWith('tests/') && /SINOPEBASE_(?:ANON|SERVICE_ROLE)_KEY[^?]*\?\?\s*['"]test-/.test(line)) {
+    if (
+      file.startsWith('tests/') &&
+      /SINOPEBASE_(?:ANON|SERVICE_ROLE)_KEY[^?]*\?\?\s*['"]test-/.test(line)
+    ) {
       add('credential-fallback', 'test credential silently falls back to a hard-coded key')
     }
     if (isTest && /TEST_FUNCTIONS_DIR\s*=\s*resolve/.test(line)) {
@@ -84,7 +93,10 @@ function testHazards(file: string, source: string): TestHazard[] {
     if (isTest && /:\/\/127\.0\.0\.1:8090/.test(line)) {
       add('fixed-server-port', 'hardcoded port 8090 in test URL fallback')
     }
-    if (file === 'src/core/app.ts' && /falling back to in-memory|new MemoryDatabase(?:Adapter)?\(|new LocalFileStore\(/.test(line)) {
+    if (
+      file === 'src/core/app.ts' &&
+      /falling back to in-memory|new MemoryDatabase(?:Adapter)?\(|new LocalFileStore\(/.test(line)
+    ) {
       add('runtime-fallback', 'runtime silently substitutes non-production infrastructure')
     }
   }
@@ -98,9 +110,9 @@ export async function scanTestHazards(root: string): Promise<TestHazard[]> {
     const file = normalizePath(relative(root, absolute))
     hazards.push(...testHazards(file, await readFile(absolute, 'utf8')))
   }
-  return hazards.sort((a, b) => (
-    a.file.localeCompare(b.file) || a.line - b.line || a.kind.localeCompare(b.kind)
-  ))
+  return hazards.sort(
+    (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.kind.localeCompare(b.kind),
+  )
 }
 
 export function hazardKey(hazard: Pick<TestHazard, 'kind' | 'file' | 'line'>): string {

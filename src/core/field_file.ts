@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId, maxSafeJSONInt } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { maxSafeJSONInt, RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 import { ToUniqueStringSlice } from '~/tools/list/list.ts'
 
 export const FieldTypeFile = 'file'
@@ -139,7 +139,13 @@ export class FileField implements Field {
     if (this.thumbs.length > 0) {
       const thumbRegex = /^\d+x\d+[tbf]?$/
       for (const thumb of this.thumbs) {
-        if (!thumbRegex.test(thumb) || thumb === '0x0' || thumb === '0x0t' || thumb === '0x0b' || thumb === '0x0f') {
+        if (
+          !thumbRegex.test(thumb) ||
+          thumb === '0x0' ||
+          thumb === '0x0t' ||
+          thumb === '0x0b' ||
+          thumb === '0x0f'
+        ) {
           errors.push(`thumbs: invalid thumb format "${thumb}"`)
         }
       }

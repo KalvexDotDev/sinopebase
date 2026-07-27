@@ -7,14 +7,14 @@
  */
 
 import { Elysia } from 'elysia'
-import type { IDatabase } from '~/core/db-interface'
 import { Collection } from '~/core/collection_model'
+import type { IDatabase } from '~/core/db-interface'
 import { Record as RecordModel } from '~/core/record_model'
 import {
   checkRecordAccess,
   enrichRecord,
-  parsePagination,
   parseExpands,
+  parsePagination,
   type RequestAuthInfo,
 } from './record_helpers'
 
@@ -22,42 +22,51 @@ import {
 // Internal helpers (handle both IDatabase and MemoryDatabase formats)
 // ---------------------------------------------------------------------------
 
-async function selectRows(db: IDatabase, table: string, options: any = {}): Promise<Record<string, unknown>[]> {
+import type { SelectOptions } from '~/core/db-interface'
+import { selectRows as unwrapRows } from './db-helpers'
+
+function firstRow<T>(rows: T[]): T | null {
+  return rows[0] ?? null
+}
+
+async function selectRows(
+  db: IDatabase,
+  table: string,
+  options: SelectOptions = {},
+): Promise<Record<string, unknown>[]> {
   try {
     const result = await db.select(table, options)
-    if (Array.isArray(result)) return result
-    if (result && typeof result === 'object' && 'rows' in result) return (result as any).rows
-    return []
+    return unwrapRows(result)
   } catch {
     return []
   }
 }
 
-async function findCollectionByIdOrName(db: IDatabase, idOrName: string): Promise<Collection | null> {
-  // Try by id first
+async function findCollectionByIdOrName(
+  db: IDatabase,
+  idOrName: string,
+): Promise<Collection | null> {
   const rows = await selectRows(db, '_collections', {
     filters: [{ column: 'id', operator: 'eq', value: idOrName }],
     limit: 1,
   })
-
-  if (rows.length > 0) {
+  const first = firstRow(rows)
+  if (first) {
     const collection = new Collection()
-    collection.loadFromDb(rows[0]!)
+    collection.loadFromDb(first)
     return collection
   }
 
-  // Try by name (case-insensitive)
   const nameRows = await selectRows(db, '_collections', {
     filters: [{ column: 'name', operator: 'ilike', value: idOrName }],
     limit: 1,
   })
-
-  if (nameRows.length > 0) {
+  const nameFirst = firstRow(nameRows)
+  if (nameFirst) {
     const collection = new Collection()
-    collection.loadFromDb(nameRows[0]!)
+    collection.loadFromDb(nameFirst)
     return collection
   }
-
   return null
 }
 
@@ -70,14 +79,11 @@ async function findRecord(
     filters: [{ column: 'id', operator: 'eq', value: recordId }],
     limit: 1,
   })
-
-  if (rows.length === 0) return null
-
+  const first = firstRow(rows)
+  if (!first) return null
   const record = new RecordModel(collection)
-  record.load(rows[0]!)
-  if (rows[0]!['id']) {
-    record.id = String(rows[0]!['id'])
-  }
+  record.load(first)
+  if (first.id) record.id = String(first.id)
   return record
 }
 
@@ -86,11 +92,22 @@ async function listAllRecords(db: IDatabase, collection: Collection): Promise<Re
   return rows.map((row) => {
     const record = new RecordModel(collection)
     record.load(row)
-    if (row.id) {
-      record.id = String(row.id)
-    }
+    if (row.id) record.id = String(row.id)
     return record
   })
+}
+
+interface MemoryAdapterFallback {
+  insert(table: string, records: Record<string, unknown>[]): Promise<unknown>
+  update(
+    table: string,
+    filters: { column: string; operator: string; value: unknown }[],
+    data: Record<string, unknown>,
+  ): Promise<unknown>
+  delete(
+    table: string,
+    filters: { column: string; operator: string; value: unknown }[],
+  ): Promise<unknown>
 }
 
 async function insertRecord(
@@ -101,8 +118,7 @@ async function insertRecord(
   try {
     await db.insert(collection.name, serialized)
   } catch {
-    // MemoryDatabase insert takes array
-    await (db as any).insert(collection.name, [serialized])
+    await (db as MemoryAdapterFallback).insert(collection.name, [serialized])
   }
 }
 
@@ -114,9 +130,17 @@ async function updateRecord(
 ): Promise<void> {
   serialized.id = recordId
   try {
-    await db.update(collection.name, [{ column: 'id', operator: 'eq', value: recordId }], serialized)
+    await db.update(
+      collection.name,
+      [{ column: 'id', operator: 'eq', value: recordId }],
+      serialized,
+    )
   } catch {
-    ;(db as any).update(collection.name, [{ column: 'id', operator: 'eq', value: recordId }], serialized)
+    ;(db as MemoryAdapterFallback).update(
+      collection.name,
+      [{ column: 'id', operator: 'eq', value: recordId }],
+      serialized,
+    )
   }
 }
 
@@ -128,7 +152,9 @@ async function deleteRecord(
   try {
     await db.delete(collection.name, [{ column: 'id', operator: 'eq', value: recordId }])
   } catch {
-    ;(db as any).delete(collection.name, [{ column: 'id', operator: 'eq', value: recordId }])
+    ;(db as MemoryAdapterFallback).delete(collection.name, [
+      { column: 'id', operator: 'eq', value: recordId },
+    ])
   }
 }
 
@@ -157,7 +183,12 @@ export function createRecordCrudPlugin(
 
     const authInfo = await authResolver()
 
-    const hasAccess = await checkRecordAccess(db, null as unknown as RecordModel, collection.listRule, authInfo)
+    const hasAccess = await checkRecordAccess(
+      db,
+      null as unknown as RecordModel,
+      collection.listRule,
+      authInfo,
+    )
     if (!hasAccess) {
       set.status = 403
       return { code: 403, message: 'You do not have permission to list records.' }
@@ -207,7 +238,12 @@ export function createRecordCrudPlugin(
 
     const authInfo = await authResolver()
 
-    const hasAccess = await checkRecordAccess(db, null as unknown as RecordModel, collection.createRule, authInfo)
+    const hasAccess = await checkRecordAccess(
+      db,
+      null as unknown as RecordModel,
+      collection.createRule,
+      authInfo,
+    )
     if (!hasAccess) {
       set.status = 403
       return { code: 403, message: 'You do not have permission to create records.' }
@@ -224,7 +260,7 @@ export function createRecordCrudPlugin(
       }
 
       const serialized = record.dbExport()
-      serialized['id'] = record.id
+      serialized.id = record.id
 
       await insertRecord(db, collection, serialized)
 

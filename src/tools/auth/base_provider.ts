@@ -5,7 +5,7 @@
  * Layer 1 -- depends on auth.ts for the Provider interface.
  */
 
-import type { Provider, AuthUser, HttpClient } from '~/tools/auth/auth.ts'
+import type { AuthUser, HttpClient, Provider } from '~/tools/auth/auth.ts'
 
 // ---------------------------------------------------------------------------
 // TokenResponse
@@ -122,10 +122,7 @@ export class BaseProvider implements Provider {
 
     if (opts?.CodeChallenge) {
       url.searchParams.set('code_challenge', opts.CodeChallenge)
-      url.searchParams.set(
-        'code_challenge_method',
-        opts.CodeChallengeMethod ?? 'S256',
-      )
+      url.searchParams.set('code_challenge_method', opts.CodeChallengeMethod ?? 'S256')
     }
 
     return url.toString()
@@ -137,10 +134,7 @@ export class BaseProvider implements Provider {
    * @param code          The authorization code from the provider.
    * @param codeVerifier  PKCE code verifier (if PKCE was used).
    */
-  async ExchangeCode(
-    code: string,
-    codeVerifier?: string,
-  ): Promise<TokenResponse> {
+  async ExchangeCode(code: string, codeVerifier?: string): Promise<TokenResponse> {
     const body = new URLSearchParams()
     body.set('grant_type', 'authorization_code')
     body.set('code', code)
@@ -160,17 +154,15 @@ export class BaseProvider implements Provider {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(
-        `Token exchange failed (${response.status}): ${errorText}`,
-      )
+      throw new Error(`Token exchange failed (${response.status}): ${errorText}`)
     }
 
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data['access_token'] as string) ?? '',
-      RefreshToken: (data['refresh_token'] as string) ?? '',
-      ExpiresIn: (data['expires_in'] as number) ?? 0,
+      AccessToken: (data.access_token as string) ?? '',
+      RefreshToken: (data.refresh_token as string) ?? '',
+      ExpiresIn: (data.expires_in as number) ?? 0,
       Raw: data,
     }
   }
@@ -193,17 +185,15 @@ export class BaseProvider implements Provider {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(
-        `Token refresh failed (${response.status}): ${errorText}`,
-      )
+      throw new Error(`Token refresh failed (${response.status}): ${errorText}`)
     }
 
     const data = (await response.json()) as Record<string, unknown>
 
     return {
-      AccessToken: (data['access_token'] as string) ?? '',
-      RefreshToken: (data['refresh_token'] as string) ?? '',
-      ExpiresIn: (data['expires_in'] as number) ?? 0,
+      AccessToken: (data.access_token as string) ?? '',
+      RefreshToken: (data.refresh_token as string) ?? '',
+      ExpiresIn: (data.expires_in as number) ?? 0,
       Raw: data,
     }
   }
@@ -229,9 +219,7 @@ export class BaseProvider implements Provider {
     })
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to fetch user info from ${this.UserInfoUrl}: ${response.status}`,
-      )
+      throw new Error(`Failed to fetch user info from ${this.UserInfoUrl}: ${response.status}`)
     }
 
     return response.json() as Promise<Record<string, unknown>>

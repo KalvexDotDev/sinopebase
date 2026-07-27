@@ -2,12 +2,24 @@
 // DropFunctions — Integration tests
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { Sinopebase } from '~/core/app'
 import { DropFunctionsPlugin } from '~/plugins/drop-functions/plugin'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
-import { resolve, join } from 'node:path'
-import { reserveLoopbackPort, requirePostgres, createTestNamespace } from '../../harness'
+import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
+
+/** Loose test-response accessor — narrower than `any`. */
+interface TestResponse {
+  data?: unknown
+  requestId?: unknown
+  functionName?: unknown
+  env?: unknown
+  path?: unknown
+  method?: unknown
+  error?: unknown
+  [key: string]: unknown
+}
 
 const namespace = createTestNamespace({ suiteId: 'drop-functions-execute' })
 const TEST_FUNCTIONS_DIR = namespace.tempPath('functions')
@@ -15,11 +27,15 @@ const TEST_FUNCTIONS_DIR = namespace.tempPath('functions')
 function writeTestFunction(name: string, source: string): void {
   const dir = resolve(TEST_FUNCTIONS_DIR)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, name + '.ts'), source, 'utf-8')
+  writeFileSync(join(dir, `${name}.ts`), source, 'utf-8')
 }
 
 function cleanupTestFunctions(): void {
-  try { rmSync(TEST_FUNCTIONS_DIR, { recursive: true, force: true }) } catch { /* ok */ }
+  try {
+    rmSync(TEST_FUNCTIONS_DIR, { recursive: true, force: true })
+  } catch {
+    /* ok */
+  }
 }
 
 describe('DropFunctions Plugin', () => {
@@ -33,30 +49,39 @@ describe('DropFunctions Plugin', () => {
     cleanupTestFunctions()
 
     // Write a test function
-    writeTestFunction('hello', `
+    writeTestFunction(
+      'hello',
+      `
       export const config = { auth: false }
       export default async function handler(req, ctx) {
         const name = new URL(req.url).searchParams.get('name') || 'world'
         return { message: 'Hello, ' + name + '!', requestId: ctx.requestId }
       }
-    `)
+    `,
+    )
 
     // Write an auth-required function
-    writeTestFunction('protected', `
+    writeTestFunction(
+      'protected',
+      `
       export const config = { auth: true }
       export default async function handler(req, ctx) {
         return { user: ctx.auth, message: 'This is protected' }
       }
-    `)
+    `,
+    )
 
     // Write a slow function (for timeout testing)
-    writeTestFunction('slow', `
+    writeTestFunction(
+      'slow',
+      `
       export const config = { timeout: 500 }
       export default async function handler(req, ctx) {
         await new Promise(resolve => setTimeout(resolve, 2000))
         return { done: true }
       }
-    `)
+    `,
+    )
 
     app = new Sinopebase({
       port: portReservation.port,
@@ -72,7 +97,7 @@ describe('DropFunctions Plugin', () => {
     // Register the plugin via app.use() so its routes are wired BEFORE
     // server.listen(), avoiding Elysia's onError(NOT_FOUND) route-lock issue.
     app.use(async (server, _auth) => {
-      await plugin.register(server, (app as any).getAuth?.())
+      await plugin.register(server, (app as TestResponse).getAuth?.())
     })
 
     await app.start()
@@ -80,13 +105,21 @@ describe('DropFunctions Plugin', () => {
     baseUrl = portReservation.origin
 
     // Sign up and get an auth token for management CRUD tests
-    const signupRes = await fetch(baseUrl + '/auth/v1/signup', {
+    const signupRes = await fetch(`${baseUrl}/auth/v1/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'fn-admin-' + Date.now() + '@test.com', password: 'secure-admin-password-99' })
+      body: JSON.stringify({
+        email: `fn-admin-${Date.now()}@test.com`,
+        password: 'secure-admin-password-99',
+      }),
     })
-    const signupJson = await signupRes.json() as any
-    console.log('Signup status:', signupRes.status, 'body:', JSON.stringify(signupJson).slice(0, 200))
+    const signupJson = (await signupRes.json()) as TestResponse
+    console.log(
+      'Signup status:',
+      signupRes.status,
+      'body:',
+      JSON.stringify(signupJson).slice(0, 200),
+    )
     authToken = signupJson.access_token || ''
   })
 
@@ -100,17 +133,17 @@ describe('DropFunctions Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('executes a public function', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/hello?name=Sinopebase')
+    const res = await fetch(`${baseUrl}/api/functions/v1/hello?name=Sinopebase`)
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.data.message).toBe('Hello, Sinopebase!')
     expect(json.data.requestId).toBeTruthy()
   })
 
   it('returns requestId and functionName in response', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/hello')
+    const res = await fetch(`${baseUrl}/api/functions/v1/hello`)
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.requestId).toBeTruthy()
     expect(json.functionName).toBe('hello')
   })
@@ -120,7 +153,7 @@ describe('DropFunctions Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('rejects protected function without auth', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/protected')
+    const res = await fetch(`${baseUrl}/api/functions/v1/protected`)
     expect(res.status).toBe(401)
   })
 
@@ -129,7 +162,7 @@ describe('DropFunctions Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('returns 404 for unknown function', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/nonexistent')
+    const res = await fetch(`${baseUrl}/api/functions/v1/nonexistent`)
     expect(res.status).toBe(404)
   })
 
@@ -138,53 +171,53 @@ describe('DropFunctions Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('lists all functions', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1', {
-      headers: { Authorization: 'Bearer ' + authToken }
+    const res = await fetch(`${baseUrl}/api/functions/v1`, {
+      headers: { Authorization: `Bearer ${authToken}` },
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.data).toBeInstanceOf(Array)
     expect(json.data.length).toBeGreaterThanOrEqual(3)
   })
 
   it('gets function source', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1/hello/source', {
-      headers: { Authorization: 'Bearer ' + authToken }
+    const res = await fetch(`${baseUrl}/api/functions/v1/hello/source`, {
+      headers: { Authorization: `Bearer ${authToken}` },
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.data.name).toBe('hello')
     expect(json.data.source).toContain('Hello')
   })
 
   it('creates a new function', async () => {
-    const res = await fetch(baseUrl + '/api/functions/v1', {
+    const res = await fetch(`${baseUrl}/api/functions/v1`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
       body: JSON.stringify({
         name: 'test-new',
         source: 'export default async function handler(req, ctx) { return { ok: true } }',
       }),
     })
     expect(res.status).toBe(200)
-    const json = await res.json() as any
+    const json = (await res.json()) as TestResponse
     expect(json.message).toContain('created')
   })
 
   it('deletes a function', async () => {
     // Create first
-    await fetch(baseUrl + '/api/functions/v1', {
+    await fetch(`${baseUrl}/api/functions/v1`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
       body: JSON.stringify({
         name: 'to-delete',
         source: 'export default async () => ({})',
       }),
     })
     // Delete
-    const res = await fetch(baseUrl + '/api/functions/v1/to-delete', {
+    const res = await fetch(`${baseUrl}/api/functions/v1/to-delete`, {
       method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + authToken },
+      headers: { Authorization: `Bearer ${authToken}` },
     })
     expect(res.status).toBe(200)
   })

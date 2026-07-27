@@ -32,9 +32,7 @@ export function createMFAQuery(db: IDatabase) {
 
     /** Delete all MFA records linked to a record. */
     async deleteAllByRecord(recordId: string): Promise<void> {
-      await db.delete('_mfas', [
-        { column: 'recordId', operator: 'eq', value: recordId },
-      ])
+      await db.delete('_mfas', [{ column: 'recordId', operator: 'eq', value: recordId }])
     },
 
     /** Delete expired MFA records. */

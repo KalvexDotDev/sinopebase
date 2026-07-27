@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { Sinopebase, type AppConfig } from '../../src/core/app'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { type AppConfig, Sinopebase } from '../../src/core/app'
 
 // ---------------------------------------------------------------------------
 // Helpers

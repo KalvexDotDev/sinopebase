@@ -24,11 +24,7 @@ export class ApiError extends Error {
    * @param message  Human-readable message shown to the caller.
    * @param data     Optional structured details (validation errors, etc.).
    */
-  constructor(
-    status: number,
-    message: string,
-    data?: unknown,
-  ) {
+  constructor(status: number, message: string, data?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status

@@ -4,22 +4,41 @@
  * Tests for settings.ts, logs.ts, cron.ts, backup.ts, health.ts, batch.ts handlers.
  */
 
-import { describe, it, expect } from 'bun:test'
-import { MemoryDatabase } from '../../src/core/db-memory'
-import { createSettingsPlugin, type AppSettings } from '../../src/apis/settings'
-import { createLogsPlugin } from '../../src/apis/logs'
-import { createCronPlugin, type CronManager, type CronJobDescriptor } from '../../src/apis/cron'
-import { createBackupPlugin, type BackupManager, type BackupFileInfo } from '../../src/apis/backup'
-import { createHealthPlugin, healthResponse } from '../../src/apis/health'
-import { createBatchPlugin } from '../../src/apis/batch'
+import { describe, expect, it } from 'bun:test'
 import { Elysia } from 'elysia'
+import { type BackupFileInfo, type BackupManager, createBackupPlugin } from '../../src/apis/backup'
+import { createBatchPlugin } from '../../src/apis/batch'
+
+/** Loose test-response accessor — narrower than `any`. */
+interface TestResponse {
+  [key: string]: unknown
+}
+
+/** Minimal DB interface for test plugin wiring. */
+interface TestDb {
+  select(table: string, options?: Record<string, unknown>): Promise<unknown>
+  insert(table: string, record: Record<string, unknown>): Promise<unknown>
+  update(
+    table: string,
+    filters: Record<string, unknown>[],
+    data: Record<string, unknown>,
+  ): Promise<unknown>
+  delete(table: string, filters: Record<string, unknown>[]): Promise<unknown>
+  count(table: string, filters?: Record<string, unknown>[]): Promise<number>
+}
+
+import { type CronJobDescriptor, type CronManager, createCronPlugin } from '../../src/apis/cron'
+import { createHealthPlugin, healthResponse } from '../../src/apis/health'
+import { createLogsPlugin } from '../../src/apis/logs'
+import { type AppSettings, createSettingsPlugin } from '../../src/apis/settings'
+import { MemoryDatabase } from '../../src/core/db-memory'
 
 // ---------------------------------------------------------------------------
 // Simulate request helper
 // ---------------------------------------------------------------------------
 
 async function request(
-  app: any,
+  app: Elysia,
   method: string,
   path: string,
   body?: unknown,
@@ -37,7 +56,11 @@ async function request(
   let data: unknown = null
   const text = await response.text()
   if (text) {
-    try { data = JSON.parse(text) } catch { data = text }
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = text
+    }
   }
   return { status, data }
 }
@@ -102,25 +125,29 @@ describe('Logs API', () => {
   db.createTable('_logs')
 
   // Insert test logs using MemoryDatabase API
-  db.insert('_logs', [{
-    id: 'log1',
-    level: 4,
-    message: 'Test info log',
-    created: new Date().toISOString(),
-  }])
-  db.insert('_logs', [{
-    id: 'log2',
-    level: 8,
-    message: 'Test error log',
-    created: new Date().toISOString(),
-  }])
+  db.insert('_logs', [
+    {
+      id: 'log1',
+      level: 4,
+      message: 'Test info log',
+      created: new Date().toISOString(),
+    },
+  ])
+  db.insert('_logs', [
+    {
+      id: 'log2',
+      level: 8,
+      message: 'Test error log',
+      created: new Date().toISOString(),
+    },
+  ])
 
-  const logsPlugin = createLogsPlugin(db as any, () => true)
+  const logsPlugin = createLogsPlugin(db as TestDb, () => true)
 
   it('GET /api/logs — lists logs', async () => {
     const { status, data } = await request(logsPlugin, 'GET', '/api/logs')
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.items).toBeInstanceOf(Array)
     expect(result.totalItems).toBeGreaterThanOrEqual(2)
   })
@@ -134,13 +161,13 @@ describe('Logs API', () => {
   it('GET /api/logs/:id — views a log entry', async () => {
     const { status, data } = await request(logsPlugin, 'GET', '/api/logs/log1')
     expect(status).toBe(200)
-    expect((data as any).id).toBe('log1')
+    expect((data as TestResponse).id).toBe('log1')
   })
 
   it('blocks non-superusers', async () => {
     const db2 = new MemoryDatabase()
     db2.createTable('_logs')
-    const restrictedPlugin = createLogsPlugin(db2 as any, () => false)
+    const restrictedPlugin = createLogsPlugin(db2 as TestDb, () => false)
     const { status } = await request(restrictedPlugin, 'GET', '/api/logs')
     expect(status).toBe(403)
   })
@@ -151,7 +178,7 @@ describe('Logs API', () => {
 // ---------------------------------------------------------------------------
 
 describe('Cron API', () => {
-  let jobs: CronJobDescriptor[] = [
+  const jobs: CronJobDescriptor[] = [
     { id: 'cleanup', label: 'Cleanup old data', schedule: '0 0 * * *' },
     { id: 'backup', label: 'Daily backup', schedule: '0 2 * * *' },
   ]
@@ -177,7 +204,7 @@ describe('Cron API', () => {
     expect(status).toBe(200)
     const result = data as CronJobDescriptor[]
     expect(result.length).toBe(2)
-    expect(result[0]!.id).toBe('cleanup')
+    expect(result[0]?.id).toBe('cleanup')
   })
 
   it('POST /api/crons/:id — runs a cron job', async () => {
@@ -187,7 +214,7 @@ describe('Cron API', () => {
   })
 
   it('returns 404 for unknown job', async () => {
-    const { status, data } = await request(cronPlugin, 'POST', '/api/crons/unknown')
+    const { status } = await request(cronPlugin, 'POST', '/api/crons/unknown')
     expect(status).toBe(404)
   })
 
@@ -242,7 +269,11 @@ describe('Backup API', () => {
   })
 
   it('POST /api/backups/:name/restore — restores a backup', async () => {
-    const { status } = await request(backupPlugin, 'POST', '/api/backups/backup-2024-01-02.zip/restore')
+    const { status } = await request(
+      backupPlugin,
+      'POST',
+      '/api/backups/backup-2024-01-02.zip/restore',
+    )
     expect(status).toBe(204)
   })
 
@@ -262,7 +293,7 @@ describe('Health API', () => {
     const healthPlugin = createHealthPlugin()
     const { status, data } = await request(healthPlugin, 'GET', '/api/health')
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.code).toBe(200)
     expect(result.message).toBe('API is healthy.')
   })
@@ -277,7 +308,7 @@ describe('Health API', () => {
     const healthPlugin = createHealthPlugin({ canBackup: true, realIP: '10.0.0.1' })
     const { status, data } = await request(healthPlugin, 'GET', '/api/health')
     expect(status).toBe(200)
-    const result = data as any
+    const result = data as TestResponse
     expect(result.data.canBackup).toBe(true)
     expect(result.data.realIP).toBe('10.0.0.1')
   })
@@ -291,7 +322,7 @@ describe('Batch API', () => {
   it('POST /api/batch — accepts batch requests', async () => {
     const db = new MemoryDatabase()
     const app = new Elysia()
-    const batchPlugin = createBatchPlugin(db as any, () => true, app)
+    const batchPlugin = createBatchPlugin(db as TestDb, () => true, app)
 
     const { status, data } = await request(batchPlugin, 'POST', '/api/batch', {
       requests: [
@@ -307,7 +338,7 @@ describe('Batch API', () => {
   it('rejects empty batch requests', async () => {
     const db = new MemoryDatabase()
     const app = new Elysia()
-    const batchPlugin = createBatchPlugin(db as any, () => true, app)
+    const batchPlugin = createBatchPlugin(db as TestDb, () => true, app)
 
     const { status } = await request(batchPlugin, 'POST', '/api/batch', { requests: [] })
     expect(status).toBe(400)
@@ -316,7 +347,7 @@ describe('Batch API', () => {
   it('rejects requests without requests array', async () => {
     const db = new MemoryDatabase()
     const app = new Elysia()
-    const batchPlugin = createBatchPlugin(db as any, () => true, app)
+    const batchPlugin = createBatchPlugin(db as TestDb, () => true, app)
 
     const { status } = await request(batchPlugin, 'POST', '/api/batch', {})
     expect(status).toBe(400)

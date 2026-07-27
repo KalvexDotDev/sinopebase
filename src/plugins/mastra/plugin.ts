@@ -16,18 +16,21 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { Elysia } from 'elysia'
-import type { MastraPluginOptions } from './config'
-import { DEFAULTS } from './config'
+import type { IDatabase } from '~/core/db-interface'
+import { Agent, type Tool } from '~/tools/ai/mastra/agent'
+import { createMastraAuth } from '~/tools/ai/mastra/auth-bridge'
+import { createMCPTools } from '~/tools/ai/mastra/mcp-tools'
+import { createMockProvider } from '~/tools/ai/mock-provider'
 import { OpenAIProvider } from '~/tools/ai/openai'
 import type { AIProvider } from '~/tools/ai/provider'
-import { createMockProvider } from '~/tools/ai/mock-provider'
+import type { SinopebaseAuth } from '~/tools/auth-better'
+import type { IFileStore } from '~/tools/filesystem/store-interface'
+import type { MastraPluginOptions } from './config'
+import { DEFAULTS } from './config'
+import type { AuthContext } from './middleware'
+import { validateAIRequest } from './middleware'
 import { createChatRoutes } from './routes/chat'
 import { createEmbeddingsRoutes } from './routes/embeddings'
-import { Agent, type Tool } from '~/tools/ai/mastra/agent'
-import { createMCPTools } from '~/tools/ai/mastra/mcp-tools'
-import { createMastraAuth } from '~/tools/ai/mastra/auth-bridge'
-import { validateAIRequest } from './middleware'
-import type { AuthContext } from './middleware'
 
 // ---------------------------------------------------------------------------
 // Request-scoped context — AsyncLocalStorage for per-request propagation
@@ -69,7 +72,7 @@ export function getCurrentRequestContext(): AuthContext | null {
  * app.use(createAuthMiddleware(auth))
  * ```
  */
-export function createAuthMiddleware(auth: any, requireAuth = true) {
+export function createAuthMiddleware(auth: SinopebaseAuth, requireAuth = true) {
   return (app: Elysia) =>
     app.onBeforeHandle(async ({ request, set }) => {
       const ctx = await validateAIRequest(auth, request)
@@ -78,7 +81,7 @@ export function createAuthMiddleware(auth: any, requireAuth = true) {
         return { error: 'Invalid or missing Authorization header', status: 401 }
       }
       // Stash on request so onBeforeHandle can pass context downstream
-      ;(request as unknown as Record<string, unknown>)['__authContext'] = ctx
+      ;(request as unknown as Record<string, unknown>).__authContext = ctx
     })
 }
 
@@ -97,9 +100,14 @@ export class MastraPlugin {
    * @param app  The Elysia app instance
    * @param auth Optional better-auth instance for auth-required endpoints
    */
-  async register(app: Elysia, auth?: any, db?: any, fileStore?: any): Promise<void> {
+  async register(
+    app: Elysia,
+    auth?: SinopebaseAuth,
+    db?: IDatabase,
+    fileStore?: IFileStore,
+  ): Promise<void> {
     // Initialise the AI provider
-    const apiKey = this.options.openaiApiKey || process.env['OPENAI_API_KEY'] || ''
+    const apiKey = this.options.openaiApiKey || process.env.OPENAI_API_KEY || ''
     if (apiKey) {
       this.provider = new OpenAIProvider(
         apiKey,
@@ -123,7 +131,8 @@ export class MastraPlugin {
       new Agent({
         id: 'default',
         name: 'Sinopebase Assistant',
-        instructions: 'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.',
+        instructions:
+          'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.',
         provider: this.provider,
         tools: mcpTools,
       }),
@@ -153,20 +162,34 @@ export class MastraPlugin {
         // Auth check + context propagation
         const doHandle = async () => {
           const agent = this.agents.find((a) => a.id === params.id)
-          if (!agent) { set.status = 404; return { error: `Agent "${params.id}" not found`, status: 404 } }
+          if (!agent) {
+            set.status = 404
+            return { error: `Agent "${params.id}" not found`, status: 404 }
+          }
           const { messages } = body as { messages?: Array<{ role: string; content: string }> }
-          if (!messages?.length) { set.status = 400; return { error: 'messages array required', status: 400 } }
+          if (!messages?.length) {
+            set.status = 400
+            return { error: 'messages array required', status: 400 }
+          }
           try {
             return await agent.generate(messages)
-          } catch (err: any) { set.status = 500; return { error: err?.message || 'Agent error', status: 500 } }
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err)
+            set.status = 500
+            return { error: msg || 'Agent error', status: 500 }
+          }
         }
 
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)
-          if (requireAuth && !user) { set.status = 401; return { error: 'Unauthorized', status: 401 } }
+          if (requireAuth && !user) {
+            set.status = 401
+            return { error: 'Unauthorized', status: 401 }
+          }
           if (user) return withRequestContext(user, doHandle)
         } else if (requireAuth) {
-          set.status = 401; return { error: 'Auth unavailable', status: 401 }
+          set.status = 401
+          return { error: 'Auth unavailable', status: 401 }
         }
         return doHandle()
       })
@@ -174,9 +197,15 @@ export class MastraPlugin {
         // Auth check + context propagation
         const doHandle = async () => {
           const agent = this.agents.find((a) => a.id === params.id)
-          if (!agent) { set.status = 404; return { error: `Agent "${params.id}" not found`, status: 404 } }
+          if (!agent) {
+            set.status = 404
+            return { error: `Agent "${params.id}" not found`, status: 404 }
+          }
           const { messages } = body as { messages?: Array<{ role: string; content: string }> }
-          if (!messages?.length) { set.status = 400; return { error: 'messages array required', status: 400 } }
+          if (!messages?.length) {
+            set.status = 400
+            return { error: 'messages array required', status: 400 }
+          }
           set.headers['Content-Type'] = 'text/event-stream'
           set.headers['Cache-Control'] = 'no-cache'
           const encoder = new TextEncoder()
@@ -188,8 +217,9 @@ export class MastraPlugin {
                 }
                 controller.enqueue(encoder.encode('data: [DONE]\n\n'))
                 controller.close()
-              } catch (err: any) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err?.message })}\n\n`))
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err)
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`))
                 controller.close()
               }
             },
@@ -199,10 +229,14 @@ export class MastraPlugin {
 
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)
-          if (requireAuth && !user) { set.status = 401; return { error: 'Unauthorized', status: 401 } }
+          if (requireAuth && !user) {
+            set.status = 401
+            return { error: 'Unauthorized', status: 401 }
+          }
           if (user) return withRequestContext(user, doHandle)
         } else if (requireAuth) {
-          set.status = 401; return { error: 'Auth unavailable', status: 401 }
+          set.status = 401
+          return { error: 'Auth unavailable', status: 401 }
         }
         return doHandle()
       })
@@ -227,4 +261,3 @@ export class MastraPlugin {
     return this.agents
   }
 }
-

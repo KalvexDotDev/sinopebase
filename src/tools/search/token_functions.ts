@@ -6,22 +6,22 @@
  * Layer 1 -- imports Layer 0 (~/tools/...).
  */
 
-import type { ResolverResult } from "./simple_field_resolver";
-import { NullFallbackPreference } from "./simple_field_resolver";
-import { mergeParams } from "./filter";
+import { mergeParams } from './filter'
+import type { ResolverResult } from './simple_field_resolver'
+import { NullFallbackPreference } from './simple_field_resolver'
 
 /**
  * Signature for a token resolver function — resolves a single token
  * (identifier, text, or number) to a ResolverResult.
  */
-export type ArgTokenResolver = (token: FilterToken) => ResolverResult | Error;
+export type ArgTokenResolver = (token: FilterToken) => ResolverResult | Error
 
 /**
  * Minimal token shape received by token functions.
  */
 export interface FilterToken {
-  type: "identifier" | "text" | "number" | "function";
-  literal: string;
+  type: 'identifier' | 'text' | 'number' | 'function'
+  literal: string
 }
 
 /**
@@ -34,7 +34,7 @@ export interface FilterToken {
 export type TokenFunction = (
   resolveArg: ArgTokenResolver,
   ...args: FilterToken[]
-) => ResolverResult | Error;
+) => ResolverResult | Error
 
 /**
  * Registry of all token functions available in filter expressions.
@@ -52,44 +52,48 @@ export const tokenFunctions: Record<string, TokenFunction> = {
    */
   geoDistance: (resolveArg: ArgTokenResolver, ...args: FilterToken[]): ResolverResult | Error => {
     if (args.length !== 4) {
-      return new Error(`[geoDistance] expected 4 arguments, got ${args.length}`);
+      return new Error(`[geoDistance] expected 4 arguments, got ${args.length}`)
     }
 
-    const resolvedArgs: ResolverResult[] = [];
+    const resolvedArgs: ResolverResult[] = []
 
     for (let i = 0; i < 4; i++) {
-      const arg = args[i]!;
-      if (arg.type !== "identifier" && arg.type !== "number") {
-        return new Error(`[geoDistance] argument ${i} must be an identifier or number`);
+      const arg = args[i]
+      if (arg === undefined) {
+        return new Error(`[geoDistance] missing argument ${i}`)
+      }
+      if (arg.type !== 'identifier' && arg.type !== 'number') {
+        return new Error(`[geoDistance] argument ${i} must be an identifier or number`)
       }
 
-      const resolved = resolveArg(arg);
+      const resolved = resolveArg(arg)
       if (resolved instanceof Error) {
-        return new Error(`[geoDistance] failed to resolve argument ${i}: ${resolved.message}`);
+        return new Error(`[geoDistance] failed to resolve argument ${i}: ${resolved.message}`)
       }
-      resolvedArgs.push(resolved);
+      resolvedArgs.push(resolved)
     }
 
-    const [lonA, latA, lonB, latB] = resolvedArgs.map((r) => r.identifier);
+    const [lonA, latA, lonB, latB] = resolvedArgs.map((r) => r.identifier)
 
     // PostgreSQL Haversine distance in kilometres
     // Uses the PostgreSQL radians() and acos() functions
-    const identifier = `(6371 * acos(` +
+    const identifier =
+      `(6371 * acos(` +
       `cos(radians(${latA})) * cos(radians(${latB})) * ` +
       `cos(radians(${lonB}) - radians(${lonA})) + ` +
       `sin(radians(${latA})) * sin(radians(${latB}))` +
-      `))`;
+      `))`
 
     return {
       nullFallback: NullFallbackPreference.Disabled,
       identifier,
       params: mergeParams(
-        resolvedArgs[0]!.params ?? {},
-        resolvedArgs[1]!.params ?? {},
-        resolvedArgs[2]!.params ?? {},
-        resolvedArgs[3]!.params ?? {},
+        resolvedArgs[0]?.params ?? {},
+        resolvedArgs[1]?.params ?? {},
+        resolvedArgs[2]?.params ?? {},
+        resolvedArgs[3]?.params ?? {},
       ),
-    };
+    }
   },
 
   /**
@@ -117,56 +121,71 @@ export const tokenFunctions: Record<string, TokenFunction> = {
    *   filter: `strftime('%Y', created) >= '2024'`
    */
   strftime: (resolveArg: ArgTokenResolver, ...args: FilterToken[]): ResolverResult | Error => {
-    const totalArgs = args.length;
+    const totalArgs = args.length
     if (totalArgs < 1) {
-      return new Error(`[strftime] expected at least 1 argument, got ${totalArgs}`);
+      return new Error(`[strftime] expected at least 1 argument, got ${totalArgs}`)
     }
 
     if (totalArgs > 10) {
-      return new Error(`[strftime] too many arguments (max allowed 10, got ${totalArgs})`);
+      return new Error(`[strftime] too many arguments (max allowed 10, got ${totalArgs})`)
     }
 
     // Format argument (must be text literal)
-    if (args[0]!.type !== "text") {
-      return new Error("[strftime] expects the first argument to be a format string");
+    if (args[0]?.type !== 'text') {
+      return new Error('[strftime] expects the first argument to be a format string')
     }
 
-    const formatArgResult = resolveArg(args[0]!);
+    const firstArg = args[0]
+    if (firstArg === undefined) {
+      return new Error('[strftime] missing format argument')
+    }
+    const formatArgResult = resolveArg(firstArg)
     if (formatArgResult instanceof Error) {
-      return new Error(`[strftime] failed to resolve format argument: ${formatArgResult.message}`);
+      return new Error(`[strftime] failed to resolve format argument: ${formatArgResult.message}`)
     }
 
     // No further arguments: return format-only expression
     if (totalArgs === 1) {
-      formatArgResult.nullFallback = NullFallbackPreference.Enforced;
-      formatArgResult.identifier = `to_char(NOW(), ${formatArgResult.identifier})`;
-      return formatArgResult;
+      formatArgResult.nullFallback = NullFallbackPreference.Enforced
+      formatArgResult.identifier = `to_char(NOW(), ${formatArgResult.identifier})`
+      return formatArgResult
     }
 
     // Time-value argument
-    const allowedTimeValueTypes: FilterToken["type"][] = ["text", "identifier", "number"];
-    if (!allowedTimeValueTypes.includes(args[1]!.type)) {
-      return new Error("[strftime] expects the second argument to be of a valid time-value type");
+    const allowedTimeValueTypes: FilterToken['type'][] = ['text', 'identifier', 'number']
+    if (!allowedTimeValueTypes.includes(args[1]?.type)) {
+      return new Error('[strftime] expects the second argument to be of a valid time-value type')
     }
 
-    const timeValueArgResult = resolveArg(args[1]!);
+    const secondArg = args[1]
+    if (secondArg === undefined) {
+      return new Error('[strftime] missing time-value argument')
+    }
+    const timeValueArgResult = resolveArg(secondArg)
     if (timeValueArgResult instanceof Error) {
-      return new Error(`[strftime] failed to resolve time-value argument: ${timeValueArgResult.message}`);
+      return new Error(
+        `[strftime] failed to resolve time-value argument: ${timeValueArgResult.message}`,
+      )
     }
 
     // Modifier arguments (text only)
-    const resolvedModifierArgs: ResolverResult[] = [];
+    const resolvedModifierArgs: ResolverResult[] = []
     for (let i = 2; i < totalArgs; i++) {
-      const arg = args[i]!;
-      if (arg.type !== "text") {
-        return new Error(`[strftime] invalid modifier argument ${i - 2} - can only be string`);
+      const arg = args[i]
+      if (arg === undefined) {
+        return new Error(`[strftime] missing modifier argument ${i - 2}`)
+      }
+      if (arg.type !== 'text') {
+        return new Error(`[strftime] invalid modifier argument ${i - 2} - can only be string`)
       }
 
-      const resolved = resolveArg(arg);
+      const resolved = resolveArg(arg)
       if (resolved instanceof Error) {
-        return new Error(`[strftime] failed to resolve modifier argument ${i - 2}: ${resolved.message}`);
+        return new Error(
+          `[strftime] failed to resolve modifier argument ${i - 2}: ${resolved.message}`,
+        )
       }
-      resolvedModifierArgs.push(resolved);
+      resolvedModifierArgs.push(resolved)
     }
 
     // Build identifiers and merge params
@@ -174,25 +193,30 @@ export const tokenFunctions: Record<string, TokenFunction> = {
       identifier: '',
       nullFallback: NullFallbackPreference.Enforced,
       params: {},
-    };
+    }
+    const resultParams = result.params ?? {}
 
-    const identifiers: string[] = [formatArgResult.identifier];
-    concatUniqueParams(result.params!, formatArgResult.params ?? {});
+    const identifiers: string[] = [formatArgResult.identifier]
+    concatUniqueParams(resultParams, formatArgResult.params ?? {})
 
-    identifiers.push(timeValueArgResult.identifier);
-    concatUniqueParams(result.params!, timeValueArgResult.params ?? {});
+    identifiers.push(timeValueArgResult.identifier)
+    concatUniqueParams(resultParams, timeValueArgResult.params ?? {})
 
     for (const m of resolvedModifierArgs) {
-      identifiers.push(m.identifier);
-      concatUniqueParams(result.params!, m.params ?? {});
+      identifiers.push(m.identifier)
+      concatUniqueParams(resultParams, m.params ?? {})
     }
 
     // Translate SQLite strftime format to PostgreSQL to_char format
-    result.identifier = `to_char((${identifiers.slice(1).join(" + ")}), ${identifiers[0]!})`;
+    const formatIdent = identifiers[0]
+    if (formatIdent === undefined) {
+      return new Error('[strftime] missing format identifier')
+    }
+    result.identifier = `to_char((${identifiers.slice(1).join(' + ')}), ${formatIdent})`
 
-    return result;
+    return result
   },
-};
+}
 
 /**
  * Concatenates params from source to destination, checking for conflicts.
@@ -203,8 +227,8 @@ export function concatUniqueParams(
 ): void {
   for (const [k, v] of Object.entries(source)) {
     if (k in dest && dest[k] !== v) {
-      throw new Error(`conflicting param key ${k}`);
+      throw new Error(`conflicting param key ${k}`)
     }
-    dest[k] = v;
+    dest[k] = v
   }
 }

@@ -11,19 +11,12 @@
  *   - Range header for pagination
  */
 
-import { Elysia } from 'elysia'
+import type { Elysia } from 'elysia'
 import type { ForeignKeyRelationship, IDatabase, OrderBy } from '../core/db-interface'
 import type { ParsedFilter } from '../core/db-memory'
-import {
-  PostgresDatabase,
-  type PostgresRequestContext,
-} from '../core/db-postgres'
+import { PostgresDatabase, type PostgresRequestContext } from '../core/db-postgres'
 import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
-import type {
-  PostgresChange,
-  PostgrestChangePublisher,
-  PreparedRealtimeChange,
-} from './realtime'
+import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
 
 // ---------------------------------------------------------------------------
 // Helper types
@@ -81,9 +74,7 @@ interface SingularResponse {
   contentType?: string
 }
 
-export type PostgrestContextResolver = (
-  request: Request,
-) => PostgresRequestContext | undefined
+export type PostgrestContextResolver = (request: Request) => PostgresRequestContext | undefined
 
 // ---------------------------------------------------------------------------
 // Route registration
@@ -111,8 +102,8 @@ export function mountPostgrestRoutes(
   app.get('/rest/v1/:table', async (ctx) => {
     const { params, query, headers, request, set } = ctx
     const table = params.table as string
-    const prefer = parsePreferHeader(headers['prefer'] ?? headers['Prefer'] ?? '')
-    const range = parseRangeHeader(headers['range'] ?? headers['Range'])
+    const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
+    const range = parseRangeHeader(headers.range ?? headers.Range)
 
     // Parse filters from query params
     const filters = parseFilters(query as Record<string, string>)
@@ -121,11 +112,8 @@ export function mountPostgrestRoutes(
     // Elysia automatically serves HEAD through a matching GET route, so handle
     // it before selecting rows. Supabase uses this path for head/count queries.
     if (request.method === 'HEAD') {
-      const total = await withRequestDatabase(
-        db,
-        request,
-        resolveContext,
-        (requestDb) => countRows(requestDb, table, filters, orFilters),
+      const total = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
+        countRows(requestDb, table, filters, orFilters),
       )
       set.headers['content-range'] = `*/${total}`
       set.status = 200
@@ -133,9 +121,9 @@ export function mountPostgrestRoutes(
     }
 
     // Parse pagination from query params
-    let limit: number | undefined = query['limit'] ? parseInt(query['limit'] as string, 10) : undefined
-    let offset: number | undefined = query['offset'] ? parseInt(query['offset'] as string, 10) : undefined
-    const order = query['order'] as string | undefined
+    let limit: number | undefined = query.limit ? parseInt(query.limit as string, 10) : undefined
+    let offset: number | undefined = query.offset ? parseInt(query.offset as string, 10) : undefined
+    const order = query.order as string | undefined
 
     // If Range header is provided, use it for pagination
     if (range) {
@@ -155,10 +143,10 @@ export function mountPostgrestRoutes(
           limit,
           offset,
         })
-        const selectedRows = query['select']
-          ? await applySelection(requestDb, table, selected.rows, query['select'])
+        const selectedRows = query.select
+          ? await applySelection(requestDb, table, selected.rows, query.select)
           : selected.rows
-        const selectedTotal = query['select']?.includes('!inner')
+        const selectedTotal = query.select?.includes('!inner')
           ? selectedRows.length
           : prefer.count === 'exact'
             ? await countRows(requestDb, table, filters, orFilters, selected.total)
@@ -172,7 +160,7 @@ export function mountPostgrestRoutes(
       set.headers['content-range'] = `*/${total}`
     }
 
-    const singular = buildSingularResponse(rows, headers['accept'] ?? headers['Accept'])
+    const singular = buildSingularResponse(rows, headers.accept ?? headers.Accept)
     if (singular) {
       if (singular.status) set.status = singular.status
       if (singular.contentType) set.headers['content-type'] = singular.contentType
@@ -194,11 +182,8 @@ export function mountPostgrestRoutes(
     const filters = parseFilters(query as Record<string, string>)
     const orFilters = parseOrQueryParams(query as Record<string, string>)
 
-    const total = await withRequestDatabase(
-      db,
-      ctx.request,
-      resolveContext,
-      (requestDb) => countRows(requestDb, table, filters, orFilters),
+    const total = await withRequestDatabase(db, ctx.request, resolveContext, (requestDb) =>
+      countRows(requestDb, table, filters, orFilters),
     )
     set.headers['content-range'] = `*/${total}`
 
@@ -213,7 +198,7 @@ export function mountPostgrestRoutes(
   app.post('/rest/v1/:table', async (ctx) => {
     const { params, headers, body, set } = ctx
     const table = params.table as string
-    const prefer = parsePreferHeader(headers['prefer'] ?? headers['Prefer'] ?? '')
+    const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
     // Body can be a single object or an array
     const rows = Array.isArray(body) ? body : [body]
@@ -240,13 +225,19 @@ export function mountPostgrestRoutes(
 
     if (changes) {
       for (const row of inserted) {
-        await changes.publishPostgresChange({ schema: 'public', table, event: 'INSERT', new: row, old: {} })
+        await changes.publishPostgresChange({
+          schema: 'public',
+          table,
+          event: 'INSERT',
+          new: row,
+          old: {},
+        })
       }
     }
 
     set.status = 201
 
-    const singular = buildSingularResponse(inserted, headers['accept'] ?? headers['Accept'])
+    const singular = buildSingularResponse(inserted, headers.accept ?? headers.Accept)
     if (singular) {
       if (singular.status) set.status = singular.status
       if (singular.contentType) set.headers['content-type'] = singular.contentType
@@ -270,15 +261,15 @@ export function mountPostgrestRoutes(
   app.patch('/rest/v1/:table', async (ctx) => {
     const { params, query, headers, body, set } = ctx
     const table = params.table as string
-    const prefer = parsePreferHeader(headers['prefer'] ?? headers['Prefer'] ?? '')
+    const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
     // Parse filters
     const filters = parseFilters(query as Record<string, string>)
 
     // Body is the data to update
-    const data = (typeof body === 'object' && body !== null
-      ? (body as Record<string, unknown>)
-      : {}) as Record<string, unknown>
+    const data = (
+      typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+    ) as Record<string, unknown>
 
     const { updated, previous } = await withRequestDatabase(
       db,
@@ -295,12 +286,12 @@ export function mountPostgrestRoutes(
 
     if (changes) {
       for (const row of updated) {
-        const old = previous.find((candidate) => candidate['id'] === row['id']) ?? {}
+        const old = previous.find((candidate) => candidate.id === row.id) ?? {}
         await changes.publishPostgresChange(postgresChange(table, 'UPDATE', row, old))
       }
     }
 
-    const singular = buildSingularResponse(updated, headers['accept'] ?? headers['Accept'])
+    const singular = buildSingularResponse(updated, headers.accept ?? headers.Accept)
     if (singular) {
       if (singular.status) set.status = singular.status
       if (singular.contentType) set.headers['content-type'] = singular.contentType
@@ -321,7 +312,7 @@ export function mountPostgrestRoutes(
   app.delete('/rest/v1/:table', async (ctx) => {
     const { params, query, headers, set } = ctx
     const table = params.table as string
-    const prefer = parsePreferHeader(headers['prefer'] ?? headers['Prefer'] ?? '')
+    const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
     // Parse filters
     const filters = parseFilters(query as Record<string, string>)
@@ -337,9 +328,9 @@ export function mountPostgrestRoutes(
         const prepared: PreparedRealtimeChange[] = []
         if (changes) {
           for (const row of previous) {
-            prepared.push(await changes.preparePostgresChange(
-              postgresChange(table, 'DELETE', {}, row),
-            ))
+            prepared.push(
+              await changes.preparePostgresChange(postgresChange(table, 'DELETE', {}, row)),
+            )
           }
         }
         const deleted = await requestDb.delete(table, filters)
@@ -349,7 +340,7 @@ export function mountPostgrestRoutes(
 
     for (const delivery of prepared) delivery.deliver()
 
-    const singular = buildSingularResponse(deleted, headers['accept'] ?? headers['Accept'])
+    const singular = buildSingularResponse(deleted, headers.accept ?? headers.Accept)
     if (singular) {
       if (singular.status) set.status = singular.status
       if (singular.contentType) set.headers['content-type'] = singular.contentType
@@ -484,22 +475,29 @@ async function materializeSelection(
     const localColumn = outbound ? relationship.sourceColumn : relationship.targetColumn
     const relatedTable = outbound ? relationship.targetTable : relationship.sourceTable
     const relatedColumn = outbound ? relationship.targetColumn : relationship.sourceColumn
-    const localValues = [...new Set(
-      selectedRows
-        .map(({ source }) => source[localColumn])
-        .filter((value) => value !== null && value !== undefined),
-    )]
+    const localValues = [
+      ...new Set(
+        selectedRows
+          .map(({ source }) => source[localColumn])
+          .filter((value) => value !== null && value !== undefined),
+      ),
+    ]
 
-    const relatedRows = localValues.length === 0
-      ? []
-      : (await selectRows(db, relatedTable, {
-          filters: [{
-            column: relatedColumn,
-            operator: 'in',
-            value: localValues,
-          }],
-          orFilters: [],
-        })).rows
+    const relatedRows =
+      localValues.length === 0
+        ? []
+        : (
+            await selectRows(db, relatedTable, {
+              filters: [
+                {
+                  column: relatedColumn,
+                  operator: 'in',
+                  value: localValues,
+                },
+              ],
+              orFilters: [],
+            })
+          ).rows
     const selectedRelatedRows = await materializeSelection(
       db,
       relatedTable,
@@ -517,9 +515,7 @@ async function materializeSelection(
 
     selectedRows = selectedRows.filter((selectedRow) => {
       const matches = relatedByValue.get(selectedRow.source[localColumn]) ?? []
-      const embedded = outbound
-        ? matches[0]?.result ?? null
-        : matches.map(({ result }) => result)
+      const embedded = outbound ? (matches[0]?.result ?? null) : matches.map(({ result }) => result)
       selectedRow.result[selection.output] = embedded
       return !selection.inner || matches.length > 0
     })
@@ -552,12 +548,16 @@ async function resolveRelationship(
   selection: RelationshipSelection,
 ): Promise<ForeignKeyRelationship> {
   if (!db.getForeignKeyRelationships) {
-    throw new Error(`Database does not expose foreign-key metadata for embedded resource ${selection.selector}`)
+    throw new Error(
+      `Database does not expose foreign-key metadata for embedded resource ${selection.selector}`,
+    )
   }
 
   const relationships = await db.getForeignKeyRelationships(table)
   const hinted = selection.hint
-    ? relationships.filter((relationship) => relationshipMatches(relationship, selection.hint!))
+    ? relationships.filter(
+        (relationship) => selection.hint && relationshipMatches(relationship, selection.hint),
+      )
     : relationships
   const candidates = hinted
     .map((relationship) => ({
@@ -570,19 +570,21 @@ async function resolveRelationship(
   if (candidates.length === 0) {
     throw new Error(`No foreign-key relationship from ${table} matches ${selection.selector}`)
   }
-  if (candidates.length > 1 && candidates[0]!.score === candidates[1]!.score) {
+  if (candidates.length > 1 && candidates[0]?.score === candidates[1]?.score) {
     throw new Error(`Foreign-key relationship from ${table} to ${selection.selector} is ambiguous`)
   }
 
-  return candidates[0]!.relationship
+  return candidates[0]?.relationship
 }
 
 function relationshipMatches(relationship: ForeignKeyRelationship, value: string): boolean {
-  return relationship.constraintName === value ||
+  return (
+    relationship.constraintName === value ||
     relationship.sourceColumn === value ||
     relationship.targetColumn === value ||
     relationship.sourceTable === value ||
     relationship.targetTable === value
+  )
 }
 
 function relationshipScore(
@@ -599,35 +601,39 @@ function relationshipScore(
 }
 
 function parseSelect(rawSelect: string): Selection[] {
-  return splitTopLevel(rawSelect).map((rawPart): Selection => {
-    const part = rawPart.trim()
-    const openParen = part.indexOf('(')
+  return splitTopLevel(rawSelect)
+    .map((rawPart): Selection => {
+      const part = rawPart.trim()
+      const openParen = part.indexOf('(')
 
-    if (openParen === -1 || !part.endsWith(')')) {
-      const colon = part.indexOf(':')
-      return colon === -1
-        ? { kind: 'column', source: part, output: part }
-        : { kind: 'column', source: part.slice(colon + 1), output: part.slice(0, colon) }
-    }
+      if (openParen === -1 || !part.endsWith(')')) {
+        const colon = part.indexOf(':')
+        return colon === -1
+          ? { kind: 'column', source: part, output: part }
+          : { kind: 'column', source: part.slice(colon + 1), output: part.slice(0, colon) }
+      }
 
-    const prefix = part.slice(0, openParen)
-    const nested = part.slice(openParen + 1, -1)
-    const colon = prefix.indexOf(':')
-    const output = colon === -1 ? undefined : prefix.slice(0, colon)
-    const relationWithModifiers = colon === -1 ? prefix : prefix.slice(colon + 1)
-    const [selector = '', ...modifiers] = relationWithModifiers.split('!')
+      const prefix = part.slice(0, openParen)
+      const nested = part.slice(openParen + 1, -1)
+      const colon = prefix.indexOf(':')
+      const output = colon === -1 ? undefined : prefix.slice(0, colon)
+      const relationWithModifiers = colon === -1 ? prefix : prefix.slice(colon + 1)
+      const [selector = '', ...modifiers] = relationWithModifiers.split('!')
 
-    return {
-      kind: 'relationship',
-      selector,
-      hint: modifiers.find((modifier) => modifier !== 'inner'),
-      output: output ?? selector,
-      inner: modifiers.includes('inner'),
-      fields: parseSelect(nested),
-    }
-  }).filter((selection) =>
-    selection.kind === 'relationship' ? selection.selector.length > 0 : selection.source.length > 0
-  )
+      return {
+        kind: 'relationship',
+        selector,
+        hint: modifiers.find((modifier) => modifier !== 'inner'),
+        output: output ?? selector,
+        inner: modifiers.includes('inner'),
+        fields: parseSelect(nested),
+      }
+    })
+    .filter((selection) =>
+      selection.kind === 'relationship'
+        ? selection.selector.length > 0
+        : selection.source.length > 0,
+    )
 }
 
 function splitTopLevel(input: string): string[] {
@@ -652,9 +658,11 @@ function splitTopLevel(input: string): string[] {
 function acceptsSingularObject(accept?: string): boolean {
   if (!accept) return false
 
-  return accept.split(',').some((mediaRange) =>
-    mediaRange.trim().split(';', 1)[0] === 'application/vnd.pgrst.object+json'
-  )
+  return accept
+    .split(',')
+    .some(
+      (mediaRange) => mediaRange.trim().split(';', 1)[0] === 'application/vnd.pgrst.object+json',
+    )
 }
 
 function buildSingularResponse(
@@ -675,8 +683,10 @@ function buildSingularResponse(
     }
   }
 
+  const first = rows[0]
+  if (!first) return undefined
   return {
-    body: rows[0]!,
+    body: first,
     contentType: 'application/vnd.pgrst.object+json',
   }
 }
@@ -695,7 +705,10 @@ function parsePreferHeader(headerValue: string): PreferOptions {
 
   if (!headerValue) return options
 
-  const parts = headerValue.split(',').map((p) => p.trim()).filter(Boolean)
+  const parts = headerValue
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
   for (const part of parts) {
     const eqIndex = part.indexOf('=')
     if (eqIndex === -1) {
@@ -738,9 +751,12 @@ function parseRangeHeader(headerValue?: string): RangeInfo | null {
   const trimmed = headerValue.trim()
   const parts = trimmed.split('-')
   if (parts.length !== 2) return null
-  const from = parseInt(parts[0]!, 10)
-  const to = parseInt(parts[1]!, 10)
-  if (isNaN(from) || isNaN(to)) return null
+  const part0 = parts[0]
+  const part1 = parts[1]
+  if (!part0 || !part1) return null
+  const from = parseInt(part0, 10)
+  const to = parseInt(part1, 10)
+  if (Number.isNaN(from) || Number.isNaN(to)) return null
   return { from, to }
 }
 

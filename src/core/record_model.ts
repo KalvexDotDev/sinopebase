@@ -5,22 +5,22 @@
  * Layer 2 — imports from ~/tools/* and ~/core/*.
  */
 
+import type { Collection } from '~/core/collection_model.ts'
 import { BaseModel } from '~/core/db_model.ts'
 import type { Field } from '~/core/field.ts'
 import {
-  FieldNameId,
   FieldNameCollectionId,
   FieldNameCollectionName,
-  FieldNameExpand,
-  FieldNamePassword,
-  FieldNameTokenKey,
   FieldNameEmail,
   FieldNameEmailVisibility,
+  FieldNameExpand,
+  FieldNameId,
+  FieldNamePassword,
+  FieldNameTokenKey,
   FieldNameVerified,
 } from '~/core/field.ts'
-import type { Collection } from '~/core/collection_model.ts'
-import { DateTime } from '~/tools/types/datetime.ts'
 import { Store } from '~/tools/store/store.ts'
+import { DateTime } from '~/tools/types/datetime.ts'
 
 type Data = { [key: string]: unknown }
 
@@ -243,7 +243,7 @@ export class Record extends BaseModel {
     if (typeof v === 'number') return v
     if (typeof v === 'string') {
       const n = Number(v)
-      return isNaN(n) ? 0 : n
+      return Number.isNaN(n) ? 0 : n
     }
     return 0
   }
@@ -467,7 +467,7 @@ export class Record extends BaseModel {
     for (const field of this.collection.fields) {
       const hasCustomVisibility = customVisibility.has(field.name)
       const isVisible = hasCustomVisibility
-        ? customVisibility.get(field.name)!
+        ? (customVisibility.get(field.name) ?? false)
         : !field.hidden
 
       if (!isVisible) continue
@@ -603,13 +603,13 @@ export class Record extends BaseModel {
 // Export field name constants from field.ts for convenience
 // ---------------------------------------------------------------------------
 export {
-  FieldNameId,
   FieldNameCollectionId,
   FieldNameCollectionName,
-  FieldNameExpand,
-  FieldNamePassword,
-  FieldNameTokenKey,
   FieldNameEmail,
   FieldNameEmailVisibility,
+  FieldNameExpand,
+  FieldNameId,
+  FieldNamePassword,
+  FieldNameTokenKey,
   FieldNameVerified,
 }

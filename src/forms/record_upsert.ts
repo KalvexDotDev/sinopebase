@@ -11,21 +11,21 @@
  *   - Hidden field protection
  */
 
-import type { FieldStub, CollectionStub } from '~/core/record_field_resolver';
-import { FieldNamePassword, FieldNameExpand } from '~/core/record_field_resolver';
+import type { CollectionStub, FieldStub } from '~/core/record_field_resolver'
+import { FieldNameExpand, FieldNamePassword } from '~/core/record_field_resolver'
 
 // ---------------------------------------------------------------------------
 // Access level constants
 // ---------------------------------------------------------------------------
 
 /** Default access — standard user permissions. */
-export const AccessLevelDefault = 0;
+export const AccessLevelDefault = 0
 
 /** Manager access — can modify some system fields. */
-export const AccessLevelManager = 1;
+export const AccessLevelManager = 1
 
 /** Superuser access — can modify all fields including hidden ones. */
-export const AccessLevelSuperuser = 2;
+export const AccessLevelSuperuser = 2
 
 // ---------------------------------------------------------------------------
 // Record stub interfaces
@@ -35,29 +35,33 @@ export const AccessLevelSuperuser = 2;
  * Minimal Record interface for upsert operations.
  */
 export interface RecordStubUpsert {
-  id: string;
-  collection(): CollectionStub;
-  isNew(): boolean;
+  id: string
+  collection(): CollectionStub
+  isNew(): boolean
   /** Load data into the record from a map. */
-  loadData(data: Record<string, unknown>): void;
+  loadData(data: Record<string, unknown>): void
   /** Set a loaded field value by name. */
-  set(name: string, value: unknown): void;
+  set(name: string, value: unknown): void
   /** Get a raw field value by name. */
-  getRaw(name: string): unknown;
+  getRaw(name: string): unknown
   /** Set a raw field value by name (bypasses normalization). */
-  setRaw(name: string, value: unknown): void;
+  setRaw(name: string, value: unknown): void
   /** Clone the record. */
-  clone(): RecordStubUpsert;
+  clone(): RecordStubUpsert
   /** Get original record data (pre-modification state). */
-  original(): { fieldsData(): Record<string, unknown>; getRaw(name: string): unknown; validatePassword?(password: string): boolean };
+  original(): {
+    fieldsData(): Record<string, unknown>
+    getRaw(name: string): unknown
+    validatePassword?(password: string): boolean
+  }
   /** Set a field if it exists in the schema, returning the field or null. */
-  setIfFieldExists(k: string, v: unknown): FieldStub | null;
+  setIfFieldExists(k: string, v: unknown): FieldStub | null
   /** Auth record methods. */
-  email(): string;
-  setEmail(email: string): void;
-  verified(): boolean;
-  setVerified(v: boolean): void;
-  validatePassword(password: string): boolean;
+  email(): string
+  setEmail(email: string): void
+  verified(): boolean
+  setVerified(v: boolean): void
+  validatePassword(password: string): boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -68,21 +72,21 @@ export interface RecordStubUpsert {
  * Simple validation error representation.
  */
 export interface ValidationError {
-  field: string;
-  message: string;
-  code?: string;
+  field: string
+  message: string
+  code?: string
 }
 
 /**
  * Checks whether two values match (for equality validation).
  */
 function valuesEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a == null && b == null) return true;
-  if (typeof a === 'string' && typeof b === 'string') return a === b;
-  if (typeof a === 'number' && typeof b === 'number') return a === b;
-  if (typeof a === 'boolean' && typeof b === 'boolean') return a === b;
-  return false;
+  if (a === b) return true
+  if (a == null && b == null) return true
+  if (typeof a === 'string' && typeof b === 'string') return a === b
+  if (typeof a === 'number' && typeof b === 'number') return a === b
+  if (typeof a === 'boolean' && typeof b === 'boolean') return a === b
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -102,28 +106,28 @@ function valuesEqual(a: unknown, b: unknown): boolean {
  */
 export class RecordUpsert {
   /** The record being created/updated. */
-  protected record: RecordStubUpsert;
+  protected record: RecordStubUpsert
 
   /** Access level for this operation. */
-  protected accessLevel = AccessLevelDefault;
+  protected accessLevel = AccessLevelDefault
 
   /** Disables password validation (e.g., when a hash was set directly). */
-  protected disablePasswordValidations = false;
+  protected disablePasswordValidations = false
 
   /** Extra password field: plaintext password. */
-  protected password = '';
+  protected password = ''
 
   /** Extra password field: confirmation. */
-  protected passwordConfirm = '';
+  protected passwordConfirm = ''
 
   /** Extra password field: old password (for auth record updates). */
-  protected oldPassword = '';
+  protected oldPassword = ''
 
   /**
    * @param record - The record to upsert (use `new Record(collection)` for creates).
    */
   constructor(record: RecordStubUpsert) {
-    this.record = record;
+    this.record = record
   }
 
   // -----------------------------------------------------------------------
@@ -132,25 +136,22 @@ export class RecordUpsert {
 
   /** Resets access level to default. */
   resetAccess(): void {
-    this.accessLevel = AccessLevelDefault;
+    this.accessLevel = AccessLevelDefault
   }
 
- /** Grants manager-level access (can modify some system fields). */
+  /** Grants manager-level access (can modify some system fields). */
   grantManagerAccess(): void {
-    this.accessLevel = AccessLevelManager;
+    this.accessLevel = AccessLevelManager
   }
 
   /** Grants superuser access (can modify all fields including hidden). */
   grantSuperuserAccess(): void {
-    this.accessLevel = AccessLevelSuperuser;
+    this.accessLevel = AccessLevelSuperuser
   }
 
   /** Whether the form has manager or superuser access. */
   hasManageAccess(): boolean {
-    return (
-      this.accessLevel === AccessLevelManager ||
-      this.accessLevel === AccessLevelSuperuser
-    );
+    return this.accessLevel === AccessLevelManager || this.accessLevel === AccessLevelSuperuser
   }
 
   // -----------------------------------------------------------------------
@@ -168,30 +169,30 @@ export class RecordUpsert {
    * @param data - The key-value data to load.
    */
   load(data: Record<string, unknown>): void {
-    const excludedFields = new Set<string>([FieldNameExpand]);
-    const isAuth = this.record.collection().isAuth();
+    const excludedFields = new Set<string>([FieldNameExpand])
+    const isAuth = this.record.collection().isAuth()
 
     // Extract auth-specific fields
     if (isAuth) {
       if ('password' in data) {
-        this.password = String(data['password'] ?? '');
+        this.password = String(data.password ?? '')
       }
       if ('passwordConfirm' in data) {
-        this.passwordConfirm = String(data['passwordConfirm'] ?? '');
+        this.passwordConfirm = String(data.passwordConfirm ?? '')
       }
       if ('oldPassword' in data) {
-        this.oldPassword = String(data['oldPassword'] ?? '');
+        this.oldPassword = String(data.oldPassword ?? '')
       }
 
       // Skip non-schema password fields
-      excludedFields.add('passwordConfirm');
-      excludedFields.add('oldPassword');
+      excludedFields.add('passwordConfirm')
+      excludedFields.add('oldPassword')
     }
 
     for (const [k, v] of Object.entries(data)) {
-      if (excludedFields.has(k)) continue;
+      if (excludedFields.has(k)) continue
 
-      const field = this.record.setIfFieldExists(k, v);
+      const field = this.record.setIfFieldExists(k, v)
 
       // Restore original value if hidden field (except "password" for auth)
       if (
@@ -200,10 +201,7 @@ export class RecordUpsert {
         field.getHidden?.() &&
         (!isAuth || field.getName() !== FieldNamePassword)
       ) {
-        this.record.setRaw(
-          field.getName(),
-          this.record.original().getRaw(field.getName()),
-        );
+        this.record.setRaw(field.getName(), this.record.original().getRaw(field.getName()))
       }
     }
   }
@@ -218,52 +216,50 @@ export class RecordUpsert {
    * Returns an array of validation errors (empty array = valid).
    */
   validateFormFields(): ValidationError[] {
-    const errors: ValidationError[] = [];
+    const errors: ValidationError[] = []
 
     if (!this.record.collection().isAuth()) {
-      return errors; // Not an auth collection — no special auth field validation
+      return errors // Not an auth collection — no special auth field validation
     }
 
-    this.syncPasswordFields();
+    this.syncPasswordFields()
 
-    const isNew = this.record.isNew();
-    const original = this.record.original();
+    const isNew = this.record.isNew()
+    const original = this.record.original()
 
     if (!isNew && !this.hasManageAccess()) {
       // Email must match original (can't be changed without manage access)
-      const origEmail = original.getRaw('email');
+      const origEmail = original.getRaw('email')
       if (!valuesEqual(this.record.email(), origEmail)) {
         errors.push({
           field: 'email',
           message: 'Email can only be changed by authorized users or the current auth record.',
           code: 'validation_email_change_not_allowed',
-        });
+        })
       }
 
       // Verified must match original
-      const origVerified = original.getRaw('verified');
+      const origVerified = original.getRaw('verified')
       if (!valuesEqual(this.record.verified(), origVerified)) {
         errors.push({
           field: 'verified',
           message: 'Verified can only be changed by authorized users.',
           code: 'validation_verified_change_not_allowed',
-        });
+        })
       }
     }
 
     // Password validation
     if (!this.disablePasswordValidations) {
-      const needsPassword =
-        isNew || this.passwordConfirm !== '' || this.oldPassword !== '';
-      const needsPasswordConfirm =
-        isNew || this.password !== '' || this.oldPassword !== '';
+      const needsPassword = isNew || this.passwordConfirm !== '' || this.oldPassword !== ''
+      const needsPasswordConfirm = isNew || this.password !== '' || this.oldPassword !== ''
 
       if (needsPassword && !this.password) {
         errors.push({
           field: 'password',
           message: 'Password is required.',
           code: 'validation_required',
-        });
+        })
       }
 
       if (needsPasswordConfirm && !this.passwordConfirm) {
@@ -271,7 +267,7 @@ export class RecordUpsert {
           field: 'passwordConfirm',
           message: 'Password confirmation is required.',
           code: 'validation_required',
-        });
+        })
       }
 
       if (this.password && this.passwordConfirm && this.password !== this.passwordConfirm) {
@@ -279,7 +275,7 @@ export class RecordUpsert {
           field: 'passwordConfirm',
           message: 'Passwords do not match.',
           code: 'validation_values_mismatch',
-        });
+        })
       }
 
       // Old password required on update when form has no manage access
@@ -294,36 +290,36 @@ export class RecordUpsert {
           field: 'oldPassword',
           message: 'Missing or invalid old password.',
           code: 'validation_required',
-        });
+        })
       }
 
       // Validate old password
       if (this.oldPassword) {
-        const oldPwErr = this.checkOldPassword(this.oldPassword);
+        const oldPwErr = this.checkOldPassword(this.oldPassword)
         if (oldPwErr) {
-          errors.push(oldPwErr);
+          errors.push(oldPwErr)
         }
       }
     }
 
-    return errors;
+    return errors
   }
 
   /**
    * Validates the old password against the record's original hash.
    */
   protected checkOldPassword(value: string): ValidationError | null {
-    if (!value) return null;
+    if (!value) return null
 
     if (!this.record.original().validatePassword?.(value)) {
       return {
         field: 'oldPassword',
         message: 'Missing or invalid old password.',
         code: 'validation_invalid_old_password',
-      };
+      }
     }
 
-    return null;
+    return null
   }
 
   /**
@@ -331,18 +327,18 @@ export class RecordUpsert {
    * disables password validations.
    */
   protected syncPasswordFields(): void {
-    if (!this.record.collection().isAuth()) return;
+    if (!this.record.collection().isAuth()) return
 
-    this.disablePasswordValidations = false;
+    this.disablePasswordValidations = false
 
-    const rawPassword = this.record.getRaw(FieldNamePassword);
+    const rawPassword = this.record.getRaw(FieldNamePassword)
     if (rawPassword && typeof rawPassword === 'object') {
-      const pwValue = rawPassword as { plain?: string; hash?: string };
+      const pwValue = rawPassword as { plain?: string; hash?: string }
       if (
         (pwValue.plain && pwValue.plain !== this.password) ||
         (!pwValue.plain && pwValue.hash && this.record.isNew())
       ) {
-        this.disablePasswordValidations = true;
+        this.disablePasswordValidations = true
       }
     }
   }
@@ -357,13 +353,13 @@ export class RecordUpsert {
    * Returns an array of validation errors, or an empty array on success.
    */
   async submit(): Promise<ValidationError[]> {
-    const errors = this.validateFormFields();
-    if (errors.length > 0) return errors;
+    const errors = this.validateFormFields()
+    if (errors.length > 0) return errors
 
     // Persist the record
     try {
-      await this.saveRecord();
-      return [];
+      await this.saveRecord()
+      return []
     } catch (err) {
       return [
         {
@@ -371,7 +367,7 @@ export class RecordUpsert {
           message: `Failed to save record: ${(err as Error).message}`,
           code: 'validation_save_failed',
         },
-      ];
+      ]
     }
   }
 
@@ -383,8 +379,6 @@ export class RecordUpsert {
   protected async saveRecord(): Promise<void> {
     // Default implementation is a stub.
     // Production code should call the app's Save method.
-    throw new Error(
-      'saveRecord() must be overridden — call your app DAO to persist the record',
-    );
+    throw new Error('saveRecord() must be overridden — call your app DAO to persist the record')
   }
 }

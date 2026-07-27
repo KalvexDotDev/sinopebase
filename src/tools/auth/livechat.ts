@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://accounts.livechat.com/v2/user_info response.
  *
  * @example
- * 
+ *
  */
 export class LivechatProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

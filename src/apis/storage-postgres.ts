@@ -1,6 +1,6 @@
 import { sql } from 'kysely'
+import type { PostgresDatabase, PostgresRequestContext } from '../core/db-postgres'
 import type { Bucket, FileObject } from '../tools/filesystem/store-interface'
-import { PostgresDatabase, type PostgresRequestContext } from '../core/db-postgres'
 import {
   StorageAccessError,
   type StorageAccessPolicy,
@@ -76,11 +76,17 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     `.execute(writer)
 
     // Grant schema access and table permissions to request roles.
-    await sql`GRANT USAGE ON SCHEMA storage TO anon, authenticated`.execute(writer).catch(() => undefined)
+    await sql`GRANT USAGE ON SCHEMA storage TO anon, authenticated`
+      .execute(writer)
+      .catch(() => undefined)
     await sql`GRANT SELECT, INSERT ON storage.buckets TO anon, authenticated`.execute(writer)
-    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated`.execute(writer)
+    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated`.execute(
+      writer,
+    )
     // Also grant the sequences so inserts that generate UUIDs work under SET ROLE.
-    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`.execute(writer).catch(() => undefined)
+    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`
+      .execute(writer)
+      .catch(() => undefined)
 
     // Ensure the auth schema and auth.uid() function exist for RLS policies.
     // This mirrors Supabase's auth.uid() — reads the JWT sub claim set by
@@ -91,12 +97,20 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
       LANGUAGE sql STABLE
       AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$
     `.execute(writer)
-    await sql`GRANT USAGE ON SCHEMA auth TO anon, authenticated`.execute(writer).catch(() => undefined)
-    await sql`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`.execute(writer).catch(() => undefined)
+    await sql`GRANT USAGE ON SCHEMA auth TO anon, authenticated`
+      .execute(writer)
+      .catch(() => undefined)
+    await sql`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`
+      .execute(writer)
+      .catch(() => undefined)
 
     // Enable RLS on both tables.
-    await sql`ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`.execute(writer).catch(() => undefined)
-    await sql`ALTER TABLE storage.buckets ENABLE ROW LEVEL SECURITY`.execute(writer).catch(() => undefined)
+    await sql`ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`
+      .execute(writer)
+      .catch(() => undefined)
+    await sql`ALTER TABLE storage.buckets ENABLE ROW LEVEL SECURITY`
+      .execute(writer)
+      .catch(() => undefined)
 
     // ── RLS policies ──
     // Anon: can CRUD in public buckets; private buckets require auth.
@@ -159,14 +173,18 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
             USING (owner_id = auth.uid()::text);
         END IF;
       END $$;
-    `.execute(writer).catch(() => undefined)
+    `
+      .execute(writer)
+      .catch(() => undefined)
 
     // Seed a default public bucket for development and test suites.
     await sql`
       INSERT INTO storage.buckets (id, name, public)
       VALUES ('test-bucket', 'test-bucket', true)
       ON CONFLICT (id) DO NOTHING
-    `.execute(writer).catch(() => undefined)
+    `
+      .execute(writer)
+      .catch(() => undefined)
   }
 
   async isAvailable(): Promise<boolean> {
@@ -235,14 +253,18 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
   ): Promise<void> {
     const bucket = await this.getBucket(input.bucket)
     if (!bucket) throw new StorageAccessError(404, '404', 'Bucket not found')
-    validateBucketConstraints({
-      fileSizeLimit: bucket.file_size_limit === null ? null : Number(bucket.file_size_limit),
-      allowedMimeTypes: bucket.allowed_mime_types,
-    }, input)
+    validateBucketConstraints(
+      {
+        fileSizeLimit: bucket.file_size_limit === null ? null : Number(bucket.file_size_limit),
+        allowedMimeTypes: bucket.allowed_mime_types,
+      },
+      input,
+    )
 
     await this.scoped(context, async (db) => {
       const metadata = JSON.stringify({
-        mimetype: input.contentType.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream',
+        mimetype:
+          input.contentType.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream',
         size: input.data.byteLength,
         cacheControl: input.cacheControl,
       })
@@ -315,11 +337,7 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     })
   }
 
-  async downloadPublic(
-    bucket: string,
-    path: string,
-    read: () => Promise<Buffer>,
-  ): Promise<Buffer> {
+  async downloadPublic(bucket: string, path: string, read: () => Promise<Buffer>): Promise<Buffer> {
     try {
       const result = await sql<{ present: number }>`
         SELECT 1 AS present
@@ -364,11 +382,12 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
 
 function mapDatabaseError(error: unknown): StorageAccessError {
   if (error instanceof StorageAccessError) return error
-  const code = typeof error === 'object' && error !== null && 'code' in error
-    ? String(error.code)
-    : ''
-  if (code === '42501') return new StorageAccessError(403, '403', 'Storage policy denied this operation')
-  if (code === '23505') return new StorageAccessError(409, '409', 'The storage resource already exists')
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
+  if (code === '42501')
+    return new StorageAccessError(403, '403', 'Storage policy denied this operation')
+  if (code === '23505')
+    return new StorageAccessError(409, '409', 'The storage resource already exists')
   if (code === '23503') return new StorageAccessError(404, '404', 'Bucket not found')
   if (code === '42P01' || code === '3F000') {
     return new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')

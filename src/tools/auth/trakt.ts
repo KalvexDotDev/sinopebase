@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.trakt.tv/users/me response.
  *
  * @example
- * 
+ *
  */
 export class TraktProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

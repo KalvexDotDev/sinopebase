@@ -5,20 +5,20 @@
  * Layer 2 — imports from ~/core/* and ~/tools/*.
  */
 
+import {
+  type Collection,
+  type CollectionType,
+  CollectionTypeAuth,
+  CollectionTypeBase,
+  CollectionTypeView,
+} from '~/core/collection_model.ts'
 import type { IDatabase } from '~/core/db-interface.ts'
 import {
-  Collection,
-  CollectionTypeBase,
-  CollectionTypeAuth,
-  CollectionTypeView,
-  type CollectionType,
-} from '~/core/collection_model.ts'
-import {
-  FieldNameId,
   FieldNameEmail,
+  FieldNameEmailVisibility,
+  FieldNameId,
   FieldNamePassword,
   FieldNameTokenKey,
-  FieldNameEmailVisibility,
   FieldNameVerified,
 } from '~/core/field.ts'
 
@@ -33,10 +33,7 @@ const CollectionNameRegex = /^[a-zA-Z][a-zA-Z0-9_]*$/
 const DefaultIdRegex = /^[a-zA-Z0-9]+$/
 
 /** Reserved auth field names that cannot be used as collection field names. */
-const ReservedAuthKeys = new Set([
-  'passwordConfirm',
-  'oldPassword',
-])
+const ReservedAuthKeys = new Set(['passwordConfirm', 'oldPassword'])
 
 /** Valid collection types. */
 const ValidCollectionTypes = new Set<CollectionType>([
@@ -58,11 +55,7 @@ export class CollectionValidator {
   private original: Collection | null
   private newCollection: Collection
 
-  constructor(
-    newCollection: Collection,
-    original: Collection | null,
-    _db?: IDatabase,
-  ) {
+  constructor(newCollection: Collection, original: Collection | null, _db?: IDatabase) {
     this.newCollection = newCollection
     this.original = original
   }
@@ -176,12 +169,19 @@ export class CollectionValidator {
     }
 
     if (!CollectionNameRegex.test(this.newCollection.name)) {
-      errors.push('name: must start with a letter and contain only letters, digits, and underscores')
+      errors.push(
+        'name: must start with a letter and contain only letters, digits, and underscores',
+      )
     }
 
     // Check if name is a reserved SQL keyword
     const reservedNames = new Set([
-      'id', 'created', 'updated', '_collections', '_params', '_externalauths',
+      'id',
+      'created',
+      'updated',
+      '_collections',
+      '_params',
+      '_externalauths',
     ])
     if (reservedNames.has(this.newCollection.name.toLowerCase())) {
       errors.push(`name: "${this.newCollection.name}" is a reserved name`)
@@ -329,7 +329,7 @@ export class CollectionValidator {
 
     // Parse and validate each index expression
     for (let i = 0; i < this.newCollection.indexes.length; i++) {
-      const idx = this.newCollection.indexes[i]!
+      const idx = this.newCollection.indexes[i]
       if (!idx || idx.trim() === '') {
         errors.push(`indexes[${i}]: empty index expression`)
         continue
@@ -362,9 +362,7 @@ export class CollectionValidator {
     const errors: string[] = []
 
     if (this.newCollection.isAuth() && this.newCollection.authOptions) {
-      errors.push(
-        ...this.newCollection.authOptions.validate().map((e) => `options.${e}`),
-      )
+      errors.push(...this.newCollection.authOptions.validate().map((e) => `options.${e}`))
     }
 
     return errors
@@ -396,7 +394,7 @@ export async function validateCollection(
     const msg = colonIdx >= 0 ? err.substring(colonIdx + 1).trim() : err
 
     if (!grouped[key]) grouped[key] = []
-    grouped[key]!.push(msg)
+    grouped[key]?.push(msg)
   }
 
   return grouped

@@ -26,7 +26,7 @@ import { BaseProvider } from '~/tools/auth/base_provider.ts'
  *       the https://api.planningcenteronline.com/people/v2/me response.
  *
  * @example
- * 
+ *
  */
 export class PlanningcenterProvider extends BaseProvider {
   constructor(clientId: string, clientSecret: string, redirectUrl: string) {

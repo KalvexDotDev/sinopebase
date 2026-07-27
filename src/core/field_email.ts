@@ -5,8 +5,8 @@
  * Layer 2 — imports from ~/tools/*.
  */
 
-import { RegisterField, ValidateFieldName, ValidateFieldId } from '~/core/field.ts'
 import type { Field } from '~/core/field.ts'
+import { RegisterField, ValidateFieldId, ValidateFieldName } from '~/core/field.ts'
 
 export const FieldTypeEmail = 'email'
 
@@ -57,7 +57,7 @@ export class EmailField implements Field {
     }
 
     if (this.required) {
-      schema['minLength'] = 1
+      schema.minLength = 1
     }
 
     return schema

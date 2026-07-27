@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
-import { logger, generateRequestId, withRequestId } from '../../src/core/logger'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
+import { generateRequestId, logger, withRequestId } from '../../src/core/logger'
 
 // ---------------------------------------------------------------------------
 // Helpers: capture process.stdout / process.stderr writes
@@ -10,11 +10,17 @@ interface Capture {
   stderr: string[]
 }
 
+function first<T>(arr: T[]): T {
+  const v = arr[0]
+  if (v === undefined) throw new Error('Expected at least one element in array')
+  return v
+}
+
 function captureStreams(): Capture {
   const cap: Capture = { stdout: [], stderr: [] }
 
-  const origStdoutWrite = process.stdout.write.bind(process.stdout)
-  const origStderrWrite = process.stderr.write.bind(process.stderr)
+  const _origStdoutWrite = process.stdout.write.bind(process.stdout)
+  const _origStderrWrite = process.stderr.write.bind(process.stderr)
 
   // @ts-expect-error - mocking write for tests
   process.stdout.write = (chunk: string) => {
@@ -41,7 +47,7 @@ function restoreStreams(): void {
 const savedEnv = new Map<string, string | undefined>()
 
 beforeAll(() => {
-  savedEnv.set('NODE_ENV', process.env['NODE_ENV'])
+  savedEnv.set('NODE_ENV', process.env.NODE_ENV)
 })
 
 afterAll(() => {
@@ -57,7 +63,7 @@ afterAll(() => {
 
 describe('logger — production mode (JSON)', () => {
   beforeEach(() => {
-    process.env['NODE_ENV'] = 'production'
+    process.env.NODE_ENV = 'production'
   })
 
   it('outputs JSON lines to stdout for info', () => {
@@ -65,7 +71,7 @@ describe('logger — production mode (JSON)', () => {
     try {
       logger.info('hello world', { foo: 'bar' })
       expect(cap.stdout.length).toBe(1)
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.level).toBe('info')
       expect(parsed.msg).toBe('hello world')
       expect(parsed.foo).toBe('bar')
@@ -81,7 +87,7 @@ describe('logger — production mode (JSON)', () => {
     try {
       logger.warn('warning', { detail: 'something' })
       expect(cap.stderr.length).toBe(1)
-      const parsed = JSON.parse(cap.stderr[0]!)
+      const parsed = JSON.parse(first(cap.stderr))
       expect(parsed.level).toBe('warn')
       expect(parsed.msg).toBe('warning')
       expect(parsed.detail).toBe('something')
@@ -95,7 +101,7 @@ describe('logger — production mode (JSON)', () => {
     try {
       logger.error('an error occurred')
       expect(cap.stderr.length).toBe(1)
-      const parsed = JSON.parse(cap.stderr[0]!)
+      const parsed = JSON.parse(first(cap.stderr))
       expect(parsed.level).toBe('error')
       expect(parsed.msg).toBe('an error occurred')
     } finally {
@@ -108,7 +114,7 @@ describe('logger — production mode (JSON)', () => {
     try {
       logger.debug('debugging', { x: 1 })
       expect(cap.stdout.length).toBe(1)
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.level).toBe('debug')
       expect(parsed.msg).toBe('debugging')
       expect(parsed.x).toBe(1)
@@ -120,7 +126,7 @@ describe('logger — production mode (JSON)', () => {
 
 describe('logger — development mode (pretty-print)', () => {
   beforeEach(() => {
-    delete process.env['NODE_ENV']
+    delete process.env.NODE_ENV
   })
 
   it('outputs colored text to stdout for info', () => {
@@ -128,7 +134,7 @@ describe('logger — development mode (pretty-print)', () => {
     try {
       logger.info('dev message')
       expect(cap.stdout.length).toBe(1)
-      const line = cap.stdout[0]!
+      const line = first(cap.stdout)
       expect(line).toContain('INFO')
       expect(line).toContain('dev message')
       // Should contain ANSI color codes
@@ -143,7 +149,7 @@ describe('logger — development mode (pretty-print)', () => {
     try {
       logger.error('dev error')
       expect(cap.stderr.length).toBe(1)
-      const line = cap.stderr[0]!
+      const line = first(cap.stderr)
       expect(line).toContain('ERROR')
       expect(line).toContain('dev error')
     } finally {
@@ -156,7 +162,7 @@ describe('logger — development mode (pretty-print)', () => {
     try {
       logger.info('with context', { route: '/test', status: 200 })
       expect(cap.stdout.length).toBe(1)
-      const line = cap.stdout[0]!
+      const line = first(cap.stdout)
       expect(line).toContain('with context')
       expect(line).toContain('route')
       expect(line).toContain('/test')
@@ -170,14 +176,14 @@ describe('logger — development mode (pretty-print)', () => {
 
 describe('logger — secret redaction', () => {
   beforeEach(() => {
-    process.env['NODE_ENV'] = 'production'
+    process.env.NODE_ENV = 'production'
   })
 
   it('redacts values with "secret" in the key', () => {
     const cap = captureStreams()
     try {
       logger.info('secrets check', { client_secret: 'super-secret-value' })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.client_secret).toBe('[REDACTED]')
     } finally {
       restoreStreams()
@@ -188,7 +194,7 @@ describe('logger — secret redaction', () => {
     const cap = captureStreams()
     try {
       logger.info('api key', { api_key: 'sk-1234567890abcdef' })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.api_key).toBe('[REDACTED]')
     } finally {
       restoreStreams()
@@ -199,7 +205,7 @@ describe('logger — secret redaction', () => {
     const cap = captureStreams()
     try {
       logger.info('token', { auth_token: 'eyJhbGciOiJIUzI1NiJ9' })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.auth_token).toBe('[REDACTED]')
     } finally {
       restoreStreams()
@@ -210,7 +216,7 @@ describe('logger — secret redaction', () => {
     const cap = captureStreams()
     try {
       logger.info('password', { db_password: 'hunter2' })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.db_password).toBe('[REDACTED]')
     } finally {
       restoreStreams()
@@ -221,7 +227,7 @@ describe('logger — secret redaction', () => {
     const cap = captureStreams()
     try {
       logger.info('auth header', { authorization: 'Bearer eyJhbGci' })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.authorization).toBe('[REDACTED]')
     } finally {
       restoreStreams()
@@ -232,7 +238,7 @@ describe('logger — secret redaction', () => {
     const cap = captureStreams()
     try {
       logger.info('normal', { userId: '123', email: 'test@example.com' })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.userId).toBe('123')
       expect(parsed.email).toBe('test@example.com')
     } finally {
@@ -244,9 +250,7 @@ describe('logger — secret redaction', () => {
 describe('generateRequestId', () => {
   it('returns a UUID v4 string', () => {
     const id = generateRequestId()
-    expect(id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    )
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 
   it('generates unique values', () => {
@@ -260,7 +264,7 @@ describe('generateRequestId', () => {
 
 describe('withRequestId', () => {
   beforeEach(() => {
-    process.env['NODE_ENV'] = 'production'
+    process.env.NODE_ENV = 'production'
   })
 
   it('includes request_id in log entries', () => {
@@ -269,7 +273,7 @@ describe('withRequestId', () => {
       withRequestId('req-abc-123', () => {
         logger.info('inside request scope')
       })
-      const parsed = JSON.parse(cap.stdout[0]!)
+      const parsed = JSON.parse(first(cap.stdout))
       expect(parsed.request_id).toBe('req-abc-123')
       expect(parsed.msg).toBe('inside request scope')
     } finally {

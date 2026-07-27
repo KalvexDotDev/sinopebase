@@ -5,12 +5,28 @@
  * Layer 2 — imports from ~/core/*.
  */
 
-import { BaseModel } from '~/core/db_model.ts'
-import { FieldsList } from '~/core/fields_list.ts'
-import { FieldNameId, FieldNameEmail, FieldNamePassword, FieldNameTokenKey, FieldNameEmailVisibility, FieldNameVerified, type Field } from '~/core/field.ts'
-import { CollectionAuthOptions, TokenConfig, PasswordAuthConfig, OAuth2Config, MFAConfig, OTPConfig, AuthAlertConfig } from '~/core/collection_model_auth_options.ts'
-import type { CollectionViewOptions } from '~/core/collection_model_view_options.ts'
+import {
+  AuthAlertConfig,
+  CollectionAuthOptions,
+  MFAConfig,
+  OAuth2Config,
+  OTPConfig,
+  PasswordAuthConfig,
+  TokenConfig,
+} from '~/core/collection_model_auth_options.ts'
 import type { CollectionBaseOptions } from '~/core/collection_model_base_options.ts'
+import type { CollectionViewOptions } from '~/core/collection_model_view_options.ts'
+import { BaseModel } from '~/core/db_model.ts'
+import {
+  type Field,
+  FieldNameEmail,
+  FieldNameEmailVisibility,
+  FieldNameId,
+  FieldNamePassword,
+  FieldNameTokenKey,
+  FieldNameVerified,
+} from '~/core/field.ts'
+import { FieldsList } from '~/core/fields_list.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -20,7 +36,10 @@ export const CollectionTypeBase = 'base' as const
 export const CollectionTypeAuth = 'auth' as const
 export const CollectionTypeView = 'view' as const
 
-export type CollectionType = typeof CollectionTypeBase | typeof CollectionTypeAuth | typeof CollectionTypeView
+export type CollectionType =
+  | typeof CollectionTypeBase
+  | typeof CollectionTypeAuth
+  | typeof CollectionTypeView
 
 export const DefaultIdLength = 15
 
@@ -152,7 +171,9 @@ export class Collection extends BaseModel {
     if (!this.isView()) {
       throw new Error('collection is not a view type')
     }
-    return this.viewOptions!
+    const opts = this.viewOptions
+    if (!opts) throw new Error('viewOptions not set for view-type collection')
+    return opts
   }
 
   // -- serialization ----------------------------------------------------
@@ -177,15 +198,15 @@ export class Collection extends BaseModel {
     }
 
     // Serialize fields
-    data['fields'] = JSON.stringify(this.fields.toJSON())
+    data.fields = JSON.stringify(this.fields.toJSON())
 
     // Serialize type-specific options
     if (this.isAuth() && this.authOptions) {
-      data['options'] = JSON.stringify(this.authOptions.toJSON())
+      data.options = JSON.stringify(this.authOptions.toJSON())
     } else if (this.isView() && this.viewOptions) {
-      data['options'] = JSON.stringify(this.viewOptions.toJSON())
+      data.options = JSON.stringify(this.viewOptions.toJSON())
     } else {
-      data['options'] = '{}'
+      data.options = '{}'
     }
 
     return data
@@ -195,41 +216,41 @@ export class Collection extends BaseModel {
    * Populates the collection from a DB row.
    */
   loadFromDb(data: Record<string, unknown>): void {
-    this.id = String(data['id'] ?? '')
-    this.name = String(data['name'] ?? '')
-    this.type = (data['type'] as CollectionType) ?? CollectionTypeBase
-    this.system = Boolean(data['system'])
+    this.id = String(data.id ?? '')
+    this.name = String(data.name ?? '')
+    this.type = (data.type as CollectionType) ?? CollectionTypeBase
+    this.system = Boolean(data.system)
 
-    this.listRule = data['listRule'] != null ? String(data['listRule']) : null
-    this.viewRule = data['viewRule'] != null ? String(data['viewRule']) : null
-    this.createRule = data['createRule'] != null ? String(data['createRule']) : null
-    this.updateRule = data['updateRule'] != null ? String(data['updateRule']) : null
-    this.deleteRule = data['deleteRule'] != null ? String(data['deleteRule']) : null
+    this.listRule = data.listRule != null ? String(data.listRule) : null
+    this.viewRule = data.viewRule != null ? String(data.viewRule) : null
+    this.createRule = data.createRule != null ? String(data.createRule) : null
+    this.updateRule = data.updateRule != null ? String(data.updateRule) : null
+    this.deleteRule = data.deleteRule != null ? String(data.deleteRule) : null
 
     // Parse indexes
-    if (typeof data['indexes'] === 'string') {
+    if (typeof data.indexes === 'string') {
       try {
-        this.indexes = JSON.parse(data['indexes'])
+        this.indexes = JSON.parse(data.indexes)
       } catch {
         this.indexes = []
       }
-    } else if (Array.isArray(data['indexes'])) {
-      this.indexes = data['indexes'].map(String)
+    } else if (Array.isArray(data.indexes)) {
+      this.indexes = data.indexes.map(String)
     }
 
     // Parse fields
-    if (typeof data['fields'] === 'string') {
+    if (typeof data.fields === 'string') {
       try {
-        this.fields = FieldsList.fromJSON(data['fields'])
+        this.fields = FieldsList.fromJSON(data.fields)
       } catch {
         // ignore parse errors
       }
     }
 
     // Parse options
-    if (typeof data['options'] === 'string' && data['options']) {
+    if (typeof data.options === 'string' && data.options) {
       try {
-        const opts = JSON.parse(data['options']) as Record<string, unknown>
+        const opts = JSON.parse(data.options) as Record<string, unknown>
         this.rawOptions = opts
         if (this.isAuth()) {
           this.authOptions = CollectionAuthOptions.fromJSON(opts)
@@ -268,11 +289,11 @@ export class Collection extends BaseModel {
 
     // Serialize type-specific options
     if (this.isAuth() && this.authOptions) {
-      result['options'] = this.authOptions.toJSON()
+      result.options = this.authOptions.toJSON()
     } else if (this.isView() && this.viewOptions) {
-      result['options'] = this.viewOptions.toJSON()
+      result.options = this.viewOptions.toJSON()
     } else {
-      result['options'] = this.baseOptions?.toJSON() ?? {}
+      result.options = this.baseOptions?.toJSON() ?? {}
     }
 
     return result
@@ -282,27 +303,32 @@ export class Collection extends BaseModel {
    * Loads the collection from a JSON object (from API).
    */
   loadFromJSON(data: Record<string, unknown>): void {
-    if (typeof data['id'] === 'string') this.id = data['id']
-    if (typeof data['name'] === 'string') this.name = data['name']
-    if (typeof data['type'] === 'string') this.type = data['type'] as CollectionType
-    if (typeof data['system'] === 'boolean') this.system = data['system']
+    if (typeof data.id === 'string') this.id = data.id
+    if (typeof data.name === 'string') this.name = data.name
+    if (typeof data.type === 'string') this.type = data.type as CollectionType
+    if (typeof data.system === 'boolean') this.system = data.system
 
-    if (data['listRule'] !== undefined) this.listRule = data['listRule'] != null ? String(data['listRule']) : null
-    if (data['viewRule'] !== undefined) this.viewRule = data['viewRule'] != null ? String(data['viewRule']) : null
-    if (data['createRule'] !== undefined) this.createRule = data['createRule'] != null ? String(data['createRule']) : null
-    if (data['updateRule'] !== undefined) this.updateRule = data['updateRule'] != null ? String(data['updateRule']) : null
-    if (data['deleteRule'] !== undefined) this.deleteRule = data['deleteRule'] != null ? String(data['deleteRule']) : null
+    if (data.listRule !== undefined)
+      this.listRule = data.listRule != null ? String(data.listRule) : null
+    if (data.viewRule !== undefined)
+      this.viewRule = data.viewRule != null ? String(data.viewRule) : null
+    if (data.createRule !== undefined)
+      this.createRule = data.createRule != null ? String(data.createRule) : null
+    if (data.updateRule !== undefined)
+      this.updateRule = data.updateRule != null ? String(data.updateRule) : null
+    if (data.deleteRule !== undefined)
+      this.deleteRule = data.deleteRule != null ? String(data.deleteRule) : null
 
-    if (Array.isArray(data['indexes'])) {
-      this.indexes = data['indexes'].map(String)
+    if (Array.isArray(data.indexes)) {
+      this.indexes = data.indexes.map(String)
     }
 
-    if (Array.isArray(data['fields'])) {
-      this.fields = FieldsList.fromJSON(data['fields'] as Record<string, unknown>[])
+    if (Array.isArray(data.fields)) {
+      this.fields = FieldsList.fromJSON(data.fields as Record<string, unknown>[])
     }
 
-    if (data['options'] && typeof data['options'] === 'object') {
-      const opts = data['options'] as Record<string, unknown>
+    if (data.options && typeof data.options === 'object') {
+      const opts = data.options as Record<string, unknown>
       this.rawOptions = opts
       if (this.isAuth()) {
         this.authOptions = CollectionAuthOptions.fromJSON(opts)
@@ -409,21 +435,28 @@ export function FieldsListFromJSON(fields: Record<string, unknown>[]): FieldsLis
  * all standard field properties.
  */
 function createFieldFromJSON(json: Record<string, unknown>): Field | null {
-  if (!json['type'] || typeof json['type'] !== 'string') return null
+  if (!json.type || typeof json.type !== 'string') return null
 
   // Create a field object with all properties from JSON
   const field: Field = {
-    id: String(json['id'] ?? ''),
-    name: String(json['name'] ?? ''),
-    type: String(json['type']),
-    system: Boolean(json['system']),
-    hidden: Boolean(json['hidden']),
-    columnType: String(json['columnType'] ?? 'TEXT DEFAULT NULL'),
-    settingsSchema: (json['settingsSchema'] as Record<string, unknown>) ?? {},
+    id: String(json.id ?? ''),
+    name: String(json.name ?? ''),
+    type: String(json.type),
+    system: Boolean(json.system),
+    hidden: Boolean(json.hidden),
+    columnType: String(json.columnType ?? 'TEXT DEFAULT NULL'),
+    settingsSchema: (json.settingsSchema as Record<string, unknown>) ?? {},
   }
 
   return field
 }
 
 // Re-export commonly used field names for convenience
-export { FieldNameId, FieldNameEmail, FieldNamePassword, FieldNameTokenKey, FieldNameEmailVisibility, FieldNameVerified }
+export {
+  FieldNameEmail,
+  FieldNameEmailVisibility,
+  FieldNameId,
+  FieldNamePassword,
+  FieldNameTokenKey,
+  FieldNameVerified,
+}

@@ -7,7 +7,7 @@
  * Each table is a Map<string, Record<string, unknown>> keyed by row id.
  */
 
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 
 // ---------------------------------------------------------------------------
 // Filter types
@@ -64,7 +64,9 @@ export class MemoryDatabase {
     if (!this.tables.has(name)) {
       this.tables.set(name, new Map())
     }
-    return this.tables.get(name)!
+    const t = this.tables.get(name)
+    if (!t) throw new Error(`Table ${name} not found`)
+    return t
   }
 
   // -----------------------------------------------------------------------
@@ -79,7 +81,7 @@ export class MemoryDatabase {
     const store = this.getTable(table)
     const inserted: Record<string, unknown>[] = []
     for (const row of rows) {
-      const id = (row['id'] as string) ?? randomUUID()
+      const id = (row.id as string) ?? randomUUID()
       const newRow = { ...row, id }
       store.set(id, newRow)
       inserted.push(newRow)
@@ -94,7 +96,7 @@ export class MemoryDatabase {
     const store = this.getTable(table)
     const results: Record<string, unknown>[] = []
     for (const row of rows) {
-      const id = (row['id'] as string) ?? randomUUID()
+      const id = (row.id as string) ?? randomUUID()
       const existing = store.get(id)
       if (existing) {
         const merged = { ...existing, ...row, id }
@@ -122,13 +124,14 @@ export class MemoryDatabase {
 
     // Apply individual column filters (AND)
     if (options.filters && options.filters.length > 0) {
-      rows = rows.filter((row) => this.matchesAllFilters(row, options.filters!))
+      const f = options.filters
+      if (f) rows = rows.filter((row) => this.matchesAllFilters(row, f))
     }
 
     // Apply OR filters (OR of AND groups)
     if (options.orFilters && options.orFilters.length > 0) {
       rows = rows.filter((row) =>
-        options.orFilters!.some((group) => this.matchesAllFilters(row, group)),
+        options.orFilters?.some((group) => this.matchesAllFilters(row, group)),
       )
     }
 
@@ -216,17 +219,11 @@ export class MemoryDatabase {
   // Filter matching
   // -----------------------------------------------------------------------
 
-  private matchesAllFilters(
-    row: Record<string, unknown>,
-    filters: ParsedFilter[],
-  ): boolean {
+  private matchesAllFilters(row: Record<string, unknown>, filters: ParsedFilter[]): boolean {
     return filters.every((f) => this.matchesFilter(row, f))
   }
 
-  private matchesFilter(
-    row: Record<string, unknown>,
-    filter: ParsedFilter,
-  ): boolean {
+  private matchesFilter(row: Record<string, unknown>, filter: ParsedFilter): boolean {
     const { column, operator, value } = filter
     const rowValue = row[column]
 
@@ -257,7 +254,11 @@ export class MemoryDatabase {
         // Parse (val1,val2,...) format
         const values = Array.isArray(value)
           ? value
-          : String(value).replace(/^\(|\)$/g, '').split(',').map((v) => v.trim()).filter(Boolean)
+          : String(value)
+              .replace(/^\(|\)$/g, '')
+              .split(',')
+              .map((v) => v.trim())
+              .filter(Boolean)
         return values.some((v) => this.compareEq(rowValue, v))
       }
       case 'not': {
@@ -283,18 +284,14 @@ export class MemoryDatabase {
     const numRow = Number(strVal)
     const valueString = String(value)
     const numVal = Number(valueString)
-    if (!isNaN(numRow) && !isNaN(numVal) && valueString !== '') {
+    if (!Number.isNaN(numRow) && !Number.isNaN(numVal) && valueString !== '') {
       return numRow - numVal
     }
     // String comparison
     return strVal.localeCompare(valueString)
   }
 
-  private matchLike(
-    rowValue: unknown,
-    pattern: unknown,
-    caseInsensitive: boolean,
-  ): boolean {
+  private matchLike(rowValue: unknown, pattern: unknown, caseInsensitive: boolean): boolean {
     if (rowValue === null || rowValue === undefined) return false
     const strVal = String(rowValue)
     // Convert SQL LIKE pattern to regex
@@ -314,17 +311,15 @@ export class MemoryDatabase {
   // Sorting
   // -----------------------------------------------------------------------
 
-  private applySort(
-    rows: Record<string, unknown>[],
-    order: string,
-  ): Record<string, unknown>[] {
+  private applySort(rows: Record<string, unknown>[], order: string): Record<string, unknown>[] {
     const orderParts = order.split(',')
 
     // Apply sorts from last to first (stable multi-column sort)
     for (let i = orderParts.length - 1; i >= 0; i--) {
-      const part = orderParts[i]!.trim()
+      const part = orderParts[i]?.trim()
       const segments = part.split('.')
-      const column = segments[0]!
+      const column = segments[0]
+      if (!column) continue
       const dir = segments[1]
       const rest = segments.slice(2)
       const ascending = dir !== 'desc'
@@ -353,7 +348,7 @@ export class MemoryDatabase {
           // Try numeric comparison first
           const aNum = Number(aVal)
           const bNum = Number(bVal)
-          if (!isNaN(aNum) && !isNaN(bNum)) {
+          if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
             cmp = aNum - bNum
           } else {
             cmp = aVal.localeCompare(bVal)

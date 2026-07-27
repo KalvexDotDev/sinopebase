@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'bun:test'
-import { IsRegex, IPOrSubnet } from '~/core/validators/string.ts'
+import { describe, expect, it } from 'bun:test'
+import { IPOrSubnet, IsRegex } from '~/core/validators/string.ts'
 
 describe('IsRegex', () => {
   it('returns null for empty string', () => {
@@ -15,7 +15,7 @@ describe('IsRegex', () => {
   it('returns error for invalid regex', () => {
     const err = IsRegex('[invalid')
     expect(err).not.toBeNull()
-    expect(err!.code).toBe('validation_invalid_regex')
+    expect(err?.code).toBe('validation_invalid_regex')
   })
 
   it('returns error for non-string input', () => {

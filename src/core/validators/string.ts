@@ -63,7 +63,7 @@ export const IPOrSubnet: ValidationRule = (value: unknown): ValidationError | nu
       if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 128) throw new Error()
 
       // Validate the IP part
-      const ipParts = parts[0]!.split('.')
+      const ipParts = parts[0]?.split('.')
       if (ipParts.length === 4) {
         // IPv4 CIDR
         for (const p of ipParts) {
@@ -72,9 +72,9 @@ export const IPOrSubnet: ValidationRule = (value: unknown): ValidationError | nu
         }
         if (prefixLen > 32) throw new Error()
         // Also validate IPv6 CIDR
-      } else if (parts[0]!.includes(':')) {
+      } else if (parts[0]?.includes(':')) {
         // IPv6 CIDR — validate basic hex format
-        const hexGroups = parts[0]!.split(':')
+        const hexGroups = parts[0]?.split(':')
         if (hexGroups.length < 2 || hexGroups.length > 8) throw new Error()
       } else {
         throw new Error()
@@ -82,10 +82,7 @@ export const IPOrSubnet: ValidationRule = (value: unknown): ValidationError | nu
 
       return null
     } catch {
-      return new ValidationError(
-        'validation_invalid_ip_or_subnet',
-        'Invalid IP or CIDR subnet',
-      )
+      return new ValidationError('validation_invalid_ip_or_subnet', 'Invalid IP or CIDR subnet')
     }
   }
 
@@ -108,8 +105,5 @@ export const IPOrSubnet: ValidationRule = (value: unknown): ValidationError | nu
     return null
   }
 
-  return new ValidationError(
-    'validation_invalid_ip_or_subnet',
-    'Invalid IP or CIDR subnet',
-  )
+  return new ValidationError('validation_invalid_ip_or_subnet', 'Invalid IP or CIDR subnet')
 }

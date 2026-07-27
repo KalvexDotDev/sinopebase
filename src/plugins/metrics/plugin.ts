@@ -2,7 +2,13 @@
 // Metrics Plugin — Prometheus-compatible metrics + JSON API
 // ---------------------------------------------------------------------------
 
-import { Elysia } from 'elysia'
+import type { Elysia } from 'elysia'
+
+interface MetricsContext {
+  store: Record<string, number>
+  set?: { status?: number }
+  request?: { method?: string }
+}
 
 const startTime = Date.now()
 const requestCounts = { total: 0 }
@@ -16,10 +22,10 @@ export class MetricsPlugin {
     const startKey = '__metricsStart'
 
     app
-      .onRequest((ctx: any) => {
+      .onRequest((ctx: MetricsContext) => {
         ctx.store[startKey] = Date.now()
       })
-      .onAfterHandle((ctx: any) => {
+      .onAfterHandle((ctx: MetricsContext) => {
         const duration = Date.now() - (ctx.store[startKey] || Date.now())
         const status = String(ctx.set?.status || 200)
         const method = ctx.request?.method || 'GET'

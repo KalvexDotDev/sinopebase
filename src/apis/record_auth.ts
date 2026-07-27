@@ -9,10 +9,15 @@
  */
 
 import { Elysia } from 'elysia'
-import type { IDatabase } from '~/core/db-interface'
 import { Collection } from '~/core/collection_model'
+import type { IDatabase } from '~/core/db-interface'
 import { Record as RecordModel } from '~/core/record_model'
-import { newAuthTokenForRecord, newVerificationToken, newPasswordResetToken, newEmailChangeToken } from '~/core/record_tokens'
+import {
+  newAuthTokenForRecord,
+  newEmailChangeToken,
+  newPasswordResetToken,
+  newVerificationToken,
+} from '~/core/record_tokens'
 import type { RequestAuthInfo } from './record_helpers'
 
 // ---------------------------------------------------------------------------
@@ -26,7 +31,10 @@ export interface AuthRecordResponse {
 
 export interface AuthMethodsResponse {
   password?: { enabled: boolean; identityFields: string[] }
-  oauth2?: { enabled: boolean; providers: Array<{ name: string; displayName: string; logo: string }> }
+  oauth2?: {
+    enabled: boolean
+    providers: Array<{ name: string; displayName: string; logo: string }>
+  }
   mfa?: { enabled: boolean }
   otp?: { enabled: boolean }
 }
@@ -35,25 +43,39 @@ export interface AuthMethodsResponse {
 // Local DB helpers (handle both IDatabase and MemoryDatabase formats)
 // ---------------------------------------------------------------------------
 
-async function selectRows(db: IDatabase, table: string, options: any = {}): Promise<Record<string, unknown>[]> {
+import type { SelectOptions } from '~/core/db-interface'
+import { selectRows as unwrapRows } from './db-helpers'
+
+async function selectRows(
+  db: IDatabase,
+  table: string,
+  options: SelectOptions = {},
+): Promise<Record<string, unknown>[]> {
   try {
     const result = await db.select(table, options)
-    if (Array.isArray(result)) return result
-    if (result && typeof result === 'object' && 'rows' in result) return (result as any).rows
-    return []
+    return unwrapRows(result)
   } catch {
     return []
   }
 }
 
-async function findCollectionByIdOrName(db: IDatabase, idOrName: string): Promise<Collection | null> {
+/** Extracts the first row, returning null when the array is empty. */
+function firstRow<T>(rows: T[]): T | null {
+  return rows[0] ?? null
+}
+
+async function findCollectionByIdOrName(
+  db: IDatabase,
+  idOrName: string,
+): Promise<Collection | null> {
   const rows = await selectRows(db, '_collections', {
     filters: [{ column: 'id', operator: 'eq', value: idOrName }],
     limit: 1,
   })
-  if (rows.length > 0) {
+  const first = firstRow(rows)
+  if (first) {
     const collection = new Collection()
-    collection.loadFromDb(rows[0]!)
+    collection.loadFromDb(first)
     return collection
   }
 
@@ -61,9 +83,10 @@ async function findCollectionByIdOrName(db: IDatabase, idOrName: string): Promis
     filters: [{ column: 'name', operator: 'ilike', value: idOrName }],
     limit: 1,
   })
-  if (nameRows.length > 0) {
+  const nameFirst = firstRow(nameRows)
+  if (nameFirst) {
     const collection = new Collection()
-    collection.loadFromDb(nameRows[0]!)
+    collection.loadFromDb(nameFirst)
     return collection
   }
   return null
@@ -83,9 +106,11 @@ async function findAuthRecordByEmail(
   const collection = await findCollectionByIdOrName(db, collectionName)
   if (!collection) return null
 
+  const first = firstRow(rows)
+  if (!first) return null
   const record = new RecordModel(collection)
-  record.load(rows[0]!)
-  if (rows[0]!['id']) record.id = String(rows[0]!['id'])
+  record.load(first)
+  if (first.id) record.id = String(first.id)
   return record
 }
 
@@ -98,12 +123,13 @@ async function findRecordById(
     filters: [{ column: 'id', operator: 'eq', value: recordId }],
     limit: 1,
   })
-  if (rows.length === 0) return null
+  const first = firstRow(rows)
+  if (!first) return null
   const collection = await findCollectionByIdOrName(db, collectionName)
   if (!collection) return null
   const record = new RecordModel(collection)
-  record.load(rows[0]!)
-  if (rows[0]!['id']) record.id = String(rows[0]!['id'])
+  record.load(first)
+  if (first.id) record.id = String(first.id)
   return record
 }
 
@@ -182,9 +208,12 @@ export function createRecordAuthPlugin(
       }
 
       const pw = record.getRaw('password')
-      const isValid = pw && typeof pw === 'object' && typeof (pw as Record<string, unknown>)['validate'] === 'function'
-        ? (pw as { validate: (pwd: string) => boolean }).validate(password)
-        : password === String(pw ?? '')
+      const isValid =
+        pw &&
+        typeof pw === 'object' &&
+        typeof (pw as Record<string, unknown>).validate === 'function'
+          ? (pw as { validate: (pwd: string) => boolean }).validate(password)
+          : password === String(pw ?? '')
 
       if (!isValid) {
         set.status = 400
@@ -287,7 +316,9 @@ export function createRecordAuthPlugin(
     }
 
     const { token, password, passwordConfirm } = (body ?? {}) as {
-      token?: string; password?: string; passwordConfirm?: string
+      token?: string
+      password?: string
+      passwordConfirm?: string
     }
     if (!token || !password) {
       set.status = 400

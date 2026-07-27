@@ -45,10 +45,7 @@ export class BaseCollectionEvent extends Event implements Tagger {
   declare collectionId: string
   declare collectionName: string
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-  ) {
+  constructor(collectionId: string, collectionName: string) {
     super()
     this.collectionId = collectionId
     this.collectionName = collectionName
@@ -82,10 +79,7 @@ export class TerminateEvent extends Event {
   declare app: unknown
   declare isRestart: boolean
 
-  constructor(
-    app: unknown,
-    isRestart = false,
-  ) {
+  constructor(app: unknown, isRestart = false) {
     super()
     this.app = app
     this.isRestart = isRestart
@@ -98,11 +92,7 @@ export class ServeEvent extends Event {
   declare router: unknown
   declare server: unknown
 
-  constructor(
-    app: unknown,
-    router: unknown,
-    server: unknown,
-  ) {
+  constructor(app: unknown, router: unknown, server: unknown) {
     super()
     this.app = app
     this.router = router
@@ -115,10 +105,7 @@ export class BackupEvent extends Event {
   declare app: unknown
   declare name: string
 
-  constructor(
-    app: unknown,
-    name: string,
-  ) {
+  constructor(app: unknown, name: string) {
     super()
     this.app = app
     this.name = name
@@ -133,10 +120,7 @@ export class BackupEvent extends Event {
 export class ModelEvent extends BaseModelEvent {
   declare dao?: unknown
 
-  constructor(
-    model: Model | null,
-    dao?: unknown,
-  ) {
+  constructor(model: Model | null, dao?: unknown) {
     super(model)
     this.dao = dao
   }
@@ -146,10 +130,7 @@ export class ModelEvent extends BaseModelEvent {
 export class ModelErrorEvent extends BaseModelEvent {
   declare error: Error
 
-  constructor(
-    model: Model | null,
-    error: Error,
-  ) {
+  constructor(model: Model | null, error: Error) {
     super(model)
     this.error = error
   }
@@ -163,10 +144,7 @@ export class ModelErrorEvent extends BaseModelEvent {
 export class RecordEvent extends BaseModelEvent {
   declare record?: unknown
 
-  constructor(
-    model: Model | null,
-    record?: unknown,
-  ) {
+  constructor(model: Model | null, record?: unknown) {
     super(model)
     this.record = record
   }
@@ -177,11 +155,7 @@ export class RecordErrorEvent extends BaseModelEvent {
   declare error: Error
   declare record?: unknown
 
-  constructor(
-    model: Model | null,
-    error: Error,
-    record?: unknown,
-  ) {
+  constructor(model: Model | null, error: Error, record?: unknown) {
     super(model)
     this.error = error
     this.record = record
@@ -193,11 +167,7 @@ export class RecordEnrichEvent extends BaseModelEvent {
   declare record?: unknown
   declare requestInfo?: unknown
 
-  constructor(
-    model: Model | null,
-    record?: unknown,
-    requestInfo?: unknown,
-  ) {
+  constructor(model: Model | null, record?: unknown, requestInfo?: unknown) {
     super(model)
     this.record = record
     this.requestInfo = requestInfo
@@ -212,11 +182,7 @@ export class RecordEnrichEvent extends BaseModelEvent {
 export class CollectionEvent extends BaseCollectionEvent {
   declare collection?: unknown
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-    collection?: unknown,
-  ) {
+  constructor(collectionId: string, collectionName: string, collection?: unknown) {
     super(collectionId, collectionName)
     this.collection = collection
   }
@@ -226,11 +192,7 @@ export class CollectionEvent extends BaseCollectionEvent {
 export class CollectionErrorEvent extends BaseCollectionEvent {
   declare error: Error
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-    error: Error,
-  ) {
+  constructor(collectionId: string, collectionName: string, error: Error) {
     super(collectionId, collectionName)
     this.error = error
   }
@@ -245,10 +207,7 @@ export class MailerEvent extends Event {
   declare mailClient: unknown
   declare message: unknown
 
-  constructor(
-    mailClient: unknown,
-    message: unknown,
-  ) {
+  constructor(mailClient: unknown, message: unknown) {
     super()
     this.mailClient = mailClient
     this.message = message
@@ -288,11 +247,7 @@ export class RealtimeConnectEvent extends Event {
   declare client: unknown
   declare idleTimeout?: number
 
-  constructor(
-    httpContext: unknown,
-    client: unknown,
-    idleTimeout?: number,
-  ) {
+  constructor(httpContext: unknown, client: unknown, idleTimeout?: number) {
     super()
     this.httpContext = httpContext
     this.client = client
@@ -305,10 +260,7 @@ export class RealtimeDisconnectEvent extends Event {
   declare httpContext: unknown
   declare client: unknown
 
-  constructor(
-    httpContext: unknown,
-    client: unknown,
-  ) {
+  constructor(httpContext: unknown, client: unknown) {
     super()
     this.httpContext = httpContext
     this.client = client
@@ -321,11 +273,7 @@ export class RealtimeMessageEvent extends Event {
   declare client: unknown
   declare message: unknown
 
-  constructor(
-    httpContext: unknown,
-    client: unknown,
-    message: unknown,
-  ) {
+  constructor(httpContext: unknown, client: unknown, message: unknown) {
     super()
     this.httpContext = httpContext
     this.client = client
@@ -339,11 +287,7 @@ export class RealtimeSubscribeEvent extends Event {
   declare client: unknown
   declare subscriptions: string[]
 
-  constructor(
-    httpContext: unknown,
-    client: unknown,
-    subscriptions: string[],
-  ) {
+  constructor(httpContext: unknown, client: unknown, subscriptions: string[]) {
     super()
     this.httpContext = httpContext
     this.client = client
@@ -357,11 +301,7 @@ export class RealtimeSubscribeRequestEvent extends Event {
   declare client: unknown
   declare subscriptions: string[]
 
-  constructor(
-    httpContext: unknown,
-    client: unknown,
-    subscriptions: string[],
-  ) {
+  constructor(httpContext: unknown, client: unknown, subscriptions: string[]) {
     super()
     this.httpContext = httpContext
     this.client = client
@@ -378,10 +318,7 @@ export class SettingsListEvent extends Event {
   declare httpContext: unknown
   declare redactedSettings?: unknown
 
-  constructor(
-    httpContext: unknown,
-    redactedSettings?: unknown,
-  ) {
+  constructor(httpContext: unknown, redactedSettings?: unknown) {
     super()
     this.httpContext = httpContext
     this.redactedSettings = redactedSettings
@@ -394,11 +331,7 @@ export class SettingsUpdateEvent extends Event {
   declare oldSettings?: unknown
   declare newSettings?: unknown
 
-  constructor(
-    httpContext: unknown,
-    oldSettings?: unknown,
-    newSettings?: unknown,
-  ) {
+  constructor(httpContext: unknown, oldSettings?: unknown, newSettings?: unknown) {
     super()
     this.httpContext = httpContext
     this.oldSettings = oldSettings
@@ -795,11 +728,7 @@ export class CollectionsListEvent extends Event {
   declare collections?: unknown[]
   declare result?: unknown
 
-  constructor(
-    httpContext: unknown,
-    collections?: unknown[],
-    result?: unknown,
-  ) {
+  constructor(httpContext: unknown, collections?: unknown[], result?: unknown) {
     super()
     this.httpContext = httpContext
     this.collections = collections
@@ -811,11 +740,7 @@ export class CollectionsListEvent extends Event {
 export class CollectionRequestEvent extends BaseCollectionEvent {
   declare httpContext: unknown
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-    httpContext: unknown,
-  ) {
+  constructor(collectionId: string, collectionName: string, httpContext: unknown) {
     super(collectionId, collectionName)
     this.httpContext = httpContext
   }
@@ -825,11 +750,7 @@ export class CollectionRequestEvent extends BaseCollectionEvent {
 export class CollectionCreateEvent extends BaseCollectionEvent {
   declare httpContext: unknown
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-    httpContext: unknown,
-  ) {
+  constructor(collectionId: string, collectionName: string, httpContext: unknown) {
     super(collectionId, collectionName)
     this.httpContext = httpContext
   }
@@ -839,11 +760,7 @@ export class CollectionCreateEvent extends BaseCollectionEvent {
 export class CollectionUpdateEvent extends BaseCollectionEvent {
   declare httpContext: unknown
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-    httpContext: unknown,
-  ) {
+  constructor(collectionId: string, collectionName: string, httpContext: unknown) {
     super(collectionId, collectionName)
     this.httpContext = httpContext
   }
@@ -853,11 +770,7 @@ export class CollectionUpdateEvent extends BaseCollectionEvent {
 export class CollectionDeleteEvent extends BaseCollectionEvent {
   declare httpContext: unknown
 
-  constructor(
-    collectionId: string,
-    collectionName: string,
-    httpContext: unknown,
-  ) {
+  constructor(collectionId: string, collectionName: string, httpContext: unknown) {
     super(collectionId, collectionName)
     this.httpContext = httpContext
   }
@@ -868,10 +781,7 @@ export class CollectionsImportRequestEvent extends Event {
   declare httpContext: unknown
   declare collections?: unknown[]
 
-  constructor(
-    httpContext: unknown,
-    collections?: unknown[],
-  ) {
+  constructor(httpContext: unknown, collections?: unknown[]) {
     super()
     this.httpContext = httpContext
     this.collections = collections
@@ -887,11 +797,7 @@ export class FileTokenEvent extends BaseModelEvent {
   declare httpContext: unknown
   declare token?: string
 
-  constructor(
-    model: Model | null,
-    httpContext: unknown,
-    token?: string,
-  ) {
+  constructor(model: Model | null, httpContext: unknown, token?: string) {
     super(model)
     this.httpContext = httpContext
     this.token = token
@@ -903,11 +809,7 @@ export class FileTokenRequestEvent extends BaseModelEvent {
   declare httpContext: unknown
   declare token?: string
 
-  constructor(
-    model: Model | null,
-    httpContext: unknown,
-    token?: string,
-  ) {
+  constructor(model: Model | null, httpContext: unknown, token?: string) {
     super(model)
     this.httpContext = httpContext
     this.token = token
@@ -967,11 +869,7 @@ export class BatchRequestEvent extends Event {
   declare requests?: unknown[]
   declare responses?: unknown[]
 
-  constructor(
-    httpContext: unknown,
-    requests?: unknown[],
-    responses?: unknown[],
-  ) {
+  constructor(httpContext: unknown, requests?: unknown[], responses?: unknown[]) {
     super()
     this.httpContext = httpContext
     this.requests = requests

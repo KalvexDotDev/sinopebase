@@ -67,10 +67,12 @@ export function parseTestTaxonomy(value: unknown): TestTaxonomy {
     if (!suite.isolation || typeof suite.isolation !== 'object') {
       throw new Error(`suite ${suite.id} requires isolation settings`)
     }
-    if (!PROCESS_ISOLATION.has(suite.isolation.process)
-      || !PORT_ISOLATION.has(suite.isolation.port)
-      || !NAMESPACE_ISOLATION.has(suite.isolation.namespace)
-      || !FILESYSTEM_ISOLATION.has(suite.isolation.filesystem)) {
+    if (
+      !PROCESS_ISOLATION.has(suite.isolation.process) ||
+      !PORT_ISOLATION.has(suite.isolation.port) ||
+      !NAMESPACE_ISOLATION.has(suite.isolation.namespace) ||
+      !FILESYSTEM_ISOLATION.has(suite.isolation.filesystem)
+    ) {
       throw new Error(`suite ${suite.id} has invalid isolation settings`)
     }
 
@@ -98,10 +100,10 @@ function matchesAny(path: string, patterns: readonly string[]): boolean {
 
 export function classifyTestFile(taxonomy: TestTaxonomy, file: string): TestSuiteDefinition[] {
   const normalized = normalizePath(file)
-  return taxonomy.suites.filter((suite) => (
-    matchesAny(normalized, suite.include)
-    && !matchesAny(normalized, suite.exclude ?? [])
-  ))
+  return taxonomy.suites.filter(
+    (suite) =>
+      matchesAny(normalized, suite.include) && !matchesAny(normalized, suite.exclude ?? []),
+  )
 }
 
 export async function loadTestTaxonomy(path: string): Promise<TestTaxonomy> {

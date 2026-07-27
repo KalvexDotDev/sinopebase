@@ -2,6 +2,8 @@
 // Mastra AI — MCP Tools exposing Sinopebase resources to AI agents
 // ---------------------------------------------------------------------------
 
+import type { Filter, IDatabase } from '~/core/db-interface'
+import type { IFileStore } from '~/tools/filesystem/store-interface'
 import type { Tool } from './agent'
 
 /**
@@ -13,8 +15,8 @@ import type { Tool } from './agent'
  * @param getAuth  Function returning the current auth context (optional)
  */
 export function createMCPTools(
-  db: any,
-  fileStore?: any,
+  db: IDatabase,
+  fileStore?: IFileStore,
   getAuth?: () => { userId: string; email: string } | null,
 ): Tool[] {
   const tools: Tool[] = []
@@ -27,13 +29,16 @@ export function createMCPTools(
       description: 'Query a database table with optional filters. Read-only, max 100 rows.',
       parameters: {
         table: { type: 'string', description: 'Table name to query' },
-        filters: { type: 'array', description: 'Optional filter array [{column, operator, value}]' },
+        filters: {
+          type: 'array',
+          description: 'Optional filter array [{column, operator, value}]',
+        },
         limit: { type: 'number', description: 'Max rows (default 20, max 100)' },
       },
       async execute(input) {
-        const table = input['table'] as string
-        const filters = (input['filters'] as any[]) || []
-        const limit = Math.min((input['limit'] as number) || 20, 100)
+        const table = input.table as string
+        const filters = (input.filters as Filter[]) || []
+        const limit = Math.min((input.limit as number) || 20, 100)
 
         // Safety: block access to auth-related tables
         const blocked = ['user', 'session', 'account', 'verification']
@@ -44,8 +49,9 @@ export function createMCPTools(
         try {
           const rows = await db.select(table, { filters, limit })
           return { rows, count: rows.length }
-        } catch (err: any) {
-          return { error: err?.message || 'Query failed' }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { error: msg || 'Query failed' }
         }
       },
     })
@@ -59,13 +65,14 @@ export function createMCPTools(
         table: { type: 'string', description: 'Table name' },
       },
       async execute(input) {
-        const table = input['table'] as string
+        const table = input.table as string
         try {
           const columns = await db.tableColumns?.(table)
           if (!columns) return { error: `Table "${table}" not found or schema unavailable` }
           return { table, columns }
-        } catch (err: any) {
-          return { error: err?.message || 'Schema lookup failed' }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { error: msg || 'Schema lookup failed' }
         }
       },
     })
@@ -83,16 +90,17 @@ export function createMCPTools(
       },
       async execute(input) {
         try {
-          const bucket = (input['bucket'] as string) || ''
-          const prefix = (input['prefix'] as string) || ''
+          const bucket = (input.bucket as string) || ''
+          const prefix = (input.prefix as string) || ''
           if (bucket) {
             const files = await fileStore.list(bucket, prefix || undefined)
             return { bucket, files }
           }
-          const buckets = await fileStore.listBuckets?.() || []
+          const buckets = (await fileStore.listBuckets?.()) || []
           return { buckets }
-        } catch (err: any) {
-          return { error: err?.message || 'Storage list failed' }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { error: msg || 'Storage list failed' }
         }
       },
     })
@@ -107,12 +115,13 @@ export function createMCPTools(
       },
       async execute(input) {
         try {
-          const data = await fileStore.read(input['bucket'], input['path'])
+          const data = await fileStore.read(input.bucket, input.path)
           const text = typeof data === 'string' ? data : new TextDecoder().decode(data)
           const truncated = text.slice(0, 1_000_000) // 1MB cap
           return { content: truncated, size: text.length, truncated: text.length > 1_000_000 }
-        } catch (err: any) {
-          return { error: err?.message || 'Storage read failed' }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return { error: msg || 'Storage read failed' }
         }
       },
     })

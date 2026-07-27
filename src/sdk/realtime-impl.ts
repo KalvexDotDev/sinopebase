@@ -5,10 +5,10 @@
  * Implements the Supabase Realtime Phoenix Channels protocol.
  */
 
-import type { RealtimeClient, RealtimeChannel } from './realtime'
+import type { RealtimeChannel, RealtimeClient } from './realtime'
 
 export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeClient {
-  const wsUrl = baseUrl.replace(/^http/, 'ws') + `/realtime/v1/websocket?apikey=${apiKey}`
+  const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${apiKey}`
   let socket: WebSocket | null = null
 
   return {
@@ -24,19 +24,21 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
         ): RealtimeChannel {
           const key = `${event}:${JSON.stringify(_filter)}`
           if (!listeners.has(key)) listeners.set(key, [])
-          listeners.get(key)!.push(callback)
+          listeners.get(key)?.push(callback)
           return this
         },
 
         async subscribe(callback?: (status: string) => void): Promise<void> {
           // If we have an existing open socket, reuse it
           if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              topic,
-              event: 'phx_join',
-              payload: {},
-              ref: Math.random().toString(36).slice(2),
-            }))
+            socket.send(
+              JSON.stringify({
+                topic,
+                event: 'phx_join',
+                payload: {},
+                ref: Math.random().toString(36).slice(2),
+              }),
+            )
             callback?.('SUBSCRIBED')
             subscribed = true
             return
@@ -44,11 +46,12 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
 
           // Create new socket and wait for it to open
           try {
-            socket = new WebSocket(wsUrl)
+            const ws = new WebSocket(wsUrl)
+            socket = ws
 
             // Set up message handler BEFORE waiting for open
             // (so we don't miss messages that arrive immediately after join)
-            socket.onmessage = (event) => {
+            ws.onmessage = (event) => {
               const msg = JSON.parse(event.data as string)
               // phx_reply is subscription handshake — do not dispatch to
               // broadcast/presence/changes channel listeners.
@@ -61,7 +64,11 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
                 const colonIdx = key.indexOf(':')
                 const eventType = key.slice(0, colonIdx)
                 let filter: Record<string, unknown> = {}
-                try { filter = JSON.parse(key.slice(colonIdx + 1)) } catch { /* empty filter */ }
+                try {
+                  filter = JSON.parse(key.slice(colonIdx + 1))
+                } catch {
+                  /* empty filter */
+                }
 
                 if (eventType === 'broadcast' && msg.event === 'broadcast') {
                   // msg.payload is the broadcast envelope:
@@ -69,8 +76,8 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
                   // Filter by the broadcast event name, then pass the
                   // envelope to the callback (Supabase Realtime contract).
                   const envelope = msg.payload as Record<string, unknown> | undefined
-                  if (!envelope || envelope['type'] !== 'broadcast') continue
-                  if (filter['event'] !== undefined && filter['event'] !== envelope['event']) continue
+                  if (envelope?.type !== 'broadcast') continue
+                  if (filter.event !== undefined && filter.event !== envelope.event) continue
                   for (const cb of cbs) cb(envelope)
                 } else {
                   // Pass through: postgres_changes, presence, system, and
@@ -86,23 +93,25 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
                 reject(new Error('WebSocket connection timeout'))
               }, 3000)
 
-              socket!.onopen = () => {
+              ws.onopen = () => {
                 clearTimeout(timeout)
                 resolve()
               }
-              socket!.onerror = () => {
+              ws.onerror = () => {
                 clearTimeout(timeout)
                 reject(new Error('WebSocket connection error'))
               }
             })
 
             // Socket is open now — send phx_join
-            socket.send(JSON.stringify({
-              topic,
-              event: 'phx_join',
-              payload: {},
-              ref: Math.random().toString(36).slice(2),
-            }))
+            socket.send(
+              JSON.stringify({
+                topic,
+                event: 'phx_join',
+                payload: {},
+                ref: Math.random().toString(36).slice(2),
+              }),
+            )
           } catch {
             callback?.('ERROR')
             return
@@ -114,24 +123,28 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
 
         unsubscribe(): void {
           if (socket && subscribed) {
-            socket.send(JSON.stringify({
-              topic,
-              event: 'phx_leave',
-              payload: {},
-              ref: '2',
-            }))
+            socket.send(
+              JSON.stringify({
+                topic,
+                event: 'phx_leave',
+                payload: {},
+                ref: '2',
+              }),
+            )
           }
           subscribed = false
         },
 
         send(payload: unknown): void {
           if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              topic,
-              event: 'broadcast',
-              payload,
-              ref: Math.random().toString(36).slice(2),
-            }))
+            socket.send(
+              JSON.stringify({
+                topic,
+                event: 'broadcast',
+                payload,
+                ref: Math.random().toString(36).slice(2),
+              }),
+            )
           }
         },
       }

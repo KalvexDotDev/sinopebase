@@ -16,8 +16,8 @@
  *   SubtractSlice([1, 2, 3, 4], [2, 4]) // => [1, 3]
  */
 export function SubtractSlice<T>(base: T[], subtract: T[]): T[] {
-  const excludeSet = new Set(subtract);
-  return base.filter((item) => !excludeSet.has(item));
+  const excludeSet = new Set(subtract)
+  return base.filter((item) => !excludeSet.has(item))
 }
 
 // ---------------------------------------------------------------------------
@@ -31,15 +31,15 @@ export function SubtractSlice<T>(base: T[], subtract: T[]): T[] {
  *   ExistInSlice("a", ["a", "b"]) // => true
  */
 export function ExistInSlice<T>(item: T, slice: T[]): boolean {
-  return slice.includes(item);
+  return slice.includes(item)
 }
 
 // ---------------------------------------------------------------------------
 // ExistInSliceWithRegex
 // ---------------------------------------------------------------------------
 
-const regexCache = new Map<string, RegExp>();
-const REGEX_CACHE_LIMIT = 500;
+const regexCache = new Map<string, RegExp>()
+const REGEX_CACHE_LIMIT = 500
 
 /**
  * Checks whether `str` exists in `slice` either by direct match or, when an
@@ -52,26 +52,26 @@ const REGEX_CACHE_LIMIT = 500;
  */
 export function ExistInSliceWithRegex(str: string, slice: string[]): boolean {
   for (const pattern of slice) {
-    if (pattern.startsWith("^") && pattern.endsWith("$")) {
-      let re = regexCache.get(pattern);
+    if (pattern.startsWith('^') && pattern.endsWith('$')) {
+      let re = regexCache.get(pattern)
       if (re === undefined) {
         if (regexCache.size >= REGEX_CACHE_LIMIT) {
-          const firstKey = regexCache.keys().next().value;
+          const firstKey = regexCache.keys().next().value
           if (firstKey !== undefined) {
-            regexCache.delete(firstKey);
+            regexCache.delete(firstKey)
           }
         }
-        re = new RegExp(pattern);
-        regexCache.set(pattern, re);
+        re = new RegExp(pattern)
+        regexCache.set(pattern, re)
       }
       if (re.test(str)) {
-        return true;
+        return true
       }
     } else if (str === pattern) {
-      return true;
+      return true
     }
   }
-  return false;
+  return false
 }
 
 /**
@@ -79,7 +79,7 @@ export function ExistInSliceWithRegex(str: string, slice: string[]): boolean {
  * Primarily useful in tests.
  */
 export function clearRegexCache(): void {
-  regexCache.clear();
+  regexCache.clear()
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ export function clearRegexCache(): void {
  *   ToInterfaceSlice([1, 2, 3]) // => [1, 2, 3] (typed as unknown[])
  */
 export function ToInterfaceSlice<T>(slice: T[]): unknown[] {
-  return [...slice];
+  return [...slice]
 }
 
 // ---------------------------------------------------------------------------
@@ -116,38 +116,38 @@ export function ToInterfaceSlice<T>(slice: T[]): unknown[] {
  *   // => [1, "x", true]
  */
 export function NonzeroUniques<T>(slice: T[]): T[] {
-  const seen = new Set<T>();
-  const result: T[] = [];
+  const seen = new Set<T>()
+  const result: T[] = []
   for (const item of slice) {
     if (isZeroValue(item)) {
-      continue;
+      continue
     }
     if (seen.has(item)) {
-      continue;
+      continue
     }
-    seen.add(item);
-    result.push(item);
+    seen.add(item)
+    result.push(item)
   }
-  return result;
+  return result
 }
 
 function isZeroValue(value: unknown): boolean {
   if (value === null || value === undefined) {
-    return true;
+    return true
   }
-  if (typeof value === "string" && value === "") {
-    return true;
+  if (typeof value === 'string' && value === '') {
+    return true
   }
-  if (typeof value === "number" && value === 0) {
-    return true;
+  if (typeof value === 'number' && value === 0) {
+    return true
   }
-  if (typeof value === "bigint" && value === 0n) {
-    return true;
+  if (typeof value === 'bigint' && value === 0n) {
+    return true
   }
-  if (typeof value === "boolean" && value === false) {
-    return true;
+  if (typeof value === 'boolean' && value === false) {
+    return true
   }
-  return false;
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -170,29 +170,29 @@ function isZeroValue(value: unknown): boolean {
  */
 export function ToUniqueStringSlice(value: unknown): string[] {
   if (value === null || value === undefined) {
-    return [];
+    return []
   }
 
   if (Array.isArray(value)) {
-    return NonzeroUniques(value.map((v) => String(v)));
+    return NonzeroUniques(value.map((v) => String(v)))
   }
 
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
       try {
-        const parsed = JSON.parse(trimmed);
+        const parsed = JSON.parse(trimmed)
         if (Array.isArray(parsed)) {
-          return NonzeroUniques(parsed.map((v) => String(v)));
+          return NonzeroUniques(parsed.map((v) => String(v)))
         }
       } catch {
         // Not valid JSON array -- fall through to single-string path.
       }
     }
-    return NonzeroUniques([value]);
+    return NonzeroUniques([value])
   }
 
-  return NonzeroUniques([String(value)]);
+  return NonzeroUniques([String(value)])
 }
 
 // ---------------------------------------------------------------------------
@@ -209,11 +209,11 @@ export function ToUniqueStringSlice(value: unknown): string[] {
  */
 export function ToChunks<T>(slice: T[], size: number): T[][] {
   if (size < 1) {
-    size = 1;
+    size = 1
   }
-  const chunks: T[][] = [];
+  const chunks: T[][] = []
   for (let i = 0; i < slice.length; i += size) {
-    chunks.push(slice.slice(i, i + size));
+    chunks.push(slice.slice(i, i + size))
   }
-  return chunks;
+  return chunks
 }

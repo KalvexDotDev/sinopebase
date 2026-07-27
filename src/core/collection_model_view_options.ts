@@ -57,9 +57,9 @@ export class CollectionViewOptions {
    */
   static fromJSON(data: Record<string, unknown>): CollectionViewOptions {
     const opts = new CollectionViewOptions()
-    if (typeof data['viewQuery'] === 'string') opts.viewQuery = data['viewQuery']
-    if (typeof data['viewMinId'] === 'string') opts.viewMinId = data['viewMinId']
-    if (typeof data['viewMaxId'] === 'string') opts.viewMaxId = data['viewMaxId']
+    if (typeof data.viewQuery === 'string') opts.viewQuery = data.viewQuery
+    if (typeof data.viewMinId === 'string') opts.viewMinId = data.viewMinId
+    if (typeof data.viewMaxId === 'string') opts.viewMaxId = data.viewMaxId
     return opts
   }
 }
