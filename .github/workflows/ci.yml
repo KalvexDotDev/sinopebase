@@ -156,7 +156,7 @@ jobs:
           echo "RUSTFS_ENDPOINT=http://localhost:9000" >> "$GITHUB_ENV"
           echo "RUSTFS_ACCESS_KEY=ci-test-access-key" >> "$GITHUB_ENV"
           echo "RUSTFS_SECRET_KEY=ci-test-secret-key-min-32-chars!!" >> "$GITHUB_ENV"
-      - name: Run test suite (JUnit)
+      - name: Run test suite (JUnit, PostgreSQL-backed, no storage/realtime)
         run: bun run test:ci
         env:
           TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/sinopebase_test

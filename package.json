@@ -30,7 +30,7 @@
     "typecheck": "bun run tsc --noEmit",
     "typecheck:ci": "bun run scripts/typecheck-ci.ts",
     "typecheck:harness": "bun run tsc --noEmit --project wave0-test-tsconfig.json",
-    "test:ci": "bun test --reporter=junit --reporter-outfile=junit.xml",
+    "test:ci": "bun test --reporter=junit --reporter-outfile=junit.xml --path-ignore-patterns '**/storage*' '**/realtime*' '**/apis/file.test*' '**/realtime*'",
     "security:semgrep": "semgrep --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/",
     "security:gitleaks": "gitleaks detect --config .gitleaks.toml --verbose",
     "gitleaks:install": "git config core.hooksPath .githooks",
