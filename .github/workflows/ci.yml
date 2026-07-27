@@ -42,6 +42,8 @@ jobs:
         run: bun run lint
       - name: ESLint (JS files + security plugin)
         run: bun run lint:eslint
+      - name: "Validate workflow YAML"
+        run: bun run lint:yaml
 
   typecheck:
     needs: audit

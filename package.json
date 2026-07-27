@@ -33,7 +33,8 @@
     "security:semgrep": "semgrep --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/",
     "security:gitleaks": "gitleaks detect --config .gitleaks.toml --verbose",
     "gitleaks:install": "git config core.hooksPath .githooks",
-    "ci": "bun run ci:audit && bun run format:check && bun run lint && bun run lint:eslint && bun run lint:jscpd && bun run typecheck && bun run test && bun run build",
+    "lint:yaml": "yaml valid .github/workflows/ci.yml .github/workflows/supply-chain.yml",
+    "ci": "bun run ci:audit && bun run lint:yaml && bun run format:check && bun run lint && bun run lint:eslint && bun run lint:jscpd && bun run typecheck && bun run test && bun run build",
     "ci:audit": "bun audit; exit 0"
   },
   "exports": {
@@ -52,7 +53,8 @@
     "eslint": "^10.8.0",
     "eslint-plugin-security": "^4.0.1",
     "jscpd": "^5.0.14",
-    "tap-xunit": "^2.4.1"
+    "tap-xunit": "^2.4.1",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "typescript": "^7.0.2"
