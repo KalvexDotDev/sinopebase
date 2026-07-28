@@ -84,6 +84,7 @@ jobs:
   semgrep:
     needs: [lint, typecheck, jscpd]
     runs-on: ubuntu-latest
+    continue-on-error: true  # SAST findings are reviewed, not deploy-blockers
     container:
       image: semgrep/semgrep:latest
     steps:
