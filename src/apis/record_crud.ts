@@ -169,7 +169,7 @@ export function createRecordCrudPlugin(
   db: IDatabase,
   authResolver: () => Promise<RequestAuthInfo>,
 ) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-record-crud' })
 
   // ── GET /api/collections/:collection/records — List records ──
   app.get('/api/collections/:collection/records', async ({ params, query, set }) => {

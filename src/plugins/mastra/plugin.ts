@@ -105,7 +105,7 @@ export class MastraPlugin {
     auth?: SinopebaseAuth,
     db?: IDatabase,
     fileStore?: IFileStore,
-  ): Promise<void> {
+  ): Promise<Elysia> {
     // Initialise the AI provider
     const apiKey = this.options.openaiApiKey || process.env.OPENAI_API_KEY || ''
     if (apiKey) {
@@ -142,7 +142,7 @@ export class MastraPlugin {
     const mastraAuth = auth ? createMastraAuth(auth) : null
 
     // ---- Agent routes (with request-scoped context) ----
-    const agentRoutes = new Elysia()
+    const agentRoutes = new Elysia({ name: 'sinopebase-mastra-agents' })
       .get('/api/mastra/agents', async ({ request }) => {
         // Propagate context when a valid token is present, even if
         // requireAuth is false
@@ -249,6 +249,7 @@ export class MastraPlugin {
     console.log(
       `Mastra AI: provider "${this.provider.displayName()}", ${this.agents.length} agent(s) ready (auth: ${requireAuth})`,
     )
+    return app
   }
 
   /** Get the AI provider instance. */

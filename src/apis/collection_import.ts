@@ -35,7 +35,7 @@ interface CollectionsImportBody {
  * `deleteMissing` boolean.
  */
 export function createCollectionImportPlugin(db: IDatabase, isSuperuser: () => boolean) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-collection-import' })
 
   app.post('/api/collections/import', async ({ body, set }) => {
     if (!isSuperuser()) {

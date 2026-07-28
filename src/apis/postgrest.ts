@@ -17,6 +17,7 @@ import type { ParsedFilter } from '../core/db-memory'
 import { PostgresDatabase, type PostgresRequestContext } from '../core/db-postgres'
 import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
 import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
+import { InternalServerError } from './api_error_aliases'
 
 // ---------------------------------------------------------------------------
 // Helper types
@@ -95,12 +96,11 @@ export function mountPostgrestRoutes(
   db: IDatabase,
   resolveContext?: PostgrestContextResolver,
   changes?: PostgrestChangePublisher,
-): void {
+): Elysia {
   // -----------------------------------------------------------------------
   // GET — Select rows
   // -----------------------------------------------------------------------
-  app.get('/rest/v1/:table', async (ctx) => {
-    const { params, query, headers, request, set } = ctx
+  app.get('/rest/v1/:table', async ({ params, query, headers, request, set }) => {
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
     const range = parseRangeHeader(headers.range ?? headers.Range)
@@ -133,7 +133,7 @@ export function mountPostgrestRoutes(
 
     const { rows, total } = await withRequestDatabase(
       db,
-      ctx.request,
+      request,
       resolveContext,
       async (requestDb) => {
         const selected = await selectRows(requestDb, table, {
@@ -174,15 +174,14 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   // HEAD — Like GET but no body, only headers
   // -----------------------------------------------------------------------
-  app.head('/rest/v1/:table', async (ctx) => {
-    const { params, query, set } = ctx
+  app.head('/rest/v1/:table', async ({ params, query, request, set }) => {
     const table = params.table as string
 
     // Parse filters
     const filters = parseFilters(query as Record<string, string>)
     const orFilters = parseOrQueryParams(query as Record<string, string>)
 
-    const total = await withRequestDatabase(db, ctx.request, resolveContext, (requestDb) =>
+    const total = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
       countRows(requestDb, table, filters, orFilters),
     )
     set.headers['content-range'] = `*/${total}`
@@ -195,8 +194,7 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   // POST — Insert rows
   // -----------------------------------------------------------------------
-  app.post('/rest/v1/:table', async (ctx) => {
-    const { params, headers, body, set } = ctx
+  app.post('/rest/v1/:table', async ({ params, headers, body, request, set }) => {
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
@@ -208,7 +206,7 @@ export function mountPostgrestRoutes(
 
     const inserted = await withRequestDatabase(
       db,
-      ctx.request,
+      request,
       resolveContext,
       async (requestDb) => {
         const results: Record<string, unknown>[] = []
@@ -258,8 +256,7 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   // PATCH — Update rows
   // -----------------------------------------------------------------------
-  app.patch('/rest/v1/:table', async (ctx) => {
-    const { params, query, headers, body, set } = ctx
+  app.patch('/rest/v1/:table', async ({ params, query, headers, body, request, set }) => {
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
@@ -273,7 +270,7 @@ export function mountPostgrestRoutes(
 
     const { updated, previous } = await withRequestDatabase(
       db,
-      ctx.request,
+      request,
       resolveContext,
       async (requestDb) => {
         const previous = changes
@@ -309,8 +306,7 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   // DELETE — Delete rows
   // -----------------------------------------------------------------------
-  app.delete('/rest/v1/:table', async (ctx) => {
-    const { params, query, headers, set } = ctx
+  app.delete('/rest/v1/:table', async ({ params, query, headers, request, set }) => {
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
@@ -319,7 +315,7 @@ export function mountPostgrestRoutes(
 
     const { deleted, prepared } = await withRequestDatabase(
       db,
-      ctx.request,
+      request,
       resolveContext,
       async (requestDb) => {
         const previous = changes
@@ -355,6 +351,8 @@ export function mountPostgrestRoutes(
     // PostgREST returns the deleted rows (or empty array)
     return deleted
   })
+
+  return app
 }
 
 function postgresChange(
@@ -381,7 +379,7 @@ async function withRequestDatabase<T>(
   if (!(db instanceof PostgresDatabase) || !resolveContext) return operation(db)
 
   const context = resolveContext(request)
-  if (!context) throw new Error('PostgREST request reached the database without an auth context')
+  if (!context) throw new InternalServerError('PostgREST request reached the database without an auth context')
 
   return db.withRequestContext(context, operation)
 }
@@ -548,7 +546,7 @@ async function resolveRelationship(
   selection: RelationshipSelection,
 ): Promise<ForeignKeyRelationship> {
   if (!db.getForeignKeyRelationships) {
-    throw new Error(
+    throw new InternalServerError(
       `Database does not expose foreign-key metadata for embedded resource ${selection.selector}`,
     )
   }
@@ -568,10 +566,10 @@ async function resolveRelationship(
     .sort((left, right) => right.score - left.score)
 
   if (candidates.length === 0) {
-    throw new Error(`No foreign-key relationship from ${table} matches ${selection.selector}`)
+    throw new InternalServerError(`No foreign-key relationship from ${table} matches ${selection.selector}`)
   }
   if (candidates.length > 1 && candidates[0]?.score === candidates[1]?.score) {
-    throw new Error(`Foreign-key relationship from ${table} to ${selection.selector} is ambiguous`)
+    throw new InternalServerError(`Foreign-key relationship from ${table} to ${selection.selector} is ambiguous`)
   }
 
   return candidates[0]?.relationship

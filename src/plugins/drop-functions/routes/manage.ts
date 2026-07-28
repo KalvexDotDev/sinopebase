@@ -35,7 +35,7 @@ export function createManageRoutes(
   }
 
   return (
-    new Elysia()
+    new Elysia({ name: 'sinopebase-drop-fn-manage' })
       // List all functions
       .get(prefix, async ({ request, set }) => {
         if (auth) {

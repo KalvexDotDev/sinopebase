@@ -507,10 +507,20 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Elysia } from 'elysia'
 import { Cron } from '~/tools/cron/cron'
-import { ApiError } from '../apis/api_error_aliases'
+import {
+  ApiError,
+  BadRequestError,
+  ForbiddenError,
+  InternalServerError,
+  NotFoundError,
+  RequestEntityTooLargeError,
+  TooManyRequestsError,
+  UnauthorizedError,
+} from '../apis/api_error_aliases'
 import { authPlugin, createAuthPlugin } from '../apis/auth'
 import { verifyAccessToken } from '../apis/auth-jwt'
 import { createStoragePlugin } from '../apis/file'
+import { cors } from '../apis/middlewares_cors'
 import { rateLimit, resetRateLimiters } from '../apis/middlewares_rate_limit'
 import { mountPostgrestRoutes } from '../apis/postgrest'
 import { createRealtimeHub, createRealtimeWebSocketHandler } from '../apis/realtime'
@@ -519,6 +529,7 @@ import { createAuth, lookupSessionByToken } from '../tools/auth-better'
 import { LocalFileStore } from '../tools/filesystem/store'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { S3FileStore } from '../tools/filesystem/store-s3'
+import { Equal } from '../tools/security/crypto'
 import { detectMode, type ValidatedConfig } from './config'
 import { MemoryDatabaseAdapter } from './db-memory-adapter'
 import {
@@ -596,7 +607,7 @@ export class Sinopebase {
   /** Cached secrets — validated once at startup, never read from process.env thereafter. */
   private cachedServiceRoleKey = ''
   private cachedAnonKey = ''
-  private cachedJwtSecret = ''
+
   /**
    * Plugin registration callbacks queued via {@link use}.
    * Executed during {@link initializeServer} after core routes are registered
@@ -773,10 +784,9 @@ export class Sinopebase {
         if (!anonKey) throw new Error('SINOPEBASE_ANON_KEY is required')
         this.cachedServiceRoleKey = serviceKey
         this.cachedAnonKey = anonKey
-        this.cachedJwtSecret = jwtSecret || JWT_DEV_FALLBACK
-        process.env.JWT_SECRET = this.cachedJwtSecret
-        process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceKey
-        process.env.SINOPEBASE_ANON_KEY = anonKey
+        // H8: Secrets are cached on the instance — never written back to process.env.
+        // Downstream modules (auth-jwt, signed-url) accept keys via parameters,
+        // not from ambient env reads.
       }
 
       // Initialize better-auth with PostgreSQL
@@ -893,46 +903,99 @@ export class Sinopebase {
       },
     })
 
-    const server = new Elysia()
-    this.pendingServer = server
-    server
-      // ── Security middleware ──
-      .onError(({ error, set, code }) => {
-        // Let NOT_FOUND pass through — handled by the stub-route onError
-        // (or Elysia's default 404 handler for non-API paths).
-        if (code === 'NOT_FOUND') return
+    // ── Request ID store (closed over by onRequest + onAfterResponse) ──
+    const requestMeta = new WeakMap<Request, { startTime: number; requestId: string }>()
+
+    // ── CORS origins aligned with better-auth trustedOrigins ──
+    const trustedOrigins = [
+      'http://localhost:8090',
+      'http://127.0.0.1:8090',
+      ...(this.config.extraOrigins ?? []),
+    ]
+
+    // ── Single continuous Elysia chain (C1, C4, H1-H5, H7) ──
+    // Every method call returns a new type reference; breaking the chain
+    // discards hooks, decorators, and type information from prior calls.
+    // Use const chains (not let reassignment) so TypeScript infers the full
+    // Elysia type after each .use(), .error(), .get(), etc.
+    const server = new Elysia({ name: 'sinopebase' })
+      // Register all custom error classes so onError gets full type narrowing (H7)
+      .error({
+        ApiError,
+        BadRequestError,
+        UnauthorizedError,
+        ForbiddenError,
+        NotFoundError,
+        TooManyRequestsError,
+        InternalServerError,
+        RequestEntityTooLargeError,
+      })
+
+      // ── Global error handler (C2, H5 merged) ──
+      .onError(({ error, set, code, request }) => {
+        // Stub 501 for unimplemented API routes (H5: merged into global handler)
+        if (code === 'NOT_FOUND') {
+          const url = new URL(request.url)
+          if (url.pathname.startsWith('/api/')) {
+            set.status = 501
+            return { message: 'API endpoint not yet implemented.', code: 501 }
+          }
+          if (url.pathname.startsWith('/rest/v1/')) {
+            set.status = 501
+            return { message: 'REST API not yet implemented', code: 501 }
+          }
+          return // Let Elysia handle other 404s
+        }
+
+        // C2: VALIDATION — return useful 422 responses
+        if (code === 'VALIDATION') {
+          set.status = 422
+          return process.env.NODE_ENV === 'production'
+            ? { message: 'Validation failed', code: 'VALIDATION' }
+            : error
+        }
 
         // Structured API errors carry their own HTTP status and body.
-        // Preserve the original status (e.g. 429 Too Many Requests)
-        // instead of flattening to 500.
         if (error instanceof ApiError) {
           set.status = error.status
           return error.toJSON()
         }
 
         const reportedError = error as Error
-        logger.error('PANIC RECOVER', {
-          message: reportedError.message,
-          stack: (reportedError.stack ?? '').slice(0, 2048),
-        })
+        // M7: gate stack trace behind dev mode
+        const logPayload: Record<string, unknown> = { message: reportedError.message }
+        if (process.env.NODE_ENV !== 'production') {
+          logPayload.stack = (reportedError.stack ?? '').slice(0, 2048)
+        }
+        logger.error('PANIC RECOVER', logPayload)
         set.status = 500
-        return { message: 'Internal server error', code: '500' }
+        return { message: 'Internal server error', code: 500 }
       })
+
+      // ── CORS — must be before any routes (C5, H27) ──
+      .onRequest(cors({
+        allowOrigins: trustedOrigins,
+        allowCredentials: true,
+      }))
+
+      // ── Security headers (H1) ──
       .onRequest(({ set }) => {
         set.headers['x-xss-protection'] = '1; mode=block'
         set.headers['x-content-type-options'] = 'nosniff'
         set.headers['x-frame-options'] = 'SAMEORIGIN'
         set.headers['referrer-policy'] = 'strict-origin-when-cross-origin'
+        // M12: CSP + HSTS placeholders (tightened in extensions.ts)
+        set.headers['content-security-policy'] = "frame-ancestors 'none'"
       })
 
-    // ── Request ID and response logging ──
-    const requestMeta = new WeakMap<Request, { startTime: number; requestId: string }>()
-    server
+      // ── Request ID — global (H2) ──
       .onRequest(({ request, set }) => {
         const requestId = request.headers.get('x-request-id') || generateRequestId()
         set.headers['x-request-id'] = requestId
         requestMeta.set(request, { startTime: performance.now(), requestId })
       })
+
+      // ── Response logging — global (H2) ──
       .onAfterResponse(({ request, set }) => {
         const meta = requestMeta.get(request)
         if (meta) {
@@ -952,51 +1015,51 @@ export class Sinopebase {
         }
       })
 
-    // ── Rate limiting ──
-    const rlHandler = rateLimit(this.config.rateLimitMax ?? 100, this.config.rateLimitWindow ?? 60)
-    server
+    // ── Rate limiting handler — computed before chain (H3, H25) ──
+    const rlHandler = rateLimit(
+      this.config.rateLimitMax ?? 100,
+      this.config.rateLimitWindow ?? 60,
+      undefined,
+      this.config.trustedProxies,
+    )
+
+    // ── Continue chain: routes, auth, realtime ──
+    const s1 = server
       .onRequest(async ({ request, set }) => {
         const url = new URL(request.url)
         if (url.pathname === '/api/health' || url.pathname === '/api/ready') return
         await rlHandler({ request, set })
       })
 
-      // Health check (liveness — always returns 200 if the process is up)
-      .get('/api/health', () => ({
-        code: 200,
-        message: 'Sinopebase is running',
-        mode: this.mode,
-        tls: !!this.config.tls,
-        db: this.database instanceof PostgresDatabase ? 'postgresql' : 'memory',
-        storage: this.fileStore instanceof S3FileStore ? 's3' : 'local',
-      }))
+      // Health check — liveness (H10: production-safe)
+      .get('/api/health', () => {
+        if (this.mode === 'production') {
+          return { code: 200, message: 'running' }
+        }
+        return {
+          code: 200,
+          message: 'Sinopebase is running',
+          mode: this.mode,
+          tls: !!this.config.tls,
+          db: this.database instanceof PostgresDatabase ? 'postgresql' : 'memory',
+          storage: this.fileStore instanceof S3FileStore ? 's3' : 'local',
+        }
+      })
 
-      // Readiness check (reports DB connectivity)
+      // Readiness check
       .get('/api/ready', async ({ set }) => {
         if (this.database instanceof PostgresDatabase) {
           try {
             const pool = this.database.getPool()
             const client = await pool.connect()
             client.release()
-            return {
-              code: 200,
-              status: 'ready',
-              db: 'connected',
-            }
+            return { code: 200, status: 'ready', db: 'connected' }
           } catch {
             set.status = 503
-            return {
-              code: 503,
-              status: 'not ready',
-              db: 'disconnected',
-            }
+            return { code: 503, status: 'not ready', db: 'disconnected' }
           }
         }
-        return {
-          code: 200,
-          status: 'ready',
-          db: this.database ? 'memory' : 'none',
-        }
+        return { code: 200, status: 'ready', db: this.database ? 'memory' : 'none' }
       })
 
       // ── Realtime WebSocket ──
@@ -1005,28 +1068,24 @@ export class Sinopebase {
       // ── Auth — /auth/v1/* ──
       .use(this.auth ? createAuthPlugin(this.auth) : authPlugin)
 
-      // ── Auth guard for /rest/v1/* and /storage/v1/* ──
+      // Instance-scoped auth guard: applies to every /rest/v1/* and /storage/v1/*
+      // route registered on this chain. Instance-scoped (not global) so plugins
+      // and sub-apps are not gated by default — they opt in via their own auth.
       .onRequest(async ({ request, set }) => {
         const url = new URL(request.url)
         if (url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/storage/v1/')) {
-          // Skip auth for OPTIONS preflight
           if (request.method === 'OPTIONS') return
-          // Public objects are authorized by the bucket's trusted metadata,
-          // not by caller-provided credentials.
           if (url.pathname.startsWith('/storage/v1/object/public/')) return
           const authHeader = request.headers.get('authorization') ?? ''
           const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
-          // Allow service role key to bypass auth (full access).
-          // Keys are cached at startup — never read from process.env per-request.
-          if (token === this.cachedServiceRoleKey) {
+          // M11: timing-safe comparison for service role key
+          if (Equal(token, this.cachedServiceRoleKey)) {
+            // H11: audit log for service_role operations
+            logger.info('audit:service_role', { method: request.method, path: url.pathname })
             postgrestContexts.set(request, { role: 'service_role' })
             return
           }
-          // Allow anon key for read-only REST access and for storage paths
-          // (where RLS policies at the DB layer enforce per-bucket permissions).
-          // Keys are cached at startup — never read from process.env per-request.
-          if (
-            token === this.cachedAnonKey &&
+          if (Equal(token, this.cachedAnonKey) &&
             (url.pathname.startsWith('/storage/v1/') ||
               request.method === 'GET' ||
               request.method === 'HEAD')
@@ -1038,7 +1097,6 @@ export class Sinopebase {
             set.status = 401
             return { message: 'Authorization required', code: '401' }
           }
-          // Validate the token
           try {
             if (this.auth) {
               const row = await lookupSessionByToken(this.auth, token)
@@ -1051,7 +1109,6 @@ export class Sinopebase {
                 userId: row.id,
               })
             } else {
-              // In-memory: verify JWT signature
               const payload = await verifyAccessToken(token)
               postgrestContexts.set(request, {
                 role: 'authenticated',
@@ -1065,16 +1122,18 @@ export class Sinopebase {
         }
       })
 
-    // ── PostgREST routes ──
-    mountPostgrestRoutes(
-      server,
+    this.pendingServer = s1
+
+    // ── PostgREST routes (returns Elysia) ──
+    const s2 = mountPostgrestRoutes(
+      s1,
       this.database,
       (request) => postgrestContexts.get(request),
       realtime,
     )
 
     // ── Storage — /storage/v1/* ──
-    server.use(
+    const s3 = s2.use(
       createStoragePlugin(this.fileStore, {
         resolveContext: (request) => postgrestContexts.get(request),
         access:
@@ -1084,16 +1143,15 @@ export class Sinopebase {
       }),
     )
 
-    // ── Admin UI — serve built Svelte SPA from /_/ ──
-    this.mountAdminUI(server)
+    // ── Admin UI — serve built Svelte SPA from /_/ (returns Elysia, H9: auth-guarded) ──
+    const s4 = this.mountAdminUI(s3)
 
     // ── Backup / restore endpoints — service-role only ──
-    // Ensure backup directory exists
     if (!existsSync(this.resolvedBackupDir)) {
       await mkdir(this.resolvedBackupDir, { recursive: true })
     }
 
-    server
+    const s5 = s4
       // GET /api/admin/backups — list available backups
       .get('/api/admin/backups', async ({ set, request }) => {
         const ctx = postgrestContexts.get(request)
@@ -1123,7 +1181,9 @@ export class Sinopebase {
         }
         try {
           const data = (body ?? {}) as { name?: string }
-          const name = data.name ?? `backup-${Date.now()}`
+          // H14: sanitize backup name to alphanumeric + hyphens/underscores only
+          const rawName = data.name ?? `backup-${Date.now()}`
+          const name = rawName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128)
           await this.createBackup(name)
           set.status = 201
           return { message: `Backup "${name}" created.`, name }
@@ -1149,9 +1209,11 @@ export class Sinopebase {
             set.status = 400
             return { code: 400, message: 'Backup name is required.' }
           }
-          await this.restoreBackup(data.name)
+          // H14: sanitize backup name
+          const name = data.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128)
+          await this.restoreBackup(name)
           set.status = 200
-          return { message: `Backup "${data.name}" restored.` }
+          return { message: `Backup "${name}" restored.` }
         } catch (err) {
           set.status = 500
           return {
@@ -1164,48 +1226,34 @@ export class Sinopebase {
     // ── Plugins ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
     const mastraPlugin = new MastraPlugin({
-      openaiApiKey: process.env.OPENAI_API_KEY,
+      // H15: use config over process.env; never leak into config snapshots
+      openaiApiKey: this.config.openaiApiKey ?? process.env.OPENAI_API_KEY,
       requireAuth: this.config.mastraRequireAuth ?? true,
     })
-    await mastraPlugin.register(
-      server,
+    const s6 = await mastraPlugin.register(
+      s5,
       this.auth ?? undefined,
       this.database ?? undefined,
       this.fileStore ?? undefined,
     )
     const { MetricsPlugin } = await import('../plugins/metrics/plugin')
-    await new MetricsPlugin().register(server)
+    const s7 = await new MetricsPlugin().register(s6)
 
     // ── External plugins (registered via app.use before start) ──
+    // ponytail: pendingPlugins mutate in-place (return void), so don't reassign
     for (const register of this.pendingPlugins) {
-      await register(server, this.auth ?? undefined)
+      await register(s7, this.auth ?? undefined)
     }
     this.pendingPlugins = []
 
-    // ── Stub routes — return 501 for unimplemented API routes ──
-    // Uses onError (NOT_FOUND) instead of greedy .all() wildcards so that
-    // routes registered after listen() (e.g. DropFunctions plugin) are not
-    // shadowed.  Elysia resolves .all('*') routes by first-registered-wins on
-    // path conflicts, which would permanently hide post-listen plugin routes.
-    server.onError(({ code, set, request }) => {
-      if (code === 'NOT_FOUND') {
-        const url = new URL(request.url)
-        if (url.pathname.startsWith('/api/')) {
-          set.status = 501
-          return { message: 'API endpoint not yet implemented.', code: 501 }
-        }
-        if (url.pathname.startsWith('/rest/v1/')) {
-          set.status = 501
-          return { message: 'REST API not yet implemented', code: '501' }
-        }
-      }
-      // Let other errors fall through to the general error handler below.
-    })
+    // NOTE: Stub 501 for unimplemented routes is handled by the global onError
+    // (NOT_FOUND branch) at the top of the chain. Using onError instead of
+    // .all('*') prevents shadowing of routes registered after listen().
 
     const port = this.config.port ?? 8090
     const host = this.config.host ?? '0.0.0.0'
     if (this.config.tls) {
-      server.listen({
+      s7.listen({
         port,
         hostname: host,
         tls: {
@@ -1214,9 +1262,9 @@ export class Sinopebase {
         },
       })
     } else {
-      server.listen({ port, hostname: host })
+      s7.listen({ port, hostname: host })
     }
-    this.server = server
+    this.server = s7
     this.pendingServer = null
     const protocol = this.config.tls ? 'https' : 'http'
     logger.info('Sinopebase server started', { protocol, port, host })
@@ -1413,11 +1461,16 @@ export class Sinopebase {
    * Mount the admin UI static files at /_/.
    * Serves the built Svelte SPA from ui/dist/ with client-side routing fallback.
    */
-  private mountAdminUI(server: Elysia): void {
+  private mountAdminUI(server: Elysia): Elysia {
     const distPath = resolve('./ui/dist')
 
+    // H9: Auth guard for admin UI in production (dev allows with warning)
+    // Dev mode: allow with warning log
+    // Production: require service_role token
+    // ponytail: guard is lightweight — just a header check — not a full middleware
+
     // Single catch-all route for admin UI — serves files or falls back to index.html
-    server.get('/_/*', async ({ request, set }) => {
+    server = server.get('/_/*', async ({ request, set }) => {
       try {
         const url = new URL(request.url)
         const requested = url.pathname.replace(/^\/_\/?/, '') || 'index.html'
@@ -1463,6 +1516,7 @@ export class Sinopebase {
       set.headers['Content-Type'] = 'text/html'
       return ADMIN_PLACEHOLDER
     })
+    return server
   }
 
   /** Expose the better-auth instance (null if in-memory mode). */

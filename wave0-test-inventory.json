@@ -46,19 +46,19 @@
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 809,
+      "line": 806,
       "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 796,
+      "line": 819,
       "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {
       "kind": "runtime-fallback",
       "file": "src/core/app.ts",
-      "line": 847,
+      "line": 857,
       "disposition": "Resolved in production mode — initializeServer() throws when POSTGRES_URL or S3 are missing. Dev mode warnings are intentional for local development."
     },
     {

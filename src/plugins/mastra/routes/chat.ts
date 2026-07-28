@@ -11,7 +11,7 @@ import { withRequestContext } from '../plugin'
 
 export function createChatRoutes(provider: AIProvider, requireAuth: boolean, auth: unknown) {
   return (
-    new Elysia()
+    new Elysia({ name: 'sinopebase-mastra-chat' })
       // Chat completion — returns full response
       .post('/api/mastra/chat', async ({ request, body, set }) => {
         // Resolve auth context (rejects if requireAuth and no valid token)

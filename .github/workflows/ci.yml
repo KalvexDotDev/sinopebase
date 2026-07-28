@@ -88,7 +88,7 @@ jobs:
       image: semgrep/semgrep:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Semgrep SAST scan
+      - name: Semgrep SAST scan (security + elysia conventions)
         run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/
 
   gitleaks:

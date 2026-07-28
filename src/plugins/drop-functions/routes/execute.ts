@@ -28,7 +28,7 @@ export function createExecuteRoutes(
 ) {
   const functionsDir = options.functionsDir || './functions'
 
-  return new Elysia().all(`${prefix}/:name`, async ({ request, params, set, headers }) => {
+  return new Elysia({ name: 'sinopebase-drop-fn-execute' }).all(`${prefix}/:name`, async ({ request, params, set, headers }) => {
     const functionName = (params as { name: string }).name
 
     // Prevent path traversal — only allow alphanumeric, hyphens, underscores

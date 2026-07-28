@@ -18,7 +18,7 @@ import { decodeJwt, jwtVerify, SignJWT } from 'jose'
  * Convert a string key to a Uint8Array for use with jose.
  */
 function keyToBytes(key: string): Uint8Array {
-  return new TextEncoder().encode(key)
+  return Buffer.from(key, 'utf-8')
 }
 
 // ---------------------------------------------------------------------------

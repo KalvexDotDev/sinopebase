@@ -9,6 +9,7 @@
 import { betterAuth } from 'better-auth'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
 import type pg from 'pg'
+import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
 let tablesEnsured = false
@@ -65,12 +66,12 @@ export async function createAuth(
   }
 
   const secret =
-    options?.jwtSecret || process.env.JWT_SECRET || 'sinopebase-dev-secret-min-32-chars!!'
+    options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK
 
   const trustedOrigins = [
     'http://localhost:8090',
     'http://127.0.0.1:8090',
-    ...(options?.extraOrigins || []),
+    ...(options?.extraOrigins?.filter((o) => o && o !== '*') || []),
   ]
 
   // Build plugins array
@@ -93,6 +94,7 @@ export async function createAuth(
   // pools via the `.connect()` method and auto-creates PostgresDialect.
   const auth = betterAuth({
     database: pool,
+    basePath: '/api/auth', // Explicit base path
     advanced: {
       database: {
         generateId: () => crypto.randomUUID(),

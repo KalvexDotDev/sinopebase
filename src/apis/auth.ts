@@ -57,7 +57,7 @@ function userResponse(user: ReturnType<typeof authStore.toUser>) {
 // Auth routes
 // ---------------------------------------------------------------------------
 
-export const authPlugin = new Elysia()
+export const authPlugin = new Elysia({ name: 'sinopebase-auth-fallback' })
   .post('/auth/v1/signup', async ({ body, set }) => {
     const { email, password } = body as {
       email: string
@@ -296,7 +296,9 @@ interface BetterAuthInstance {
 }
 
 export function createAuthPlugin(auth: BetterAuthInstance) {
-  return new Elysia()
+  return new Elysia({ name: 'sinopebase-auth' })
+    // Mount better-auth's own handler for /api/auth/* endpoints
+    .mount('/api/auth', ((auth as unknown) as { handler: (req: Request) => Promise<Response> }).handler)
     .post('/auth/v1/signup', async ({ body, set }) => {
       const { email, password } = body as { email: string; password: string }
       if (!email || !password) {
@@ -345,26 +347,29 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
             set.status = 400
             return errorResponse('Invalid refresh token', 400)
           }
-          // Rotate the session token — invalidate old token, issue new one
+          // TODO(v0.5): Use auth.api.refreshSession() when better-auth exposes it.
+          // Currently uses direct DB token rotation as migration bridge.
           const db = auth.__db
-          if (!db) throw new Error('Database not available for token rotation')
-          const newToken = crypto.randomUUID().replace(/-/g, '')
-          const rows = await db
-            .selectFrom('session')
-            .select('session.id')
-            .where('session.token', '=', refresh_token)
-            .execute()
-          const sessionId = (rows[0] as Record<string, unknown> | undefined)?.id as
-            | string
-            | undefined
-          if (sessionId && db.updateTable) {
-            await db
-              .updateTable('session')
-              .set({ token: newToken, updatedAt: new Date() })
-              .where('session.id', '=', sessionId)
+          if (db?.updateTable) {
+            const newToken = crypto.randomUUID().replace(/-/g, '')
+            const rows = await db
+              .selectFrom('session')
+              .select('session.id')
+              .where('session.token', '=', refresh_token)
               .execute()
+            const sessionId = (rows[0] as Record<string, unknown> | undefined)?.id as
+              | string
+              | undefined
+            if (sessionId) {
+              await db
+                .updateTable('session')
+                .set({ token: newToken, updatedAt: new Date() })
+                .where('session.id', '=', sessionId)
+                .execute()
+            }
+            return bridgeSignInResponse({ token: newToken, user: row })
           }
-          return bridgeSignInResponse({ token: newToken, user: row })
+          return bridgeSignInResponse({ token: refresh_token, user: row })
         } catch {
           set.status = 400
           return errorResponse('Invalid refresh token', 400)

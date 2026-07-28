@@ -106,7 +106,7 @@ async function storageOperation<T>(
  * Create an Elysia plugin that registers all /storage/v1/* routes.
  */
 export function createStoragePlugin(store: IFileStore, options: StoragePluginOptions = {}) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-storage' })
 
   // ── Bucket operations ──
 

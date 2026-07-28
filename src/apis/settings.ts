@@ -70,7 +70,7 @@ export function createSettingsPlugin(
   updateSettings: (settings: AppSettings) => Promise<void>,
   isSuperuser: () => boolean,
 ) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-settings' })
 
   // ── GET /api/settings — List settings ──
   app.get('/api/settings', async ({ set }) => {

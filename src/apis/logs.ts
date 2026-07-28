@@ -44,7 +44,7 @@ async function selectRows(
  * All endpoints require superuser authentication.
  */
 export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-logs' })
 
   // ── GET /api/logs — List log entries ──
   app.get('/api/logs', async ({ query, set }) => {

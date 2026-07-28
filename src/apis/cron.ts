@@ -42,7 +42,7 @@ export interface CronManager {
  * Both endpoints require superuser authentication.
  */
 export function createCronPlugin(cronManager: CronManager, isSuperuser: () => boolean) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-cron' })
 
   // ── GET /api/crons — List cron jobs ──
   app.get('/api/crons', async ({ set }) => {

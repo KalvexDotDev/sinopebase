@@ -6,6 +6,7 @@
  */
 
 import { jwtVerify, SignJWT } from 'jose'
+import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 import type { User } from '../sdk/auth'
 
 export interface JwtPayload {
@@ -29,8 +30,6 @@ export interface JwtRefreshPayload {
   iss: string
   aud: string
 }
-
-const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET ?? JWT_DEV_FALLBACK

@@ -18,7 +18,7 @@ export interface HealthCheckData {
  * Create an Elysia plugin that registers the /api/health endpoint.
  */
 export function createHealthPlugin(opts?: { canBackup?: boolean; realIP?: string }) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-health' })
 
   app.get('/api/health', () => {
     const resp: HealthCheckData = {

@@ -40,7 +40,7 @@ export interface BatchRequestBody {
  * since Elysia runs in-memory; for production this would use a DB transaction).
  */
 export function createBatchPlugin(_db: IDatabase, _isSuperuser: () => boolean, app: Elysia) {
-  const batchApp = new Elysia()
+  const batchApp = new Elysia({ name: 'sinopebase-batch' })
 
   batchApp.post('/api/batch', async ({ body, set, request }) => {
     // Check content length

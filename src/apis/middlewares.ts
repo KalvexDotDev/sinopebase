@@ -510,7 +510,7 @@ export function skipSuccessActivityLog() {
  *
  * The activity logger end hooks and error handler are registered separately.
  */
-export function registerDefaultMiddleware(app: Elysia): void {
+export function registerDefaultMiddleware(app: Elysia): Elysia {
   app
     .onError(panicRecover())
     .onRequest(securityHeaders())
@@ -519,12 +519,16 @@ export function registerDefaultMiddleware(app: Elysia): void {
   // The following are registered on specific route groups, not globally
   // .onRequest(rateLimit(...)) — per-group
   // .onRequest(bodyLimit(...)) — per-group
+
+  return app
 }
 
 /**
  * Register the activity logger end hooks on an app.
  * Call this after all routes are defined.
  */
-export function registerActivityLogger(app: Elysia): void {
+export function registerActivityLogger(app: Elysia): Elysia {
   app.onAfterHandle(activityLoggerEnd()).onError(activityLoggerError())
+
+  return app
 }

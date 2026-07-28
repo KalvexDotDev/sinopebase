@@ -90,24 +90,18 @@ export interface RouterOptions {
 export async function NewRouter(app: App, options: RouterOptions = {}): Promise<Elysia> {
   const logger = new ConsoleLogger()
 
-  const elysia = new Elysia({
-    name: 'sinopebase',
-    seed: app, // make the app instance available via `app.store['app']`
-  })
-
-  // ── Store the app reference for middleware to access ──
-  elysia.state('app', app)
-  elysia.state('logger', logger)
-  elysia.state('store', new Store<string, unknown>())
-
-  // ── CORS ──
   const applyCors = cors(options.corsConfig ?? { allowOrigins: ['*'] })
-  elysia.onRequest((ctx) =>
-    applyCors({
-      request: ctx.request,
-      set: ctx.set as Parameters<typeof applyCors>[0]['set'],
-    }),
-  )
+
+  let elysia = new Elysia({ name: 'sinopebase' })
+    .state('app', app)
+    .state('logger', logger)
+    .state('store', new Store<string, unknown>())
+    .onRequest(({ request, set }) =>
+      applyCors({
+        request,
+        set: set as Parameters<typeof applyCors>[0]['set'],
+      }),
+    )
 
   // ── Gzip compression ──
   // Elysia v1.4+ provides built-in compression.
@@ -118,14 +112,14 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
 
   // ── WWW redirect ──
   if (options.wwwRedirectHosts && options.wwwRedirectHosts.length > 0) {
-    elysia.onRequest(wwwRedirect(options.wwwRedirectHosts))
+    elysia = elysia.onRequest(wwwRedirect(options.wwwRedirectHosts))
   }
 
   // ── Default middleware stack ──
-  registerDefaultMiddleware(elysia)
+  elysia = registerDefaultMiddleware(elysia)
 
   // ── API group: /api ──
-  const api = new Elysia({ prefix: '/api', name: 'api' })
+  const api = new Elysia({ prefix: '/api', name: 'sinopebase-api' })
 
   // Per-group middleware
   api.onRequest(loadAuthToken())
@@ -162,7 +156,7 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
 
   // ── Activity logger (end hooks) ──
   // Register after all routes so errors propagate correctly.
-  registerActivityLogger(elysia)
+  elysia = registerActivityLogger(elysia)
 
   // ── Catch-all: 501 for unimplemented routes ──
   elysia.all('/api/*', ({ set }) => {

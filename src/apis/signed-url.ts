@@ -14,6 +14,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,9 +22,6 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 
 /** Default TTL when expiresIn is not provided. */
 const DEFAULT_TTL_SEC = 60 * 60 // 1 hour
-
-/** Dev fallback — matches auth-jwt.ts JWT_DEV_FALLBACK. */
-const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 
 // ---------------------------------------------------------------------------
 // Internal helpers

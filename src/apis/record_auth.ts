@@ -166,7 +166,7 @@ export function createRecordAuthPlugin(
   authResolver: () => Promise<RequestAuthInfo>,
   _getTokenSecret?: () => string,
 ) {
-  const app = new Elysia()
+  const app = new Elysia({ name: 'sinopebase-record-auth' })
 
   // ── GET /api/collections/:collection/auth-methods ──
   app.get('/api/collections/:collection/auth-methods', async ({ params, set }) => {

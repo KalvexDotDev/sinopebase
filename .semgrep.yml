@@ -74,6 +74,236 @@ rules:
     severity: WARNING
     languages: [ts, javascript]
 
+  # ─── Elysia Anti-Pattern Rules (from sinopebase-elysia-rules.md) ───────────
+  # Rule 1: Method chaining — detect assign-then-call on Elysia instances
+  - id: elysia-broken-chaining
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const $APP = new Elysia(...)
+              ...
+              $APP.$METHOD(...)
+          - pattern: |
+              let $APP = new Elysia(...)
+              ...
+              $APP.$METHOD(...)
+    message: |
+      Elysia Rule 1 — Broken method chaining.
+      Each .state()/.get()/.onRequest() returns a NEW type reference.
+      Chain continuously or reassign: `app = app.get(...)`.
+      See: sinopebase-elysia-rules.md#1-method-chaining--always
+    severity: ERROR
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+        - tests/**/*.ts
+
+  # Rule 4: Unnamed Elysia instances — must have `name` for deduplication
+  - id: elysia-unnamed-instance
+    patterns:
+      - pattern: new Elysia()
+      - pattern-not: new Elysia({..., name: ..., ...})
+    message: |
+      Elysia Rule 4 — Unnamed Elysia instance.
+      Every Elysia instance/plugin MUST have a `name` for deduplication.
+      Use: `new Elysia({ name: 'sinopebase-<feature>' })`
+      See: sinopebase-elysia-rules.md#4-deduplication--always-name-plugins
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Rule 6: JIT-degrading handler pattern — (ctx) instead of destructured params
+  - id: elysia-no-handler-destructure
+    patterns:
+      - pattern-either:
+          - pattern: |
+              .get($PATH, (ctx) => { ... }, ...)
+          - pattern: |
+              .get($PATH, async (ctx) => { ... }, ...)
+          - pattern: |
+              .post($PATH, (ctx) => { ... }, ...)
+          - pattern: |
+              .post($PATH, async (ctx) => { ... }, ...)
+          - pattern: |
+              .put($PATH, (ctx) => { ... }, ...)
+          - pattern: |
+              .put($PATH, async (ctx) => { ... }, ...)
+          - pattern: |
+              .patch($PATH, (ctx) => { ... }, ...)
+          - pattern: |
+              .patch($PATH, async (ctx) => { ... }, ...)
+          - pattern: |
+              .delete($PATH, (ctx) => { ... }, ...)
+          - pattern: |
+              .delete($PATH, async (ctx) => { ... }, ...)
+          - pattern: |
+              .head($PATH, (ctx) => { ... }, ...)
+          - pattern: |
+              .head($PATH, async (ctx) => { ... }, ...)
+    message: |
+      Elysia Rule 6 — Handler uses (ctx) instead of destructured params.
+      Destructure at handler level for JIT optimization:
+      `.get('/', ({ params, query, body, set }) => { ... })`
+      See: sinopebase-elysia-rules.md#6-type-inference--inline--destructure
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Rule 12: allowUnsafeValidationDetails must never be true
+  - id: elysia-unsafe-validation-details
+    patterns:
+      - pattern: |
+          Elysia.allowUnsafeValidationDetails = true
+    message: |
+      Elysia Rule 12 — Unsafe validation details enabled.
+      Never set allowUnsafeValidationDetails = true in production.
+      This leaks schema structure in validation error responses.
+    severity: ERROR
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Rule 13: Custom errors must have `status` property
+  - id: elysia-custom-error-no-status
+    patterns:
+      - pattern-either:
+          - pattern: |
+              class $ERR extends Error {
+                ...
+              }
+          - pattern: |
+              class $ERR extends ApiError {
+                ...
+              }
+      - pattern-not-regex: "status"
+    message: |
+      Elysia Rule 13 — Custom error class missing `status` property.
+      All custom error classes must declare a `status` property.
+      `class MyError extends Error { readonly status = 418; ... }`
+      See: sinopebase-elysia-rules.md#13-custom-error-classes--typed--status-code
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Rule 13: Unregistered error classes — detect throw new $Error without .error()
+  - id: elysia-unregistered-error-class
+    patterns:
+      - pattern-either:
+          - pattern: throw new ApiError(...)
+          - pattern: throw new BadRequestError(...)
+          - pattern: throw new UnauthorizedError(...)
+          - pattern: throw new ForbiddenError(...)
+          - pattern: throw new NotFoundError(...)
+          - pattern: throw new TooManyRequestsError(...)
+          - pattern: throw new InternalServerError(...)
+          - pattern: throw new RequestEntityTooLargeError(...)
+          - pattern: throw new StorageAccessError(...)
+          - pattern: throw new SignedUrlError(...)
+    message: |
+      Elysia Rule 13 — Custom error class not registered via .error().
+      Register with: `new Elysia().error({ ApiError, BadRequestError, ... })`
+      See: sinopebase-elysia-rules.md#13-custom-error-classes--typed--status-code
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Rule 14: throw new Error() in route handlers — should use ApiError subclass
+  - id: elysia-raw-error-throw-in-handler
+    patterns:
+      - pattern-either:
+          - pattern: throw new Error(...)
+    message: |
+      Elysia Rule 14 — Raw `throw new Error()` bypasses structured error handling.
+      Use ApiError subclasses (BadRequestError, NotFoundError, UnauthorizedError, etc.)
+      that are registered via .error(). Raw Errors produce generic 500 responses.
+      See: sinopebase-elysia-rules.md#14-throw-vs-return--onerror-only-catches-throws
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Rule 19: CORS alignment — detect allowOrigins: ['*'] (becomes ERROR if extraOrigins is also set)
+  - id: elysia-wildcard-cors
+    patterns:
+      - pattern: |
+          allowOrigins: ['*']
+    message: |
+      Elysia Rule 19 — CORS allowOrigins is ['*'].
+      Wildcard CORS allows any origin. Must match better-auth trustedOrigins.
+      Restrict to specific origins for production.
+      See: sinopebase-elysia-rules.md#19-better-auth--cors--trusted-origins
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Security: process.env write-back after caching (secrets leak to child processes)
+  - id: security-env-writeback-secrets
+    patterns:
+      - pattern-either:
+          - pattern: |
+              process.env.JWT_SECRET = ...
+          - pattern: |
+              process.env.SINOPEBASE_SERVICE_ROLE_KEY = ...
+          - pattern: |
+              process.env.SINOPEBASE_ANON_KEY = ...
+    message: |
+      Secrets written back to process.env after caching — leaks to child processes.
+      Remove the process.env write-back. Secrets should only live in class properties
+      after initial cache, never in the global environment.
+    severity: ERROR
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Security: JWT dev fallback duplicated (risk of inconsistent values)
+  - id: security-jwt-fallback-duplicated
+    patterns:
+      - pattern-either:
+          - pattern: sinopebase-dev-jwt-secret-min-32-chars!!
+          - pattern: sinopebase-dev-secret-min-32-chars!!
+    message: |
+      JWT dev fallback secret is duplicated across files with inconsistent values.
+      Export a single shared constant JWT_DEV_FALLBACK from src/core/constants.ts
+      and import it everywhere.
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
+  # Security: Health endpoint leaking infrastructure details in production
+  - id: security-health-endpoint-leak
+    patterns:
+      - pattern-either:
+          - pattern: |
+              mode: this.mode
+          - pattern: |
+              db: this.database instanceof PostgresDatabase
+          - pattern: |
+              storage: this.fileStore instanceof S3FileStore
+    message: |
+      Health endpoint may leak infrastructure details (mode, db type, storage type).
+      In production, return only `{ code: 200, message: 'running' }`.
+    severity: WARNING
+    languages: [ts]
+    paths:
+      include:
+        - src/**/*.ts
+
 paths:
   include:
     - src/**/*.ts

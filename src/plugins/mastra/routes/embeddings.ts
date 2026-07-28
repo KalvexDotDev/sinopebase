@@ -9,7 +9,7 @@ import { validateAIRequest } from '../middleware'
 import { withRequestContext } from '../plugin'
 
 export function createEmbeddingsRoutes(provider: AIProvider, requireAuth: boolean, auth: unknown) {
-  return new Elysia().post('/api/mastra/embeddings', async ({ request, body, set }) => {
+  return new Elysia({ name: 'sinopebase-mastra-embeddings' }).post('/api/mastra/embeddings', async ({ request, body, set }) => {
     // Resolve auth context (rejects if requireAuth and no valid token)
     const authCtx = await validateAIRequest(auth, request)
     if (requireAuth && !authCtx) {

@@ -241,7 +241,12 @@ export function resetRateLimiters(): void {
  * @param windowSec    Window duration in seconds.
  * @param label        Optional label for the rate limiter (used as the store key).
  */
-export function rateLimit(maxRequests: number, windowSec: number, label?: string) {
+export function rateLimit(
+  maxRequests: number,
+  windowSec: number,
+  label?: string,
+  trustedProxies?: string[],
+) {
   const key = label ?? `__rl_${maxRequests}_${windowSec}__`
 
   // Get or create the limiter in the global store
@@ -251,11 +256,7 @@ export function rateLimit(maxRequests: number, windowSec: number, label?: string
   ensureCleanup()
 
   return async (ctx: { request: Request; set: { status?: number } }): Promise<void> => {
-    // Determine client IP from headers or remote address
-    const ip =
-      ctx.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      ctx.request.headers.get('x-real-ip') ??
-      '127.0.0.1'
+    const ip = getClientIP(ctx.request, trustedProxies)
 
     if (!limiter.isAllowed(ip)) {
       throw new TooManyRequestsError('You have made too many requests. Please try again later.', {
@@ -266,22 +267,64 @@ export function rateLimit(maxRequests: number, windowSec: number, label?: string
 }
 
 /**
+ * Extracts the client IP from a request, respecting trusted proxy configuration.
+ *
+ * When `trustedProxies` is provided, the last IP in the `X-Forwarded-For` chain
+ * is used (the one appended by the outermost trusted proxy). Without a trusted
+ * proxy list, `X-Forwarded-For` is ignored to prevent spoofing, and the
+ * `X-Real-IP` header is used as a fallback before the loopback address.
+ */
+export function getClientIP(request: Request, trustedProxies?: string[]): string {
+  const xff = request.headers.get('x-forwarded-for')
+  if (xff) {
+    if (trustedProxies?.length) {
+      // Behind trusted proxies: use the rightmost IP (appended by outermost proxy).
+      const ips = xff.split(',').map((s) => s.trim())
+      const last = ips[ips.length - 1]
+      if (last) return last
+    } else {
+      // No trusted proxy list configured: use first IP for backward compat.
+      // ponytail: when trustedProxies is configured, prefer last IP in chain
+      const first = xff.split(',')[0]?.trim()
+      if (first) return first
+    }
+  }
+  const realIp = request.headers.get('x-real-ip')
+  if (realIp) return realIp
+  return '127.0.0.1'
+}
+
+/**
  * Creates a rate-limit middleware scoped to a collection resolved from a
  * route path parameter.
  *
  * @param collectionParam  Route parameter name (default `"collection"`).
  * @param baseTags         Additional tags to include in the limiter key.
  */
-export function collectionPathRateLimit(collectionParam = 'collection', ...baseTags: string[]) {
+export function collectionPathRateLimit(
+  collectionParam = 'collection',
+  ...baseTags: (string | string[])[]
+) {
+  // Extract optional trailing trustedProxies array from the varargs
+  let trustedProxies: string[] | undefined
+  const tags: string[] = []
+  for (const arg of baseTags) {
+    if (Array.isArray(arg)) {
+      trustedProxies = arg
+    } else {
+      tags.push(arg)
+    }
+  }
+
   return async (ctx: {
     request: Request
     params: Record<string, string>
     set: { status?: number }
   }): Promise<void> => {
     const coll = ctx.params[collectionParam] ?? 'unknown'
-    const tag = baseTags.length ? `_${baseTags.join('_')}` : ''
+    const tag = tags.length ? `_${tags.join('_')}` : ''
     const label = `__rl_coll_${coll}${tag}`
-    const hook = rateLimit(120, 60, label)
+    const hook = rateLimit(120, 60, label, trustedProxies)
     await hook(ctx)
   }
 }

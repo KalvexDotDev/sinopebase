@@ -28,9 +28,9 @@ import { securityHeaders, skipSuccessActivityLog } from './middlewares'
 const DEFAULT_CSP = [
   "default-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' http://127.0.0.1:* https://tile.openstreetmap.org data: blob:",
-  "connect-src 'self' http://127.0.0.1:* https://nominatim.openstreetmap.org",
-  "script-src 'self' http://127.0.0.1:*",
+  "img-src 'self' http://127.0.0.1:8090 https://tile.openstreetmap.org data: blob:",
+  "connect-src 'self' http://127.0.0.1:8090 https://nominatim.openstreetmap.org",
+  "script-src 'self' http://127.0.0.1:8090 http://127.0.0.1:5173",
   "frame-ancestors 'none'",
 ].join('; ')
 

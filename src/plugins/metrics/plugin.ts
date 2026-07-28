@@ -17,7 +17,7 @@ const methodCounts: Record<string, number> = {}
 const latencies: number[] = []
 
 export class MetricsPlugin {
-  async register(app: Elysia): Promise<void> {
+  async register(app: Elysia): Promise<Elysia> {
     // Collect metrics from every response
     const startKey = '__metricsStart'
 
@@ -80,5 +80,6 @@ export class MetricsPlugin {
     })
 
     console.log('Metrics: /api/metrics (JSON) + /metrics (Prometheus) ready')
+    return app
   }
 }
