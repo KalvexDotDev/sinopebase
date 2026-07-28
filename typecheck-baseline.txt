@@ -6,14 +6,17 @@ src/apis/extensions.ts(97,20): error TS7053: Element implicitly has an 'any' typ
 src/apis/file.ts(307,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
 src/apis/file.ts(383,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
 src/apis/file.ts(450,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
-src/apis/postgrest.ts(577,3): error TS2322: Type 'ForeignKeyRelationship | undefined' is not assignable to type 'ForeignKeyRelationship'.
-src/apis/postgrest.ts(687,15): error TS2322: Type 'undefined' is not assignable to type 'SingularResponse | null'.
+src/apis/postgrest.ts(575,3): error TS2322: Type 'ForeignKeyRelationship | undefined' is not assignable to type 'ForeignKeyRelationship'.
+src/apis/postgrest.ts(685,15): error TS2322: Type 'undefined' is not assignable to type 'SingularResponse | null'.
 src/apis/realtime-postgres-changes.test.ts(29,5): error TS2322: Type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { realtime: { v1: { websocket: { ...; }; }; }; }, { ...; }, { ...; }>' is not assignable to type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
 src/apis/record_helpers.ts(158,5): error TS2554: Expected 2 arguments, but got 3.
-src/core/app.ts(785,9): error TS2322: Type 'Auth<BetterAuthOptions>' is not assignable to type 'AuthInstance'.
-src/core/app.ts(1006,41): error TS2345: Argument of type 'AuthInstance' is not assignable to parameter of type 'BetterAuthInstance'.
-src/core/app.ts(1172,7): error TS2345: Argument of type 'AuthInstance | undefined' is not assignable to parameter of type 'Auth<BetterAuthOptions> | undefined'.
-src/core/app.ts(1181,30): error TS2345: Argument of type 'AuthInstance | undefined' is not assignable to parameter of type 'AuthInstance'.
+src/core/app.ts(795,9): error TS2322: Type 'Auth<BetterAuthOptions>' is not assignable to type 'AuthInstance'.
+src/core/app.ts(977,9): error TS2769: No overload matches this call.
+src/core/app.ts(1071,41): error TS2345: Argument of type 'AuthInstance' is not assignable to parameter of type 'BetterAuthInstance'.
+src/core/app.ts(1128,5): error TS2322: Type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: { readonly ApiError: ApiError; readonly BadRequestError: BadRequestError; readonly UnauthorizedError: UnauthorizedError; ... 4 more ...; readonly RequestEntityTooLargeError: RequestEntityTooLargeError; }; } & { ...; }, { ...; },...' is not assignable to type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
+src/core/app.ts(1132,7): error TS2345: Argument of type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: { readonly ApiError: ApiError; readonly BadRequestError: BadRequestError; readonly UnauthorizedError: UnauthorizedError; ... 4 more ...; readonly RequestEntityTooLargeError: RequestEntityTooLargeError; }; } & { ...; }, { ...; },...' is not assignable to parameter of type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
+src/core/app.ts(1237,7): error TS2345: Argument of type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { api: { admin: { backups: { ...; }; }; }; } & { ...; } & { ...; }, { ...; }, { ...; }>' is not assignable to parameter of type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
+src/core/app.ts(1248,26): error TS2345: Argument of type 'AuthInstance | undefined' is not assignable to parameter of type 'AuthInstance'.
 src/core/auth_origin_model.ts(28,12): error TS4113: This member cannot have an 'override' modifier because it is not declared in the base class 'BaseModel'.
 src/core/base.ts(355,3): error TS4114: This member must have an 'override' modifier because it overrides a member in the base class 'Sinopebase'.
 src/core/base.ts(384,9): error TS4114: This member must have an 'override' modifier because it overrides a member in the base class 'Sinopebase'.
@@ -106,14 +109,14 @@ src/plugins/mastra/middleware.ts(33,42): error TS2559: Type 'Auth<BetterAuthOpti
 src/plugins/mastra/plugin.ts(123,45): error TS2345: Argument of type 'IDatabase | undefined' is not assignable to parameter of type 'IDatabase'.
 src/plugins/mastra/routes/chat.ts(18,49): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
 src/plugins/mastra/routes/chat.ts(63,49): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
-src/plugins/mastra/routes/embeddings.ts(14,45): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
+src/plugins/mastra/routes/embeddings.ts(16,47): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
 src/plugins/metrics/plugin.ts(28,22): error TS2769: No overload matches this call.
 src/sdk/functions.ts(66,15): error TS2322: Type '{}' is not assignable to type 'string'.
 src/tools/ai/mastra/auth-bridge.ts(39,46): error TS2559: Type 'Auth<BetterAuthOptions>' has no properties in common with type 'AuthWithDb'.
 src/tools/ai/mastra/mcp-tools.ts(70,36): error TS2339: Property 'tableColumns' does not exist on type 'IDatabase'.
 src/tools/ai/mastra/mcp-tools.ts(118,45): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
 src/tools/ai/openai.ts(109,7): error TS2322: Type '{ index: number; message: { role: string; content: string; }; finishReason: string | null; }[]' is not assignable to type '{ index: number; message: AIMessage; finishReason: "content_filter" | "length" | "stop" | "tool_calls" | null; }[]'.
-src/tools/auth-better/index.ts(105,5): error TS2322: Type 'Record<string, unknown>[]' is not assignable to type 'BetterAuthPlugin[] | [] | undefined'.
+src/tools/auth-better/index.ts(106,5): error TS2322: Type 'Record<string, unknown>[]' is not assignable to type 'BetterAuthPlugin[] | [] | undefined'.
 src/tools/dbutils/index.ts(154,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/tools/dbutils/index.ts(155,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
 src/tools/dbutils/index.ts(157,5): error TS2322: Type 'string | undefined' is not assignable to type 'string'.

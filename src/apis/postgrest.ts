@@ -16,8 +16,8 @@ import type { ForeignKeyRelationship, IDatabase, OrderBy } from '../core/db-inte
 import type { ParsedFilter } from '../core/db-memory'
 import { PostgresDatabase, type PostgresRequestContext } from '../core/db-postgres'
 import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
-import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
 import { InternalServerError } from './api_error_aliases'
+import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
 
 // ---------------------------------------------------------------------------
 // Helper types

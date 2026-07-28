@@ -1473,7 +1473,7 @@ export class Sinopebase {
     // ponytail: guard is lightweight — just a header check — not a full middleware
 
     // Single catch-all route for admin UI — serves files or falls back to index.html
-    server = server.get('/_/*', async ({ request, set }) => {
+    const s = server.get('/_/*', async ({ request, set }) => {
       try {
         const url = new URL(request.url)
         const requested = url.pathname.replace(/^\/_\/?/, '') || 'index.html'
@@ -1519,7 +1519,7 @@ export class Sinopebase {
       set.headers['Content-Type'] = 'text/html'
       return ADMIN_PLACEHOLDER
     })
-    return server
+    return s as unknown as Elysia
   }
 
   /** Expose the better-auth instance (null if in-memory mode). */

@@ -115,7 +115,8 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
       : router0
 
   // ── Default middleware stack ──
-  const router2 = registerDefaultMiddleware(router1)
+  // ponytail: cast to broad Elysia — helpers were authored before chain types were enriched
+  const router2 = registerDefaultMiddleware(router1 as unknown as Elysia)
 
   // ── API group: /api ──
   const api = new Elysia({ prefix: '/api', name: 'sinopebase-api' })
@@ -165,7 +166,9 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
     console.log(`  └─ Dashboard: ${baseURL}/_/\n`)
   }
 
-  return router5
+  // ponytail: cast to declared return type — chain types are richer than the broad Elysia
+  // interface, but callers only need the standard Elysia surface.
+  return router5 as unknown as Elysia
 }
 
 // ── Static file serving helper (ported from Go apis/base.go) ──
