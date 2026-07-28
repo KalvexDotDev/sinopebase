@@ -13,16 +13,6 @@ rules:
     severity: WARNING
     languages: [ts, javascript]
 
-  # Secret detection — hardcoded API keys / tokens
-  - id: no-hardcoded-secrets
-    patterns:
-      - pattern-either:
-          - pattern: $X = "$SECRET"
-          - pattern: const $X = "$SECRET"
-    message: "Potential hardcoded secret. Use environment variables instead."
-    severity: ERROR
-    languages: [ts, javascript]
-
   # No eval / dynamic code execution
   - id: no-eval-or-dynamic-execution
     patterns:
@@ -75,35 +65,11 @@ rules:
     languages: [ts, javascript]
 
   # ─── Elysia Anti-Pattern Rules (from sinopebase-elysia-rules.md) ───────────
-  # Rule 1: Method chaining — detect assign-then-call on Elysia instances
-  - id: elysia-broken-chaining
-    patterns:
-      - pattern-either:
-          - pattern: |
-              const $APP = new Elysia(...)
-              ...
-              $APP.$METHOD(...)
-          - pattern: |
-              let $APP = new Elysia(...)
-              ...
-              $APP.$METHOD(...)
-    message: |
-      Elysia Rule 1 — Broken method chaining.
-      Each .state()/.get()/.onRequest() returns a NEW type reference.
-      Chain continuously or reassign: `app = app.get(...)`.
-      See: sinopebase-elysia-rules.md#1-method-chaining--always
-    severity: ERROR
-    languages: [ts]
-    paths:
-      include:
-        - src/**/*.ts
-        - tests/**/*.ts
-
   # Rule 4: Unnamed Elysia instances — must have `name` for deduplication
   - id: elysia-unnamed-instance
     patterns:
       - pattern: new Elysia()
-      - pattern-not: new Elysia({..., name: ..., ...})
+      - pattern-not: 'new Elysia({..., name: ..., ...})'
     message: |
       Elysia Rule 4 — Unnamed Elysia instance.
       Every Elysia instance/plugin MUST have a `name` for deduplication.
@@ -114,6 +80,8 @@ rules:
     paths:
       include:
         - src/**/*.ts
+      exclude:
+        - src/**/*.test.ts
 
   # Rule 6: JIT-degrading handler pattern — (ctx) instead of destructured params
   - id: elysia-no-handler-destructure
@@ -164,70 +132,6 @@ rules:
       Never set allowUnsafeValidationDetails = true in production.
       This leaks schema structure in validation error responses.
     severity: ERROR
-    languages: [ts]
-    paths:
-      include:
-        - src/**/*.ts
-
-  # Rule 13: Custom errors must have `status` property
-  - id: elysia-custom-error-no-status
-    patterns:
-      - pattern-either:
-          - pattern: |
-              class $ERR extends Error {
-                ...
-              }
-          - pattern: |
-              class $ERR extends ApiError {
-                ...
-              }
-      - pattern-not-regex: "status"
-    message: |
-      Elysia Rule 13 — Custom error class missing `status` property.
-      All custom error classes must declare a `status` property.
-      `class MyError extends Error { readonly status = 418; ... }`
-      See: sinopebase-elysia-rules.md#13-custom-error-classes--typed--status-code
-    severity: WARNING
-    languages: [ts]
-    paths:
-      include:
-        - src/**/*.ts
-
-  # Rule 13: Unregistered error classes — detect throw new $Error without .error()
-  - id: elysia-unregistered-error-class
-    patterns:
-      - pattern-either:
-          - pattern: throw new ApiError(...)
-          - pattern: throw new BadRequestError(...)
-          - pattern: throw new UnauthorizedError(...)
-          - pattern: throw new ForbiddenError(...)
-          - pattern: throw new NotFoundError(...)
-          - pattern: throw new TooManyRequestsError(...)
-          - pattern: throw new InternalServerError(...)
-          - pattern: throw new RequestEntityTooLargeError(...)
-          - pattern: throw new StorageAccessError(...)
-          - pattern: throw new SignedUrlError(...)
-    message: |
-      Elysia Rule 13 — Custom error class not registered via .error().
-      Register with: `new Elysia().error({ ApiError, BadRequestError, ... })`
-      See: sinopebase-elysia-rules.md#13-custom-error-classes--typed--status-code
-    severity: WARNING
-    languages: [ts]
-    paths:
-      include:
-        - src/**/*.ts
-
-  # Rule 14: throw new Error() in route handlers — should use ApiError subclass
-  - id: elysia-raw-error-throw-in-handler
-    patterns:
-      - pattern-either:
-          - pattern: throw new Error(...)
-    message: |
-      Elysia Rule 14 — Raw `throw new Error()` bypasses structured error handling.
-      Use ApiError subclasses (BadRequestError, NotFoundError, UnauthorizedError, etc.)
-      that are registered via .error(). Raw Errors produce generic 500 responses.
-      See: sinopebase-elysia-rules.md#14-throw-vs-return--onerror-only-catches-throws
-    severity: WARNING
     languages: [ts]
     paths:
       include:

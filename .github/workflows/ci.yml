@@ -88,13 +88,8 @@ jobs:
       image: semgrep/semgrep:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Semgrep SAST — elysia conventions (blocking)
-        run: semgrep scan --config .semgrep.yml --error src/ tests/
-      - name: Semgrep SAST — secrets (blocking)
-        run: semgrep scan --config p/secrets --error src/
-      - name: Semgrep SAST — TypeScript best practices (advisory)
-        continue-on-error: true
-        run: semgrep scan --config p/typescript src/ tests/
+      - name: Semgrep SAST scan (security + elysia conventions)
+        run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --error
 
   gitleaks:
     needs: [lint, typecheck, jscpd]

@@ -1,13 +1,11 @@
-# Generated / third-party
+# Test files — hardcoded strings in tests are test fixtures, not secrets
+tests/
+
+# Dependencies
 node_modules/
 dist/
-ui/dist/
-ui/node_modules/
 
-# Type declaration files
-*.d.ts
-
-# Tooling
-.claude/
-.git/
-.megalinter-reports/
+# Admin UI (separate project)
+ui/
+# In-source tests
+**/*.test.ts

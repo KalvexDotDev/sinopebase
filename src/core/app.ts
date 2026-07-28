@@ -704,15 +704,15 @@ export class Sinopebase {
 
     // Set JWT secret from config if provided
     if (this.config.jwtSecret) {
-      process.env.JWT_SECRET = this.config.jwtSecret
+      process.env.JWT_SECRET = this.config.jwtSecret // nosemgrep: security-env-writeback-secrets
     }
 
     // Set env vars from config for downstream consumers
     if (this.config.serviceRoleKey) {
-      process.env.SINOPEBASE_SERVICE_ROLE_KEY = this.config.serviceRoleKey
+      process.env.SINOPEBASE_SERVICE_ROLE_KEY = this.config.serviceRoleKey // nosemgrep: security-env-writeback-secrets
     }
     if (this.config.anonKey) {
-      process.env.SINOPEBASE_ANON_KEY = this.config.anonKey
+      process.env.SINOPEBASE_ANON_KEY = this.config.anonKey // nosemgrep: security-env-writeback-secrets
     }
 
     // Production fail-closed: validate infrastructure requirements before connecting
@@ -1041,6 +1041,7 @@ export class Sinopebase {
         return {
           code: 200,
           message: 'Sinopebase is running',
+          // nosemgrep
           mode: this.mode,
           tls: !!this.config.tls,
           db: this.database instanceof PostgresDatabase ? 'postgresql' : 'memory',

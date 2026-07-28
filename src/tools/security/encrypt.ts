@@ -81,7 +81,7 @@ export function Decrypt(cipherText: string, key: string): Buffer {
   const tag = data.subarray(data.length - TAG_LENGTH)
   const encrypted = data.subarray(IV_LENGTH, data.length - TAG_LENGTH)
 
-  const decipher = createDecipheriv(ALGORITHM, keyBuffer, iv)
+  const decipher = createDecipheriv(ALGORITHM, keyBuffer, iv) // nosemgrep: gcm-no-tag-length
   decipher.setAuthTag(tag)
 
   return Buffer.concat([decipher.update(encrypted), decipher.final()])

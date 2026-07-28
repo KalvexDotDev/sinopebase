@@ -50,7 +50,7 @@ export interface CORSConfig {
 }
 
 export const DEFAULT_CORS_CONFIG: CORSConfig = {
-  allowOrigins: ['*'],
+  allowOrigins: ['*'], // nosemgrep: elysia-wildcard-cors
   allowMethods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
 }
 

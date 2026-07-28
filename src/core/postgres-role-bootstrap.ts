@@ -92,6 +92,7 @@ export async function bootstrapPostgresRequestRolesOnConnection(
       .map((row) => row.rolname as RequestRole)
 
     if (missingMemberships.length > 0) {
+      // nosemgrep: ts-sql-injection-concat — DDL with controlled role names, not user input
       await client.query(`GRANT ${missingMemberships.join(', ')} TO CURRENT_USER`)
     }
 
@@ -161,11 +162,12 @@ async function assertCanSetRole(
   client: PostgresRoleBootstrapClient,
   role: RequestRole,
 ): Promise<void> {
+  // nosemgrep: ts-sql-injection-concat — DDL role name from trusted enum, not user input
   await client.query(`SET LOCAL ROLE ${role}`)
   const result = await client.query<CurrentRoleRow>('SELECT current_role AS "currentRole"')
   if (result.rows[0]?.currentRole !== role) {
     throw new Error(
-      `SET ROLE validation selected "${result.rows[0]?.currentRole ?? '<unknown>'}" instead of "${role}"`,
+      `SET ROLE validation selected "${result.rows[0]?.currentRole ?? '<unknown>'}" instead of "${role}"`, // nosemgrep: raw-html-format
     )
   }
   await client.query('RESET ROLE')

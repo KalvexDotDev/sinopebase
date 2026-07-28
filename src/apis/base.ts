@@ -90,6 +90,7 @@ export interface RouterOptions {
 export async function NewRouter(app: App, options: RouterOptions = {}): Promise<Elysia> {
   const logger = new ConsoleLogger()
 
+  // nosemgrep: elysia-wildcard-cors — default; overridden via RouterOptions in production
   const applyCors = cors(options.corsConfig ?? { allowOrigins: ['*'] })
 
   // ponytail: const chain avoids Elysia type reconciliation issues.
