@@ -296,120 +296,125 @@ interface BetterAuthInstance {
 }
 
 export function createAuthPlugin(auth: BetterAuthInstance) {
-  return new Elysia({ name: 'sinopebase-auth' })
-    // Mount better-auth's own handler for /api/auth/* endpoints
-    .mount('/api/auth', ((auth as unknown) as { handler: (req: Request) => Promise<Response> }).handler)
-    .post('/auth/v1/signup', async ({ body, set }) => {
-      const { email, password } = body as { email: string; password: string }
-      if (!email || !password) {
-        set.status = 400
-        return errorResponse('Email and password are required', 400)
-      }
-      try {
-        // Sign up via better-auth, then sign in to get a session token
-        await auth.api.signUpEmail({ body: { email, password, name: '' } })
-        const signInResult = await auth.api.signInEmail({ body: { email, password } })
-        return bridgeSignInResponse(signInResult)
-      } catch (err: unknown) {
-        set.status = 400
-        return errorResponse(err instanceof Error ? err.message : 'Signup failed', 400)
-      }
-    })
-    .post('/auth/v1/token', async ({ body, query, set }) => {
-      const q = query as Record<string, string>
-      const grantType = q.grant_type
-      if (grantType === 'password') {
+  return (
+    new Elysia({ name: 'sinopebase-auth' })
+      // Mount better-auth's own handler for /api/auth/* endpoints
+      .mount(
+        '/api/auth',
+        (auth as unknown as { handler: (req: Request) => Promise<Response> }).handler,
+      )
+      .post('/auth/v1/signup', async ({ body, set }) => {
         const { email, password } = body as { email: string; password: string }
         if (!email || !password) {
           set.status = 400
-          return errorResponse('Invalid login credentials', 400)
+          return errorResponse('Email and password are required', 400)
         }
         try {
-          const result = await auth.api.signInEmail({ body: { email, password } })
-          return bridgeSignInResponse(result)
+          // Sign up via better-auth, then sign in to get a session token
+          await auth.api.signUpEmail({ body: { email, password, name: '' } })
+          const signInResult = await auth.api.signInEmail({ body: { email, password } })
+          return bridgeSignInResponse(signInResult)
         } catch (err: unknown) {
           set.status = 400
-          return errorResponse(
-            err instanceof Error ? err.message : 'Invalid login credentials',
-            400,
-          )
+          return errorResponse(err instanceof Error ? err.message : 'Signup failed', 400)
         }
-      }
-      if (grantType === 'refresh_token') {
-        const { refresh_token } = body as { refresh_token?: string }
-        if (!refresh_token) {
-          set.status = 400
-          return errorResponse('Invalid refresh token', 400)
+      })
+      .post('/auth/v1/token', async ({ body, query, set }) => {
+        const q = query as Record<string, string>
+        const grantType = q.grant_type
+        if (grantType === 'password') {
+          const { email, password } = body as { email: string; password: string }
+          if (!email || !password) {
+            set.status = 400
+            return errorResponse('Invalid login credentials', 400)
+          }
+          try {
+            const result = await auth.api.signInEmail({ body: { email, password } })
+            return bridgeSignInResponse(result)
+          } catch (err: unknown) {
+            set.status = 400
+            return errorResponse(
+              err instanceof Error ? err.message : 'Invalid login credentials',
+              400,
+            )
+          }
         }
-        try {
-          const row = await lookupSessionByToken(auth, refresh_token)
-          if (!row) {
+        if (grantType === 'refresh_token') {
+          const { refresh_token } = body as { refresh_token?: string }
+          if (!refresh_token) {
             set.status = 400
             return errorResponse('Invalid refresh token', 400)
           }
-          // TODO(v0.5): Use auth.api.refreshSession() when better-auth exposes it.
-          // Currently uses direct DB token rotation as migration bridge.
-          const db = auth.__db
-          if (db?.updateTable) {
-            const newToken = crypto.randomUUID().replace(/-/g, '')
-            const rows = await db
-              .selectFrom('session')
-              .select('session.id')
-              .where('session.token', '=', refresh_token)
-              .execute()
-            const sessionId = (rows[0] as Record<string, unknown> | undefined)?.id as
-              | string
-              | undefined
-            if (sessionId) {
-              await db
-                .updateTable('session')
-                .set({ token: newToken, updatedAt: new Date() })
-                .where('session.id', '=', sessionId)
-                .execute()
+          try {
+            const row = await lookupSessionByToken(auth, refresh_token)
+            if (!row) {
+              set.status = 400
+              return errorResponse('Invalid refresh token', 400)
             }
-            return bridgeSignInResponse({ token: newToken, user: row })
+            // TODO(v0.5): Use auth.api.refreshSession() when better-auth exposes it.
+            // Currently uses direct DB token rotation as migration bridge.
+            const db = auth.__db
+            if (db?.updateTable) {
+              const newToken = crypto.randomUUID().replace(/-/g, '')
+              const rows = await db
+                .selectFrom('session')
+                .select('session.id')
+                .where('session.token', '=', refresh_token)
+                .execute()
+              const sessionId = (rows[0] as Record<string, unknown> | undefined)?.id as
+                | string
+                | undefined
+              if (sessionId) {
+                await db
+                  .updateTable('session')
+                  .set({ token: newToken, updatedAt: new Date() })
+                  .where('session.id', '=', sessionId)
+                  .execute()
+              }
+              return bridgeSignInResponse({ token: newToken, user: row })
+            }
+            return bridgeSignInResponse({ token: refresh_token, user: row })
+          } catch {
+            set.status = 400
+            return errorResponse('Invalid refresh token', 400)
           }
-          return bridgeSignInResponse({ token: refresh_token, user: row })
-        } catch {
-          set.status = 400
-          return errorResponse('Invalid refresh token', 400)
         }
-      }
-      set.status = 400
-      return errorResponse('Invalid grant type', 400)
-    })
-    .post('/auth/v1/logout', async ({ headers }) => {
-      const authHeader = headers.authorization
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.slice(7).trim()
-        await auth.api
-          .signOut({ headers: new Headers({ Authorization: `Bearer ${token}` }) })
-          .catch(() => {})
-      }
-      return {}
-    })
-    .get('/auth/v1/user', async ({ headers, set }) => {
-      const authHeader = headers.authorization
-      if (!authHeader?.startsWith('Bearer ')) {
-        set.status = 401
-        return { message: 'Invalid authorization header' }
-      }
-      const token = authHeader.slice(7).trim()
-      if (!token) {
-        set.status = 401
-        return { message: 'Invalid authorization header' }
-      }
-      // better-auth's getSession is cookie-based, so we query the DB directly
-      try {
-        const row = await lookupSessionByToken(auth, token)
-        if (!row) {
+        set.status = 400
+        return errorResponse('Invalid grant type', 400)
+      })
+      .post('/auth/v1/logout', async ({ headers }) => {
+        const authHeader = headers.authorization
+        if (authHeader?.startsWith('Bearer ')) {
+          const token = authHeader.slice(7).trim()
+          await auth.api
+            .signOut({ headers: new Headers({ Authorization: `Bearer ${token}` }) })
+            .catch(() => {})
+        }
+        return {}
+      })
+      .get('/auth/v1/user', async ({ headers, set }) => {
+        const authHeader = headers.authorization
+        if (!authHeader?.startsWith('Bearer ')) {
           set.status = 401
-          return { message: 'Invalid token' }
+          return { message: 'Invalid authorization header' }
         }
-        return bridgeGetUserResponse({ user: row, session: {} })
-      } catch {
-        set.status = 401
-        return { message: 'Invalid authorization header' }
-      }
-    })
+        const token = authHeader.slice(7).trim()
+        if (!token) {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+        // better-auth's getSession is cookie-based, so we query the DB directly
+        try {
+          const row = await lookupSessionByToken(auth, token)
+          if (!row) {
+            set.status = 401
+            return { message: 'Invalid token' }
+          }
+          return bridgeGetUserResponse({ user: row, session: {} })
+        } catch {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+      })
+  )
 }

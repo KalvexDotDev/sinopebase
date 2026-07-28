@@ -973,10 +973,12 @@ export class Sinopebase {
       })
 
       // ── CORS — must be before any routes (C5, H27) ──
-      .onRequest(cors({
-        allowOrigins: trustedOrigins,
-        allowCredentials: true,
-      }))
+      .onRequest(
+        cors({
+          allowOrigins: trustedOrigins,
+          allowCredentials: true,
+        }),
+      )
 
       // ── Security headers (H1) ──
       .onRequest(({ set }) => {
@@ -1085,7 +1087,8 @@ export class Sinopebase {
             postgrestContexts.set(request, { role: 'service_role' })
             return
           }
-          if (Equal(token, this.cachedAnonKey) &&
+          if (
+            Equal(token, this.cachedAnonKey) &&
             (url.pathname.startsWith('/storage/v1/') ||
               request.method === 'GET' ||
               request.method === 'HEAD')

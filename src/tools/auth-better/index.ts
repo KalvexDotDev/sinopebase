@@ -65,8 +65,7 @@ export async function createAuth(
     tablesEnsured = true
   }
 
-  const secret =
-    options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK
+  const secret = options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK
 
   const trustedOrigins = [
     'http://localhost:8090',

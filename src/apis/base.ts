@@ -92,7 +92,9 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
 
   const applyCors = cors(options.corsConfig ?? { allowOrigins: ['*'] })
 
-  let elysia = new Elysia({ name: 'sinopebase' })
+  // ponytail: const chain avoids Elysia type reconciliation issues.
+  // Each const captures the full inferred type from the chain expression.
+  const router0 = new Elysia({ name: 'sinopebase' })
     .state('app', app)
     .state('logger', logger)
     .state('store', new Store<string, unknown>())
@@ -104,19 +106,16 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
     )
 
   // ── Gzip compression ──
-  // Elysia v1.4+ provides built-in compression.
-  // To enable, use the @elysiajs/compress plugin or configure Bun's
-  // built-in compression at the server level.
-  // The configureGzip function provides the PocketBase-compatible config.
   configureGzip()
 
   // ── WWW redirect ──
-  if (options.wwwRedirectHosts && options.wwwRedirectHosts.length > 0) {
-    elysia = elysia.onRequest(wwwRedirect(options.wwwRedirectHosts))
-  }
+  const router1 =
+    options.wwwRedirectHosts && options.wwwRedirectHosts.length > 0
+      ? router0.onRequest(wwwRedirect(options.wwwRedirectHosts))
+      : router0
 
   // ── Default middleware stack ──
-  elysia = registerDefaultMiddleware(elysia)
+  const router2 = registerDefaultMiddleware(router1)
 
   // ── API group: /api ──
   const api = new Elysia({ prefix: '/api', name: 'sinopebase-api' })
@@ -147,19 +146,13 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
   }))
 
   // Mount the /api group
-  elysia.use(api)
-
-  // ── Admin UI static files: /_/{path...} ──
-  // Serves the bundled PocketBase admin SPA.
-  // If `ui.DistDirFS` is available, serve it; otherwise skip.
-  // (To be implemented when the admin UI is bundled.)
+  const router3 = router2.use(api)
 
   // ── Activity logger (end hooks) ──
-  // Register after all routes so errors propagate correctly.
-  elysia = registerActivityLogger(elysia)
+  const router4 = registerActivityLogger(router3)
 
   // ── Catch-all: 501 for unimplemented routes ──
-  elysia.all('/api/*', ({ set }) => {
+  const router5 = router4.all('/api/*', ({ set }) => {
     set.status = 501
     return { message: 'API endpoint not yet implemented.', code: 501 }
   })
@@ -172,7 +165,7 @@ export async function NewRouter(app: App, options: RouterOptions = {}): Promise<
     console.log(`  └─ Dashboard: ${baseURL}/_/\n`)
   }
 
-  return elysia
+  return router5
 }
 
 // ── Static file serving helper (ported from Go apis/base.go) ──

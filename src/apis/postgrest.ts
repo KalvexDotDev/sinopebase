@@ -204,22 +204,17 @@ export function mountPostgrestRoutes(
       typeof r === 'object' && r !== null ? (r as Record<string, unknown>) : {},
     )
 
-    const inserted = await withRequestDatabase(
-      db,
-      request,
-      resolveContext,
-      async (requestDb) => {
-        const results: Record<string, unknown>[] = []
-        for (const row of sanitized) {
-          if (prefer.resolution === 'merge-duplicates') {
-            results.push(await requestDb.upsert(table, row))
-          } else {
-            results.push(await requestDb.insert(table, row))
-          }
+    const inserted = await withRequestDatabase(db, request, resolveContext, async (requestDb) => {
+      const results: Record<string, unknown>[] = []
+      for (const row of sanitized) {
+        if (prefer.resolution === 'merge-duplicates') {
+          results.push(await requestDb.upsert(table, row))
+        } else {
+          results.push(await requestDb.insert(table, row))
         }
-        return results
-      },
-    )
+      }
+      return results
+    })
 
     if (changes) {
       for (const row of inserted) {
@@ -379,7 +374,8 @@ async function withRequestDatabase<T>(
   if (!(db instanceof PostgresDatabase) || !resolveContext) return operation(db)
 
   const context = resolveContext(request)
-  if (!context) throw new InternalServerError('PostgREST request reached the database without an auth context')
+  if (!context)
+    throw new InternalServerError('PostgREST request reached the database without an auth context')
 
   return db.withRequestContext(context, operation)
 }
@@ -566,10 +562,14 @@ async function resolveRelationship(
     .sort((left, right) => right.score - left.score)
 
   if (candidates.length === 0) {
-    throw new InternalServerError(`No foreign-key relationship from ${table} matches ${selection.selector}`)
+    throw new InternalServerError(
+      `No foreign-key relationship from ${table} matches ${selection.selector}`,
+    )
   }
   if (candidates.length > 1 && candidates[0]?.score === candidates[1]?.score) {
-    throw new InternalServerError(`Foreign-key relationship from ${table} to ${selection.selector} is ambiguous`)
+    throw new InternalServerError(
+      `Foreign-key relationship from ${table} to ${selection.selector} is ambiguous`,
+    )
   }
 
   return candidates[0]?.relationship
