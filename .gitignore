@@ -45,4 +45,4 @@ eslint-results.sarif
 semgrep-results.sarif
 trivy-results.sarif
 junit.xml
-jscpd-report.json
+jscpd-report.jsonsemgrep-out.json
