@@ -30,7 +30,7 @@
 
   <!-- Nav links -->
   <div style="flex: 1; overflow-y: auto; padding: var(--space-sm);">
-    {#each ROUTES as route}
+    {#each ROUTES as route (route.path)}
       <button
         onclick={() => handleClick(route.path)}
         style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;

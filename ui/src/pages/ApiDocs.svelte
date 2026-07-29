@@ -17,7 +17,7 @@
   const origin = window.location.origin
   const anonKey = 'YOUR_ANON_KEY'
   const serviceKey = getServiceRoleKey() || 'YOUR_SERVICE_ROLE_KEY'
-  const apiKey = keyMode === 'service_role' ? serviceKey : anonKey
+  const apiKey = $derived(keyMode === 'service_role' ? serviceKey : anonKey)
 </script>
 
 <div>

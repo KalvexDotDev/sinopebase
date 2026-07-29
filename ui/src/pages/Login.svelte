@@ -4,7 +4,7 @@
   let { onLogin }: { onLogin: () => void } = $props()
   let email = $state('')
   let password = $state('')
-  let serviceKey = $state('')
+  let serviceKey = $state(getServiceRoleKey() ?? '')
   let error = $state('')
   let loading = $state(false)
   let mode = $state<'password' | 'service_role'>('service_role')
@@ -52,15 +52,6 @@
       loading = false
     }
   }
-
-  $effect(() => {
-    // If already have a stored key, try auto-login
-    const stored = getServiceRoleKey()
-    if (stored) {
-      serviceKey = stored
-      // Auto-verify in background
-    }
-  })
 </script>
 
 <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg);">
