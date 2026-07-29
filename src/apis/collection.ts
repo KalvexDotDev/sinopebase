@@ -75,12 +75,12 @@ interface MemoryAdapterFallback {
  *
  * These endpoints require superuser authentication.
  */
-export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean) {
+export function createCollectionPlugin(db: IDatabase, isSuperuser: (request: Request) => boolean) {
   const app = new Elysia({ name: 'sinopebase-collection' })
 
   // ── GET /api/collections — List all collections ──
-  app.get('/api/collections', async ({ query, set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/collections', async ({ request, query, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can list collections.' }
     }
@@ -118,8 +118,8 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
   })
 
   // ── POST /api/collections — Create a collection ──
-  app.post('/api/collections', async ({ body, set }) => {
-    if (!isSuperuser()) {
+  app.post('/api/collections', async ({ request, body, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can create collections.' }
     }
@@ -163,8 +163,8 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
   })
 
   // ── GET /api/collections/:id — View a collection ──
-  app.get('/api/collections/:id', async ({ params, set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/collections/:id', async ({ request, params, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can view collections.' }
     }
@@ -189,8 +189,8 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
   })
 
   // ── PATCH /api/collections/:id — Update a collection ──
-  app.patch('/api/collections/:id', async ({ params, body, set }) => {
-    if (!isSuperuser()) {
+  app.patch('/api/collections/:id', async ({ request, params, body, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can update collections.' }
     }
@@ -238,8 +238,8 @@ export function createCollectionPlugin(db: IDatabase, isSuperuser: () => boolean
   })
 
   // ── DELETE /api/collections/:id — Delete a collection ──
-  app.delete('/api/collections/:id', async ({ params, set }) => {
-    if (!isSuperuser()) {
+  app.delete('/api/collections/:id', async ({ request, params, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can delete collections.' }
     }

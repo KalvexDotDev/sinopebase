@@ -68,13 +68,13 @@ export interface AppSettings {
 export function createSettingsPlugin(
   getSettings: () => AppSettings,
   updateSettings: (settings: AppSettings) => Promise<void>,
-  isSuperuser: () => boolean,
+  isSuperuser: (request: Request) => boolean,
 ) {
   const app = new Elysia({ name: 'sinopebase-settings' })
 
   // ── GET /api/settings — List settings ──
-  app.get('/api/settings', async ({ set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/settings', async ({ request, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can view settings.' }
     }
@@ -84,8 +84,8 @@ export function createSettingsPlugin(
   })
 
   // ── PATCH /api/settings — Update settings ──
-  app.patch('/api/settings', async ({ body, set }) => {
-    if (!isSuperuser()) {
+  app.patch('/api/settings', async ({ request, body, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can update settings.' }
     }

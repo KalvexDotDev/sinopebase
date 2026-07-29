@@ -43,12 +43,12 @@ async function selectRows(
  *
  * All endpoints require superuser authentication.
  */
-export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
+export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) => boolean) {
   const app = new Elysia({ name: 'sinopebase-logs' })
 
   // ── GET /api/logs — List log entries ──
-  app.get('/api/logs', async ({ query, set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/logs', async ({ request, query, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can view logs.' }
     }
@@ -94,8 +94,8 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
   })
 
   // ── GET /api/logs/stats — Log statistics ──
-  app.get('/api/logs/stats', async ({ set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/logs/stats', async ({ request, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can view log stats.' }
     }
@@ -120,8 +120,8 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: () => boolean) {
   })
 
   // ── GET /api/logs/:id — View a log entry ──
-  app.get('/api/logs/:id', async ({ params, set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/logs/:id', async ({ request, params, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can view logs.' }
     }

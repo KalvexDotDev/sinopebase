@@ -41,12 +41,12 @@ export interface CronManager {
  *
  * Both endpoints require superuser authentication.
  */
-export function createCronPlugin(cronManager: CronManager, isSuperuser: () => boolean) {
+export function createCronPlugin(cronManager: CronManager, isSuperuser: (request: Request) => boolean) {
   const app = new Elysia({ name: 'sinopebase-cron' })
 
   // ── GET /api/crons — List cron jobs ──
-  app.get('/api/crons', async ({ set }) => {
-    if (!isSuperuser()) {
+  app.get('/api/crons', async ({ request, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can view cron jobs.' }
     }
@@ -56,8 +56,8 @@ export function createCronPlugin(cronManager: CronManager, isSuperuser: () => bo
   })
 
   // ── POST /api/crons/:id — Run a cron job ──
-  app.post('/api/crons/:id', async ({ params, set }) => {
-    if (!isSuperuser()) {
+  app.post('/api/crons/:id', async ({ request, params, set }) => {
+    if (!isSuperuser(request)) {
       set.status = 403
       return { code: 403, message: 'Only superusers can run cron jobs.' }
     }

@@ -569,8 +569,12 @@ export interface AppConfig {
   anonKey?: string
   /** Server bind hostname */
   host?: string
+  /** Application name shown in the admin UI. */
+  appName?: string
   /** TLS certificate and key file paths */
   tls?: { cert: string; key: string }
+  /** Port for HTTP→HTTPS redirect listener (default 80). Only used when TLS is active. */
+  httpRedirectPort?: number
   /** OpenAI API key for the Mastra plugin */
   openaiApiKey?: string
   /** Require authentication for Mastra agent endpoints */
@@ -605,6 +609,7 @@ export class Sinopebase {
   private mode: 'production' | 'development' = 'development'
   private server: Elysia | null = null
   private pendingServer: Elysia | null = null
+  private _redirectServer: ReturnType<typeof Bun.serve> | null = null
   private database: IDatabase | null = null
   private fileStore: IFileStore | null = null
   private auth: AuthInstance | null = null
@@ -1244,6 +1249,59 @@ export class Sinopebase {
         }
       })
 
+    // ── Settings API — GET/PATCH /api/settings (service_role only) ──
+    const isSuperuser = (req: Request) => {
+      const ctx = postgrestContexts.get(req)
+      return ctx?.role === 'service_role'
+    }
+
+    const { createSettingsPlugin } = await import('../apis/settings')
+    s5.use(
+      createSettingsPlugin(
+        () => ({
+          appName: this.config.appName ?? 'Sinopebase',
+          allowSignups: true,
+          requireVerification: false,
+          minPasswordLength: 8,
+        }),
+        async (settings) => {
+          // Persist settings by merging into config
+          if (settings.appName) (this.config as Record<string, unknown>).appName = settings.appName
+          if (settings.minPasswordLength) (this.config as Record<string, unknown>).minPasswordLength = settings.minPasswordLength
+        },
+        isSuperuser,
+      ),
+    )
+
+    // ── Logs API — GET /api/logs/* (service_role only) ──
+    if (this.database) {
+      const { createLogsPlugin } = await import('../apis/logs')
+      s5.use(createLogsPlugin(this.database, isSuperuser))
+    }
+
+    // ── Collections API — /api/collections/* (service_role only) ──
+    if (this.database) {
+      const { createCollectionPlugin } = await import('../apis/collection')
+      s5.use(createCollectionPlugin(this.database, isSuperuser))
+    }
+
+    // ── Cron API — GET /api/crons, POST /api/crons/:id (service_role only) ──
+    const { createCronPlugin } = await import('../apis/cron')
+    const cronJobs: Array<{ id: string; label?: string; schedule?: string; running?: boolean; lastRun?: string }> = []
+    s5.use(createCronPlugin({ listJobs: () => cronJobs, runJob: () => false }, isSuperuser))
+
+    // ── Functions listing — GET /api/functions/v1 ──
+    s5.get('/api/functions/v1', async ({ request, set }) => {
+      if (!isSuperuser(request)) {
+        set.status = 403
+        return { code: 403, message: 'Only service_role can list functions.' }
+      }
+      // Return registered functions from the DropFunctions registry.
+      // The DropFunctions plugin maintains its own registry; for now, return an
+      // empty list — the admin UI handles this gracefully.
+      return []
+    })
+
     // ── Plugins ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
     const mastraPlugin = new MastraPlugin({
@@ -1285,6 +1343,31 @@ export class Sinopebase {
           key: Bun.file(this.config.tls.key),
         },
       })
+
+      // ── HTTP→HTTPS redirect (A3) ──
+      // When TLS is active, start a companion HTTP listener on the redirect port
+      // (default 80) that 301-redirects all requests to the HTTPS URL.
+      const redirectPort = this.config.httpRedirectPort ?? 80
+      const httpsPort = port === 443 ? '' : `:${port}`
+      const redirectServer = Bun.serve({
+        port: redirectPort,
+        hostname: host,
+        fetch(req) {
+          const url = new URL(req.url)
+          url.protocol = 'https'
+          url.port = httpsPort
+          return new Response(null, {
+            status: 301,
+            headers: { Location: url.toString() },
+          })
+        },
+      })
+      logger.info('HTTP→HTTPS redirect listening', {
+        port: redirectPort,
+        redirectTo: `https://<host>${httpsPort}`,
+      })
+      // Track for cleanup on shutdown
+      this._redirectServer = redirectServer
     } else {
       s7.listen({ port, hostname: host })
     }
@@ -1413,6 +1496,12 @@ export class Sinopebase {
     if (server) await server.stop(true)
     if (this.server === server) this.server = null
     this.pendingServer = null
+
+    // Stop the HTTP→HTTPS redirect server if it was started
+    if (this._redirectServer) {
+      this._redirectServer.stop()
+      this._redirectServer = null
+    }
 
     // Close the database connection pool before clearing state.
     if (this.database instanceof PostgresDatabase) {
@@ -1547,9 +1636,11 @@ export class Sinopebase {
       jwtSecret: this.config.jwtSecret || '',
       serviceRoleKey: this.config.serviceRoleKey || process.env.SINOPEBASE_SERVICE_ROLE_KEY || '',
       anonKey: this.config.anonKey || process.env.SINOPEBASE_ANON_KEY || '',
+      appName: this.config.appName ?? 'Sinopebase',
       port: this.config.port ?? 8090,
       host: this.config.host ?? '0.0.0.0',
       tls: this.config.tls,
+      httpRedirectPort: this.config.httpRedirectPort ?? 80,
       s3Endpoint: this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || undefined,
       s3AccessKey: this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || undefined,
       s3SecretKey: this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || undefined,
@@ -1565,17 +1656,32 @@ export class Sinopebase {
   /**
    * Mount the admin UI static files at /_/.
    * Serves the built Svelte SPA from ui/dist/ with client-side routing fallback.
+   *
+   * H9: Auth guard — service_role token required in production.
+   * In dev mode, unauthenticated access is allowed with a console warning.
    */
   private mountAdminUI(server: Elysia): Elysia {
     const distPath = resolve('./ui/dist')
 
-    // H9: Auth guard for admin UI in production (dev allows with warning)
-    // Dev mode: allow with warning log
-    // Production: require service_role token
-    // ponytail: guard is lightweight — just a header check — not a full middleware
-
     // Single catch-all route for admin UI — serves files or falls back to index.html
     const s = server.get('/_/*', async ({ request, set }) => {
+      // ── H9: Auth guard ──
+      const authHeader = request.headers.get('authorization') ?? ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
+      const isServiceRole = token ? Equal(token, this.cachedServiceRoleKey) : false
+
+      if (!isServiceRole) {
+        if (this.mode === 'production') {
+          set.status = 401
+          set.headers['Content-Type'] = 'text/html'
+          return `<!DOCTYPE html><html><body><h1>401 Unauthorized</h1><p>Service role key required to access the admin dashboard.</p></body></html>`
+        }
+        // Dev mode: allow with warning
+        if (token) {
+          console.warn('[admin-ui] Non-service-role token used to access /_/ in dev mode')
+        }
+      }
+
       try {
         const url = new URL(request.url)
         const requested = url.pathname.replace(/^\/_\/?/, '') || 'index.html'

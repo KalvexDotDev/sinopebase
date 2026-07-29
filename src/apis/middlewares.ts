@@ -425,10 +425,16 @@ function logRequest(
  * and the serve layer.
  */
 export function securityHeaders() {
-  return (ctx: Pick<PreContext, 'set'>): void => {
+  return (ctx: Pick<PreContext, 'request' | 'set'>): void => {
     ctx.set.headers['x-xss-protection'] = '1; mode=block'
     ctx.set.headers['x-content-type-options'] = 'nosniff'
     ctx.set.headers['x-frame-options'] = 'SAMEORIGIN'
+    ctx.set.headers['referrer-policy'] = 'strict-origin-when-cross-origin'
+    // HSTS: browsers ignore this on plain HTTP (RFC 6797), so it's safe to
+    // include unconditionally. Railway edge already strips it on HTTP responses
+    // but we add it here for standalone TLS deployments.
+    ctx.set.headers['strict-transport-security'] =
+      'max-age=31536000; includeSubDomains'
   }
 }
 
