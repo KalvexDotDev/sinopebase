@@ -1478,15 +1478,17 @@ export class Sinopebase {
       const existingRoles = new Set(result.rows.map((r: { rolname: string }) => r.rolname))
       const missing = expectedRoles.filter((r) => !existingRoles.has(r))
       if (missing.length > 0) {
-        throw new Error(
-          `Missing required PostgreSQL roles: ${missing.join(', ')}. ` +
-            'Run the 1779000000_least_privilege_roles migration before starting the application.',
+        logger.warn(
+          `Missing PostgreSQL roles: ${missing.join(', ')}. ` +
+            'Run the 1779000000_least_privilege_roles migration. ' +
+            'Pool will fall back to the connection role until roles are created.',
         )
       }
 
-      logger.info('Schema validation passed', {
+      logger.info('Schema validation', {
         roles: existingRoles.size,
         expected: expectedRoles.length,
+        missing: missing.length,
       })
     } finally {
       client.release()

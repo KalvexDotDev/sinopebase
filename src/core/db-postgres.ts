@@ -62,9 +62,18 @@ export class PostgresDatabase implements IDatabase {
     // The pool authenticates as the connection owner but immediately
     // drops privileges to sinopebase_app (or the configured role).
     // Request-scoped transactions then elevate via SET LOCAL ROLE.
+    const ALLOWED_RUNTIME_ROLES = new Set([
+      'sinopebase_app',
+      'sinopebase_admin',
+      'anon',
+      'authenticated',
+      'service_role',
+    ])
     const defaultRole = config.runtimeRole ?? 'sinopebase_app'
-    if (defaultRole) {
+    if (defaultRole && ALLOWED_RUNTIME_ROLES.has(defaultRole)) {
       this.writerPool.on('connect', (client: pg.PoolClient) => {
+        // nosemgrep: ts-sql-injection-concat — SET ROLE does not support parameterized queries.
+        // The role name is validated against ALLOWED_RUNTIME_ROLES before interpolation.
         client.query(`SET ROLE ${defaultRole}`).catch(() => {
           /* best-effort — connection works without it */
         })
