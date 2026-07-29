@@ -1,19 +1,24 @@
 /**
- * HMAC-signed storage URLs.
+ * HMAC-signed storage URLs with replay protection and key rotation.
  *
- * Replaces plain-path "signed URLs" with cryptographically signed tokens.
  * Each token carries an HMAC-SHA256 signature over a base64url-encoded
- * JSON payload of {bucket, path, exp}.  The signing secret comes from
- * the JWT_SECRET environment variable.
+ * JSON payload of {bucket, path, exp, kid, jti, method}.  The signing
+ * key is derived per-bucket via HKDF from the JWT_SECRET master secret.
  *
  * Token format:
- *   <base64url({bucket,path,exp})>.<base64url(HMAC-SHA256(payload, secret))>
+ *   <base64url({bucket,path,exp,kid,jti,method})>.<base64url(HMAC)>
  *
  * No Bearer auth is needed when consuming the token — the HMAC signature
  * IS the authorization.
+ *
+ * Features:
+ * - kid (key ID) for rotation support
+ * - jti (nonce) for replay detection via NonceStore
+ * - method claim ("GET" | "PUT") to scope tokens to specific operations
+ * - Per-bucket key derivation via HKDF
  */
 
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, hkdfSync, randomUUID, timingSafeEqual } from 'node:crypto'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 
 // ---------------------------------------------------------------------------
@@ -23,13 +28,39 @@ import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 /** Default TTL when expiresIn is not provided. */
 const DEFAULT_TTL_SEC = 60 * 60 // 1 hour
 
+/** Current key ID — bump when the HKDF info string or algorithm changes. */
+const DEFAULT_KEY_ID = 'sinopebase-v1'
+
+/** Set of known/trusted key IDs.  Rotate by adding new IDs and removing old. */
+const KNOWN_KEY_IDS = new Set<string>([DEFAULT_KEY_ID])
+
+/** Grace period past token expiry for which we retain nonces (milliseconds). */
+const NONCE_GRACE_MS = 5 * 60 * 1000
+
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Key derivation
 // ---------------------------------------------------------------------------
 
 function getSecret(): string {
   return process.env.JWT_SECRET ?? JWT_DEV_FALLBACK
 }
+
+/**
+ * Derive a per-bucket HMAC key from the master secret using HKDF-SHA256.
+ *
+ * The `info` parameter incorporates both the domain ("sinopebase:signed-url")
+ * and the bucket name, so a key compromised from one bucket cannot be used
+ * to forge tokens for another bucket.
+ */
+function deriveKey(bucket: string): Buffer {
+  const master = Buffer.from(getSecret(), 'utf-8')
+  const info = `sinopebase:signed-url:${bucket}:v1`
+  return Buffer.from(hkdfSync('sha256', master, Buffer.alloc(0), info, 32))
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
 function base64urlEncode(buf: Buffer): string {
   return buf.toString('base64url')
@@ -39,45 +70,143 @@ function base64urlDecode(str: string): Buffer {
   return Buffer.from(str, 'base64url')
 }
 
-function computeSignature(payloadB64: string, secret: string): string {
-  const hmac = createHmac('sha256', secret)
+function computeSignature(payloadB64: string, key: Buffer): string {
+  const hmac = createHmac('sha256', key)
   hmac.update(payloadB64, 'utf-8')
   return base64urlEncode(hmac.digest())
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// NonceStore — replay detection
 // ---------------------------------------------------------------------------
 
 /**
- * Create an HMAC-signed token for the given storage bucket and path.
+ * In-memory nonce store with TTL-based expiration.
+ *
+ * Tracks `jti` values seen during the token's lifetime plus a 5-minute
+ * grace period to account for clock skew between the issuer and verifier.
+ *
+ * Export a singleton `nonceStore` — in production this should be backed
+ * by a shared store (Redis / Postgres) when multiple replicas are used.
+ */
+export class NonceStore {
+  private store = new Map<string, number>()
+
+  /**
+   * Check and consume a nonce.
+   *
+   * @returns `true` if the nonce is new (not seen before), `false` if it
+   *          has already been consumed (replay).
+   */
+  checkAndConsume(jti: string, exp: number): boolean {
+    this.evictExpired()
+    if (this.store.has(jti)) return false
+    const expireAt = exp * 1000 + NONCE_GRACE_MS
+    this.store.set(jti, expireAt)
+    return true
+  }
+
+  /** Clear all stored nonces — useful in tests. */
+  clear(): void {
+    this.store.clear()
+  }
+
+  /** Number of non-expired entries currently in the store. */
+  get size(): number {
+    this.evictExpired()
+    return this.store.size
+  }
+
+  private evictExpired(): void {
+    const now = Date.now()
+    for (const [jti, expireAt] of this.store) {
+      if (expireAt <= now) this.store.delete(jti)
+    }
+  }
+}
+
+/** Singleton nonce store used by `verifySignedUrl`. */
+export const nonceStore = new NonceStore()
+
+// ---------------------------------------------------------------------------
+// Token creation
+// ---------------------------------------------------------------------------
+
+/**
+ * Create an HMAC-signed token for reading the given storage bucket and path.
  *
  * @param bucket       Storage bucket name.
  * @param path         Object path within the bucket.
  * @param expiresInSec Token lifetime in seconds (defaults to 1 hour).
- * @returns            A signed token string: `payload.signature`.
+ * @param method       HTTP method the token is scoped to ("GET" or "PUT").
+ * @returns            A signed token string: `<payload>.<signature>`.
  */
 export function signUrl(
   bucket: string,
   path: string,
   expiresInSec: number = DEFAULT_TTL_SEC,
+  method: 'GET' | 'PUT' = 'GET',
 ): string {
   const exp = Math.floor(Date.now() / 1000) + expiresInSec
-  const payload = { bucket, path, exp }
+  const payload = {
+    bucket,
+    path,
+    exp,
+    kid: DEFAULT_KEY_ID,
+    jti: randomUUID(),
+    method,
+  }
   const payloadB64 = base64urlEncode(Buffer.from(JSON.stringify(payload), 'utf-8'))
-  const secret = getSecret()
-  const sig = computeSignature(payloadB64, secret)
+  const key = deriveKey(bucket)
+  const sig = computeSignature(payloadB64, key)
   return `${payloadB64}.${sig}`
 }
 
 /**
- * Verify an HMAC-signed token and return the embedded bucket + path.
+ * Create an HMAC-signed token for **uploading** to the given bucket and path.
+ *
+ * Behaves like `signUrl` but defaults `method` to `"PUT"`.
+ *
+ * @param bucket       Storage bucket name.
+ * @param path         Object path within the bucket.
+ * @param expiresInSec Token lifetime in seconds (defaults to 1 hour).
+ * @returns            A signed token string scoped to PUT.
+ */
+export function uploadUrl(
+  bucket: string,
+  path: string,
+  expiresInSec: number = DEFAULT_TTL_SEC,
+): string {
+  return signUrl(bucket, path, expiresInSec, 'PUT')
+}
+
+// ---------------------------------------------------------------------------
+// Token verification
+// ---------------------------------------------------------------------------
+
+export interface VerifiedToken {
+  bucket: string
+  path: string
+  method: string
+}
+
+/**
+ * Verify an HMAC-signed token and return the embedded claims.
+ *
+ * Validation steps:
+ * 1. Token structure (payload.signature)
+ * 2. Payload is valid JSON with all required fields
+ * 3. `kid` is a known key ID
+ * 4. `method` is "GET" or "PUT"
+ * 5. `exp` is not past
+ * 6. HMAC signature matches (per-bucket derived key)
+ * 7. `jti` is not a replay (checked via NonceStore)
  *
  * @param token  The signed token string.
- * @returns      `{ bucket, path }` from the verified payload.
- * @throws       SignedUrlError on expiry, tampering, or malformed input.
+ * @returns      `{ bucket, path, method }` from the verified payload.
+ * @throws       SignedUrlError on any verification failure.
  */
-export function verifySignedUrl(token: string): { bucket: string; path: string } {
+export function verifySignedUrl(token: string): VerifiedToken {
   const dotIndex = token.lastIndexOf('.')
   if (dotIndex === -1 || dotIndex === 0 || dotIndex === token.length - 1) {
     throw new SignedUrlError('Malformed token')
@@ -91,39 +220,54 @@ export function verifySignedUrl(token: string): { bucket: string; path: string }
   }
 
   // Decode the JSON payload.
-  let payload: { bucket: string; path: string; exp: number }
+  let payload: Record<string, unknown>
   try {
     const raw = base64urlDecode(payloadB64)
     const parsed = JSON.parse(raw.toString('utf-8'))
     if (typeof parsed !== 'object' || parsed === null) {
       throw new SignedUrlError('Malformed payload')
     }
-    payload = parsed as { bucket: string; path: string; exp: number }
+    payload = parsed as Record<string, unknown>
   } catch (err) {
     if (err instanceof SignedUrlError) throw err
     throw new SignedUrlError('Malformed payload')
   }
 
-  // Check expiry.
-  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
-    throw new SignedUrlError('Malformed payload')
-  }
-  const now = Math.floor(Date.now() / 1000)
-  if (payload.exp < now) {
-    throw new SignedUrlError('Token expired')
-  }
+  // --- Structural validation ---
 
-  // Validate required fields.
   if (typeof payload.bucket !== 'string' || !payload.bucket) {
     throw new SignedUrlError('Malformed payload')
   }
   if (typeof payload.path !== 'string' || !payload.path) {
     throw new SignedUrlError('Malformed payload')
   }
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+    throw new SignedUrlError('Malformed payload')
+  }
+  if (typeof payload.kid !== 'string' || !payload.kid) {
+    throw new SignedUrlError('Malformed payload')
+  }
+  if (typeof payload.jti !== 'string' || !payload.jti) {
+    throw new SignedUrlError('Malformed payload')
+  }
+  if (typeof payload.method !== 'string' || (payload.method !== 'GET' && payload.method !== 'PUT')) {
+    throw new SignedUrlError('Malformed payload')
+  }
 
-  // Verify the HMAC signature in constant time.
-  const secret = getSecret()
-  const expectedSig = computeSignature(payloadB64, secret)
+  // --- Key ID ---
+  if (!KNOWN_KEY_IDS.has(payload.kid)) {
+    throw new SignedUrlError('Unknown key ID')
+  }
+
+  // --- Expiry ---
+  const now = Math.floor(Date.now() / 1000)
+  if (payload.exp < now) {
+    throw new SignedUrlError('Token expired')
+  }
+
+  // --- HMAC verification ---
+  const key = deriveKey(payload.bucket)
+  const expectedSig = computeSignature(payloadB64, key)
 
   const sigBuf = base64urlDecode(sig)
   const expectedBuf = base64urlDecode(expectedSig)
@@ -136,7 +280,12 @@ export function verifySignedUrl(token: string): { bucket: string; path: string }
     throw new SignedUrlError('Invalid signature')
   }
 
-  return { bucket: payload.bucket, path: payload.path }
+  // --- Replay detection ---
+  if (!nonceStore.checkAndConsume(payload.jti, payload.exp)) {
+    throw new SignedUrlError('Token replayed')
+  }
+
+  return { bucket: payload.bucket, path: payload.path, method: payload.method }
 }
 
 // ---------------------------------------------------------------------------
