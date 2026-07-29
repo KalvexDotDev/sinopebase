@@ -55,6 +55,17 @@ export interface BetterAuthDatabase {
     createdAt: Date
     updatedAt: Date
   }
+  refresh_tokens: {
+    token_id: string
+    user_id: string
+    session_id: string
+    family_id: string
+    parent_token_id: string | null
+    consumed: boolean
+    compromised: boolean
+    expires_at: Date
+    created_at: Date
+  }
 }
 
 // ---------------------------------------------------------------------------

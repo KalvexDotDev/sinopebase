@@ -9,6 +9,8 @@
 import { betterAuth } from 'better-auth'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
 import type pg from 'pg'
+import { Kysely, sql } from 'kysely'
+import type { BetterAuthDatabase } from './adapter'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
@@ -39,8 +41,146 @@ export interface CreateAuthOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Refresh tokens table
+// ---------------------------------------------------------------------------
+
+/**
+ * Create the `refresh_tokens` table if it does not already exist.
+ *
+ * This table stores refresh tokens with family tracking for rotation
+ * and replay detection. Safe to call on every startup — uses IF NOT EXISTS.
+ */
+export async function createRefreshTokensTable(db: Kysely<BetterAuthDatabase>): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS "refresh_tokens" (
+      "token_id"        TEXT        PRIMARY KEY,
+      "user_id"         TEXT        NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+      "session_id"      TEXT        NOT NULL,
+      "family_id"       TEXT        NOT NULL,
+      "parent_token_id" TEXT,
+      "consumed"        BOOLEAN    NOT NULL DEFAULT FALSE,
+      "compromised"     BOOLEAN    NOT NULL DEFAULT FALSE,
+      "expires_at"      TIMESTAMPTZ NOT NULL,
+      "created_at"      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family_id   ON "refresh_tokens"("family_id");
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id     ON "refresh_tokens"("user_id");
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_session_id  ON "refresh_tokens"("session_id");
+  `.execute(db)
+}
+
+// ---------------------------------------------------------------------------
+// Refresh token helpers — used by the better-auth bridge for rotation + replay
+// ---------------------------------------------------------------------------
+
+/** Result of a refresh token rotation validation. */
+export type RefreshTokenValidationResult =
+  | { valid: true; token: BetterAuthDatabase['refresh_tokens'] }
+  | { valid: false; replay?: boolean; compromised?: boolean }
+
+/**
+ * Find a refresh token record by its token_id.
+ * Returns undefined if not found.
+ */
+export async function findRefreshToken(
+  db: Kysely<BetterAuthDatabase>,
+  tokenId: string,
+): Promise<BetterAuthDatabase['refresh_tokens'] | undefined> {
+  const rows = await db
+    .selectFrom('refresh_tokens')
+    .selectAll()
+    .where('token_id', '=', tokenId)
+    .execute()
+  return rows[0]
+}
+
+/**
+ * Store a new refresh token record in the database.
+ */
+export async function storeRefreshToken(
+  db: Kysely<BetterAuthDatabase>,
+  token: BetterAuthDatabase['refresh_tokens'],
+): Promise<void> {
+  await db
+    .insertInto('refresh_tokens')
+    .values(token)
+    .execute()
+}
+
+/**
+ * Mark a refresh token as consumed (after successful rotation).
+ */
+export async function consumeRefreshTokenDb(
+  db: Kysely<BetterAuthDatabase>,
+  tokenId: string,
+): Promise<void> {
+  await db
+    .updateTable('refresh_tokens')
+    .set({ consumed: true })
+    .where('token_id', '=', tokenId)
+    .execute()
+}
+
+/**
+ * Mark an entire refresh token family as compromised (replay detected).
+ */
+export async function compromiseFamily(
+  db: Kysely<BetterAuthDatabase>,
+  familyId: string,
+): Promise<void> {
+  await db
+    .updateTable('refresh_tokens')
+    .set({ compromised: true })
+    .where('family_id', '=', familyId)
+    .execute()
+}
+
+/**
+ * Validate a refresh token for rotation with replay detection.
+ *
+ * Returns:
+ * - { valid: true, token } if the token is usable
+ * - { valid: false, replay: true, compromised: true } if already consumed (replay)
+ * - { valid: false, compromised: true } if the family is compromised
+ * - { valid: false } if not found or expired
+ *
+ * On replay detection the entire family is marked compromised.
+ */
+export async function validateRefreshTokenForRotation(
+  db: Kysely<BetterAuthDatabase>,
+  tokenId: string,
+): Promise<RefreshTokenValidationResult> {
+  const token = await findRefreshToken(db, tokenId)
+  if (!token) {
+    return { valid: false }
+  }
+
+  // Check expiry
+  if (token.expires_at < new Date()) {
+    return { valid: false }
+  }
+
+  // Family already compromised — reject
+  if (token.compromised) {
+    return { valid: false, compromised: true }
+  }
+
+  // Token already consumed — REPLAY ATTACK
+  if (token.consumed) {
+    // Mark entire family as compromised
+    await compromiseFamily(db, token.family_id)
+    return { valid: false, replay: true, compromised: true }
+  }
+
+  return { valid: true, token }
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
+
+/**
 
 /**
  * Create and configure a better-auth instance.
@@ -62,6 +202,7 @@ export async function createAuth(
   const db = createBetterAuthDB(pool)
   if (!tablesEnsured) {
     await createAuthTables(db)
+    await createRefreshTokensTable(db)
     tablesEnsured = true
   }
 

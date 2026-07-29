@@ -33,7 +33,7 @@ describe('JWT — issuer and audience enforcement', () => {
     expect(header.kid).toBe('sinopebase-v1')
   })
 
-  it('generates a token with issuer, audience, and sid claims', async () => {
+  it('generates a token with issuer, audience, sid, and type claims', async () => {
     const token = await generateAccessToken(mockUser, sessionId)
     // Decode without verifying to inspect claims
     const parts = token.split('.')
@@ -43,6 +43,7 @@ describe('JWT — issuer and audience enforcement', () => {
     expect(payload.iss).toBe('sinopebase')
     expect(payload.aud).toBe('authenticated')
     expect(payload.sid).toBe(sessionId)
+    expect(payload.type).toBe('access')
   })
 
   it('verifies a valid token', async () => {

@@ -93,6 +93,7 @@ describe('JWT — access token claims', () => {
     expect(typeof payload.iat).toBe('number')
     expect(payload).toHaveProperty('exp')
     expect(typeof payload.exp).toBe('number')
+    expect(payload).toHaveProperty('type', 'access')
   })
 
   it('expires after ACCESS_TOKEN_TTL (1 hour)', async () => {
@@ -135,6 +136,7 @@ describe('JWT — refresh token claims', () => {
     expect(typeof payload.iat).toBe('number')
     expect(payload).toHaveProperty('exp')
     expect(typeof payload.exp).toBe('number')
+    expect(payload).toHaveProperty('type', 'refresh')
   })
 
   it('expires after REFRESH_TOKEN_TTL (7 days)', async () => {
