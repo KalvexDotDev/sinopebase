@@ -747,6 +747,10 @@ export class Sinopebase {
       this.database = pg
       logger.info('Database', { provider: 'PostgreSQL', status: 'connected' })
 
+      // Validate database roles and schema preflight before proceeding.
+      // Migration 1779000000_least_privilege_roles must have been applied.
+      await this.validateSchema()
+
       // Fail-closed in production: refuse to start with well-known test keys
       // when PostgreSQL is configured. These keys bypass all authentication.
       // In local dev (no POSTGRES_URL) the defaults are acceptable.
@@ -1442,6 +1446,51 @@ export class Sinopebase {
   /** Expose the config. */
   getConfig(): AppConfig {
     return { ...this.config }
+  }
+
+  /**
+   * Validate the database schema and roles at startup.
+   *
+   * Checks that the PostgreSQL roles required for least-privilege operation
+   * exist (sinopebase_app, sinopebase_admin, anon, authenticated, service_role).
+   * This is a read-only validation — it never creates or modifies anything.
+   *
+   * Throws if any required roles are missing, which means the
+   * 1779000000_least_privilege_roles migration has not been applied.
+   */
+  private async validateSchema(): Promise<void> {
+    if (!(this.database instanceof PostgresDatabase)) return
+
+    const pool = this.database.getPool()
+    const client = await pool.connect()
+    try {
+      const expectedRoles = [
+        'sinopebase_app',
+        'sinopebase_admin',
+        'anon',
+        'authenticated',
+        'service_role',
+      ]
+      const result = await client.query(
+        `SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])`,
+        [expectedRoles],
+      )
+      const existingRoles = new Set(result.rows.map((r: { rolname: string }) => r.rolname))
+      const missing = expectedRoles.filter((r) => !existingRoles.has(r))
+      if (missing.length > 0) {
+        throw new Error(
+          `Missing required PostgreSQL roles: ${missing.join(', ')}. ` +
+            'Run the 1779000000_least_privilege_roles migration before starting the application.',
+        )
+      }
+
+      logger.info('Schema validation passed', {
+        roles: existingRoles.size,
+        expected: expectedRoles.length,
+      })
+    } finally {
+      client.release()
+    }
   }
 
   /** Build a ValidatedConfig-compatible snapshot (for tests and production validation). */
