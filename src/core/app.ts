@@ -580,6 +580,8 @@ export interface AppConfig {
   rateLimitWindow?: number
   /** Backup directory for pg_dump files (default ./backups). */
   backupDir?: string
+  /** Maximum upload file size in bytes (default 100 MB = 100 * 1024 * 1024). */
+  maxUploadSize?: number
 }
 
 /**
@@ -1144,6 +1146,7 @@ export class Sinopebase {
           this.database instanceof PostgresDatabase
             ? new PostgresStorageAccessPolicy(this.database)
             : undefined,
+        maxUploadSize: this.config.maxUploadSize,
       }),
     )
 
