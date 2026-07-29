@@ -30,6 +30,18 @@ export interface MastraPluginOptions {
   embeddingModel?: string
   /** Require auth for all AI endpoints (default: true) */
   requireAuth?: boolean
+  /**
+   * Enable production mode — only tools in `privilegedTools` are exposed
+   * to AI agents. Tools like `storage_read` must be explicitly opted in.
+   * (default: false)
+   */
+  production?: boolean
+  /**
+   * Allowlist of MCP tool IDs exposed in production mode.
+   * Only tools in this list are registered when `production: true`.
+   * Default: ['db_query', 'db_schema', 'storage_list', 'auth_user']
+   */
+  privilegedTools?: string[]
 }
 
 export const DEFAULTS: Required<MastraPluginOptions> = {
@@ -38,4 +50,6 @@ export const DEFAULTS: Required<MastraPluginOptions> = {
   defaultModel: 'gpt-4o-mini',
   embeddingModel: 'text-embedding-3-small',
   requireAuth: true,
+  production: false,
+  privilegedTools: ['db_query', 'db_schema', 'storage_list', 'auth_user'],
 }

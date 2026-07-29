@@ -17,9 +17,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { Elysia } from 'elysia'
 import type { IDatabase } from '~/core/db-interface'
+import { PostgresDatabase, type PostgresRequestContext } from '~/core/db-postgres'
 import { Agent, type Tool } from '~/tools/ai/mastra/agent'
 import { createMastraAuth } from '~/tools/ai/mastra/auth-bridge'
-import { createMCPTools } from '~/tools/ai/mastra/mcp-tools'
+import { createMCPTools, type MCPToolOptions } from '~/tools/ai/mastra/mcp-tools'
 import { createMockProvider } from '~/tools/ai/mock-provider'
 import { OpenAIProvider } from '~/tools/ai/openai'
 import type { AIProvider } from '~/tools/ai/provider'
@@ -120,11 +121,34 @@ export class MastraPlugin {
     }
 
     // Create MCP tools from Sinopebase resources
+    const mcpOptions: MCPToolOptions = {
+      requireAuth: this.options.requireAuth,
+    }
+
+    // When using PostgresDatabase, enable request-scoped RLS context so
+    // database tools enforce Row-Level Security policies.
+    if (db instanceof PostgresDatabase) {
+      mcpOptions.resolveRequestContext = () => {
+        const ctx = getCurrentRequestContext()
+        if (!ctx) return null
+        return {
+          role: ctx.role as PostgresRequestContext['role'],
+          userId: ctx.userId,
+        }
+      }
+    }
+
+    // In production, only expose tools on the privileged allowlist.
+    // Sensitive tools like storage_read must be explicitly opted in.
+    if (this.options.production) {
+      mcpOptions.privilegedTools = this.options.privilegedTools
+    }
+
     const mcpTools: Tool[] = createMCPTools(db, fileStore, () => {
       // Auth context is propagated per-request via AsyncLocalStorage.
       // Tools like auth_user resolve the current user from context.
       return getCurrentRequestContext()
-    })
+    }, mcpOptions)
 
     // Create a default agent
     this.agents = [
