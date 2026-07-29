@@ -6,6 +6,10 @@
  *
  * Creates and returns an IDatabase instance (PostgresDatabase or MemoryDatabase)
  * based on the POSTGRES_URL environment variable.
+ *
+ * Supports least-privilege roles: the connection pool authenticates as the
+ * owner but immediately SET ROLE to {@link runtimeRole} (default sinopebase_app)
+ * on each connection, so runtime operations never run as a superuser.
  */
 
 import type { IDatabase } from './db-interface'
@@ -22,6 +26,19 @@ export interface DbConnectConfig {
 
   /** The data directory for file-based storage. */
   dataDir?: string
+
+  /**
+   * The PostgreSQL role the pool assumes immediately after connecting.
+   *
+   * Default: 'sinopebase_app' (low privilege). The pool authenticates as
+   * the connection owner described by {@link postgresUrl} but immediately
+   * runs `SET ROLE <runtimeRole>` on each new connection. Individual
+   * request transactions then elevate further via `SET LOCAL ROLE`.
+   *
+   * Set to '' or null to disable automatic role switching (e.g. for
+   * administrative tooling that needs the owner's full privileges).
+   */
+  runtimeRole?: string
 }
 
 /**
@@ -41,6 +58,7 @@ export async function createDatabase(config?: DbConnectConfig): Promise<IDatabas
     const db = new PostgresDatabase({
       postgresUrl,
       maxPoolSize: config?.maxPoolSize ?? 10,
+      runtimeRole: config?.runtimeRole,
     })
     await db.connect()
     return db
@@ -48,6 +66,21 @@ export async function createDatabase(config?: DbConnectConfig): Promise<IDatabas
 
   // Fallback to in-memory database
   return new MemoryDatabaseAdapter()
+}
+
+/**
+ * Temporarily elevate a database client to service_role.
+ *
+ * Uses `SET LOCAL ROLE service_role` so the elevation is scoped to the
+ * current transaction. The session-level role (sinopebase_app) is
+ * automatically restored when the transaction ends.
+ *
+ * @param client - A pg.PoolClient or pg.Client instance.
+ */
+export async function elevateToServiceRole(
+  client: { query: (text: string, values?: unknown[]) => Promise<unknown> },
+): Promise<void> {
+  await client.query('SET LOCAL ROLE service_role')
 }
 
 /**

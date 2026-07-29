@@ -17,7 +17,6 @@ import type {
   OrderBy,
   SelectOptions,
 } from './db-interface'
-import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
 export type { Filter, OrderBy } from './db-interface'
 
@@ -26,6 +25,14 @@ export interface PostgresConfig {
   /** Optional read replica URL — SELECT queries route here when configured */
   readReplicaUrl?: string
   maxPoolSize?: number
+  /**
+   * PostgreSQL role to SET on each pool connection after authentication.
+   *
+   * Default: 'sinopebase_app' (low privilege). The pool authenticates as
+   * the connection owner but immediately runs `SET ROLE <runtimeRole>`.
+   * Set to '' | undefined to keep the owner role.
+   */
+  runtimeRole?: string
 }
 
 export interface PostgresRequestContext {
@@ -50,6 +57,22 @@ export class PostgresDatabase implements IDatabase {
       connectionString: config.postgresUrl,
       max: config.maxPoolSize ?? 10,
     })
+
+    // Apply least-privilege runtime role on each new pool connection.
+    // The pool authenticates as the connection owner but immediately
+    // drops privileges to sinopebase_app (or the configured role).
+    // Request-scoped transactions then elevate via SET LOCAL ROLE.
+    const defaultRole = config.runtimeRole ?? 'sinopebase_app'
+    if (defaultRole) {
+      this.writerPool.on('connect', (client: pg.PoolClient) => {
+        client
+          .query(`SET ROLE ${defaultRole}`)
+          .catch(() => {
+            /* best-effort — connection works without it */
+          })
+      })
+    }
+
     this.writer = new Kysely<DatabaseSchema>({
       dialect: new PostgresDialect({ pool: this.writerPool }),
     })
@@ -73,7 +96,6 @@ export class PostgresDatabase implements IDatabase {
 
   async connect(): Promise<void> {
     await sql`SELECT 1`.execute(this.writer)
-    await bootstrapPostgresRequestRoles(this.writerPool)
     if (this.readerPool) {
       await sql`SELECT 1`.execute(this.reader)
     }
@@ -108,27 +130,31 @@ export class PostgresDatabase implements IDatabase {
    * PostgREST role and JWT claims. The transaction boundary guarantees that
    * neither the role nor user identity can leak when the connection returns
    * to the pool.
+   *
+   * Always sets `SET LOCAL ROLE <context.role>` so every request context
+   * (including service_role) runs under the intended PostgreSQL role.
    */
   async withRequestContext<T>(
     context: PostgresRequestContext,
     operation: (db: PostgresDatabase) => Promise<T>,
   ): Promise<T> {
     return this.writer.transaction().execute(async (transaction) => {
-      if (context.role !== 'service_role') {
-        const userId = context.userId ?? ''
-        const claims = JSON.stringify({
-          sub: userId || undefined,
-          role: context.role,
-        })
+      const userId = context.userId ?? ''
+      const claims = JSON.stringify({
+        sub: userId || undefined,
+        role: context.role,
+      })
 
-        await sql`
-          SELECT
-            set_config('request.jwt.claim.sub', ${userId}, true),
-            set_config('request.jwt.claim.role', ${context.role}, true),
-            set_config('request.jwt.claims', ${claims}, true)
-        `.execute(transaction)
-        await sql`SELECT set_config('role', ${context.role}, true)`.execute(transaction)
-      }
+      await sql`
+        SELECT
+          set_config('request.jwt.claim.sub', ${userId}, true),
+          set_config('request.jwt.claim.role', ${context.role}, true),
+          set_config('request.jwt.claims', ${claims}, true)
+      `.execute(transaction)
+
+      // SET LOCAL ROLE is scoped to the transaction so the connection
+      // reverts to the pool-default sinopebase_app role automatically.
+      await sql`SET LOCAL ROLE ${sql.raw(context.role)}`.execute(transaction)
 
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
@@ -142,6 +168,8 @@ export class PostgresDatabase implements IDatabase {
   // -----------------------------------------------------------------------
 
   async createTable(table: string): Promise<void> {
+    // Table-level grants are handled by ALTER DEFAULT PRIVILEGES from the
+    // least-privilege-roles migration. No per-table GRANT statements needed.
     await sql`
       CREATE TABLE IF NOT EXISTS ${sql.table(table)} (
         id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -150,17 +178,6 @@ export class PostgresDatabase implements IDatabase {
         user_id TEXT
       )
     `.execute(this.writer)
-
-    // Grant role access so anon/authenticated can reach the table.
-    // Schema USAGE is idempotent (the public schema already has it via
-    // PUBLIC, but we ensure it for environments that tighten defaults).
-    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`
-      .execute(this.writer)
-      .catch(() => undefined)
-    await sql`GRANT SELECT ON ${sql.table(table)} TO anon`.execute(this.writer)
-    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ${sql.table(table)} TO authenticated`.execute(
-      this.writer,
-    )
   }
 
   async hasTable(table: string): Promise<boolean> {

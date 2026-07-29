@@ -10,6 +10,7 @@ import * as m3 from './1717233558_v0.23_migrate3.ts'
 import * as m4 from './1717233559_v0.23_migrate4.ts'
 import * as authAlert from './1763020353_update_default_auth_alert_templates.ts'
 import * as indexes from './1778828400_normalize_indexes.ts'
+import * as leastPrivilegeRoles from './1779000000_least_privilege_roles.ts'
 
 // ---------------------------------------------------------------------------
 // Mock MigrationDB that records SQL statements
@@ -122,6 +123,50 @@ describe('migrations', () => {
       expect(allSql).toContain('UPDATE')
       expect(allSql).toContain('_params')
       expect(allSql).toContain('auth_alert_template')
+    })
+  })
+
+  describe('1779000000_least_privilege_roles', () => {
+    it('creates all five application roles', async () => {
+      const { db, executed } = createMockDB()
+      await leastPrivilegeRoles.up(db)
+
+      const allSql = executed.join(' ')
+      expect(allSql).toContain('sinopebase_admin')
+      expect(allSql).toContain('sinopebase_app')
+      expect(allSql).toContain('anon')
+      expect(allSql).toContain('authenticated')
+      expect(allSql).toContain('service_role')
+    })
+
+    it('grants role memberships and schema privileges', async () => {
+      const { db, executed } = createMockDB()
+      await leastPrivilegeRoles.up(db)
+
+      const allSql = executed.join(' ')
+      expect(allSql).toContain('GRANT')
+      expect(allSql).toContain('TO CURRENT_USER')
+      expect(allSql).toContain('ALTER DEFAULT PRIVILEGES')
+    })
+
+    it('is idempotent (uses IF NOT EXISTS)', async () => {
+      const { db, executed } = createMockDB()
+      await leastPrivilegeRoles.up(db)
+
+      const allSql = executed.join(' ')
+      const createCount = (allSql.match(/CREATE ROLE/g) || []).length
+      expect(createCount).toBeGreaterThanOrEqual(5)
+      expect(allSql).toContain('IF NOT EXISTS')
+    })
+
+    it('down reverses all role creation', async () => {
+      const { db, executed } = createMockDB()
+      await leastPrivilegeRoles.down(db)
+
+      const allSql = executed.join(' ')
+      expect(allSql).toContain('DROP ROLE')
+      expect(allSql).toContain('REVOKE')
+      expect(allSql).toContain('ALTER DEFAULT PRIVILEGES')
     })
   })
 
