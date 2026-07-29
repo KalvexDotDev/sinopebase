@@ -128,9 +128,7 @@ export function uploadBodyLimit(maxBytes?: number) {
 
     const contentLength = Number(ctx.request.headers.get('content-length') ?? 0)
     if (contentLength > limit) {
-      throw new RequestEntityTooLargeError(
-        `Upload body exceeds the ${limit} byte limit.`,
-      )
+      throw new RequestEntityTooLargeError(`Upload body exceeds the ${limit} byte limit.`)
     }
   }
 }

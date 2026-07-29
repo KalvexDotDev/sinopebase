@@ -144,11 +144,16 @@ export class MastraPlugin {
       mcpOptions.privilegedTools = this.options.privilegedTools
     }
 
-    const mcpTools: Tool[] = createMCPTools(db, fileStore, () => {
-      // Auth context is propagated per-request via AsyncLocalStorage.
-      // Tools like auth_user resolve the current user from context.
-      return getCurrentRequestContext()
-    }, mcpOptions)
+    const mcpTools: Tool[] = createMCPTools(
+      db,
+      fileStore,
+      () => {
+        // Auth context is propagated per-request via AsyncLocalStorage.
+        // Tools like auth_user resolve the current user from context.
+        return getCurrentRequestContext()
+      },
+      mcpOptions,
+    )
 
     // Create a default agent
     this.agents = [

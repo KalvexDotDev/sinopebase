@@ -391,9 +391,7 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
                   .where('id', '=', sessionId)
                   .execute()
               }
-              return bridgeSignInResponse(
-                { token: newToken, user: row } as BetterAuthSignInResult,
-              )
+              return bridgeSignInResponse({ token: newToken, user: row } as BetterAuthSignInResult)
             }
 
             const tokenRecord = tokenRows[0] as Record<string, unknown>
@@ -439,8 +437,9 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
               .select(['userId'])
               .where('id', '=', sessionId)
               .execute()
-            const sessionUserId = (sessions[0] as Record<string, unknown> | undefined)
-              ?.userId as string | undefined
+            const sessionUserId = (sessions[0] as Record<string, unknown> | undefined)?.userId as
+              | string
+              | undefined
             if (!sessionUserId) {
               set.status = 400
               return errorResponse('Invalid refresh token', 400)
@@ -483,9 +482,10 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
 
             // 8. Return new session with tokens
             const userRow = await lookupSessionByToken(auth, newToken)
-            return bridgeSignInResponse(
-              { token: newToken, user: userRow } as BetterAuthSignInResult,
-            )
+            return bridgeSignInResponse({
+              token: newToken,
+              user: userRow,
+            } as BetterAuthSignInResult)
           } catch {
             set.status = 400
             return errorResponse('Invalid refresh token', 400)

@@ -77,9 +77,9 @@ export async function createDatabase(config?: DbConnectConfig): Promise<IDatabas
  *
  * @param client - A pg.PoolClient or pg.Client instance.
  */
-export async function elevateToServiceRole(
-  client: { query: (text: string, values?: unknown[]) => Promise<unknown> },
-): Promise<void> {
+export async function elevateToServiceRole(client: {
+  query: (text: string, values?: unknown[]) => Promise<unknown>
+}): Promise<void> {
   await client.query('SET LOCAL ROLE service_role')
 }
 

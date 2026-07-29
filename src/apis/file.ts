@@ -62,15 +62,10 @@ const UPLOAD_IN_MEMORY_THRESHOLD = 1024 * 1024 // 1 MiB
  * Cleanup: if a temp file was created it is deleted before the function
  * returns (success or failure).
  */
-async function readBodyStreamed(
-  request: Request,
-  maxBytes: number,
-): Promise<ArrayBuffer> {
+async function readBodyStreamed(request: Request, maxBytes: number): Promise<ArrayBuffer> {
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   if (contentLength > maxBytes) {
-    throw new RequestEntityTooLargeError(
-      `Upload body exceeds the ${maxBytes} byte limit.`,
-    )
+    throw new RequestEntityTooLargeError(`Upload body exceeds the ${maxBytes} byte limit.`)
   }
 
   const reader = request.body?.getReader()
@@ -89,9 +84,7 @@ async function readBodyStreamed(
       totalRead += value.byteLength
 
       if (totalRead > maxBytes) {
-        throw new RequestEntityTooLargeError(
-          `Upload body exceeds the ${maxBytes} byte limit.`,
-        )
+        throw new RequestEntityTooLargeError(`Upload body exceeds the ${maxBytes} byte limit.`)
       }
 
       if (tempFile) {
@@ -118,10 +111,7 @@ async function readBodyStreamed(
 
     if (tempFile) {
       const buf = await readFile(tempFile)
-      return buf.buffer.slice(
-        buf.byteOffset,
-        buf.byteOffset + buf.byteLength,
-      ) as ArrayBuffer
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
     }
 
     // Everything fits in memory — concatenate in one shot.

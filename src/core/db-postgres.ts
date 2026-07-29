@@ -65,11 +65,9 @@ export class PostgresDatabase implements IDatabase {
     const defaultRole = config.runtimeRole ?? 'sinopebase_app'
     if (defaultRole) {
       this.writerPool.on('connect', (client: pg.PoolClient) => {
-        client
-          .query(`SET ROLE ${defaultRole}`)
-          .catch(() => {
-            /* best-effort — connection works without it */
-          })
+        client.query(`SET ROLE ${defaultRole}`).catch(() => {
+          /* best-effort — connection works without it */
+        })
       })
     }
 

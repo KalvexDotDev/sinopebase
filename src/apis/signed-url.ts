@@ -250,7 +250,10 @@ export function verifySignedUrl(token: string): VerifiedToken {
   if (typeof payload.jti !== 'string' || !payload.jti) {
     throw new SignedUrlError('Malformed payload')
   }
-  if (typeof payload.method !== 'string' || (payload.method !== 'GET' && payload.method !== 'PUT')) {
+  if (
+    typeof payload.method !== 'string' ||
+    (payload.method !== 'GET' && payload.method !== 'PUT')
+  ) {
     throw new SignedUrlError('Malformed payload')
   }
 

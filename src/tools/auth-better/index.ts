@@ -102,10 +102,7 @@ export async function storeRefreshToken(
   db: Kysely<BetterAuthDatabase>,
   token: BetterAuthDatabase['refresh_tokens'],
 ): Promise<void> {
-  await db
-    .insertInto('refresh_tokens')
-    .values(token)
-    .execute()
+  await db.insertInto('refresh_tokens').values(token).execute()
 }
 
 /**

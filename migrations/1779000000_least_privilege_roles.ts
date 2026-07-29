@@ -109,12 +109,19 @@ export async function up(db: MigrationDB): Promise<void> {
 export async function down(db: MigrationDB): Promise<void> {
   // Reset default privileges
   for (const role of ['anon', 'authenticated', 'service_role', 'sinopebase_app'] as const) {
-    const privs = role === 'anon' ? 'SELECT' : role === 'authenticated' ? 'SELECT, INSERT, UPDATE, DELETE' : 'ALL'
+    const privs =
+      role === 'anon'
+        ? 'SELECT'
+        : role === 'authenticated'
+          ? 'SELECT, INSERT, UPDATE, DELETE'
+          : 'ALL'
     await db.raw(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ${privs} ON TABLES FROM ${role}`)
   }
 
   // Revoke schema usage
-  await db.raw('REVOKE USAGE ON SCHEMA public FROM anon, authenticated, sinopebase_app, service_role')
+  await db.raw(
+    'REVOKE USAGE ON SCHEMA public FROM anon, authenticated, sinopebase_app, service_role',
+  )
 
   // Revoke role memberships
   const allRoles = ['anon', 'authenticated', 'service_role', 'sinopebase_app', 'sinopebase_admin']

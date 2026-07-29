@@ -213,7 +213,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
 
     // Prune timestamps outside the sliding window.
     const cutoff = now - windowMs
-    while (timestamps.length > 0 && timestamps[0] < cutoff) {
+    while (timestamps.length > 0 && (timestamps[0] as number) < cutoff) {
       timestamps.shift()
     }
 

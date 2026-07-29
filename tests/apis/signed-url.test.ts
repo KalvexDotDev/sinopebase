@@ -39,7 +39,15 @@ function base64url(buf: Buffer): string {
 
 /** Derive a per-bucket HMAC key (mirrors the production code). */
 function deriveTestKey(bucket: string, secret: string = getTestSecret()): Buffer {
-  return Buffer.from(hkdfSync('sha256', Buffer.from(secret, 'utf-8'), Buffer.alloc(0), `sinopebase:signed-url:${bucket}:v1`, 32))
+  return Buffer.from(
+    hkdfSync(
+      'sha256',
+      Buffer.from(secret, 'utf-8'),
+      Buffer.alloc(0),
+      `sinopebase:signed-url:${bucket}:v1`,
+      32,
+    ),
+  )
 }
 
 /**
