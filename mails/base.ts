@@ -48,9 +48,6 @@ export async function send(
  * @param mailer - The Mailer instance to send with.
  * @param message - The fully configured Message object.
  */
-export async function sendWithMessage(
-  mailer: Mailer,
-  message: Message,
-): Promise<void> {
+export async function sendWithMessage(mailer: Mailer, message: Message): Promise<void> {
   await mailer.send(message)
 }

@@ -164,7 +164,6 @@ export async function initAdminUI(distPath: string = './ui/dist'): Promise<void>
       console.log('[ui] Admin UI not built yet (no index.html in dist)')
       return
     }
-
     // Mark as available
     ;(adminUI as { available: boolean }).available = true
     console.log('[ui] Admin UI loaded from:', distPath)

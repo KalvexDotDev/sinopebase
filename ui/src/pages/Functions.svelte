@@ -1,15 +1,19 @@
 <script lang="ts">
-  import { listFunctions } from '../lib/api'
+import { listFunctions } from '../lib/api'
 
-  let functions = $state<any[]>([])
-  let loading = $state(true)
+let functions = $state<any[]>([])
+let loading = $state(true)
 
-  $effect(() => {
-    listFunctions().then(r => {
-      if (r.data) functions = Array.isArray(r.data) ? r.data : (r.data.data || [])
+$effect(() => {
+  listFunctions()
+    .then((r) => {
+      if (r.data) functions = Array.isArray(r.data) ? r.data : r.data.data || []
       loading = false
-    }).catch(() => { loading = false })
-  })
+    })
+    .catch(() => {
+      loading = false
+    })
+})
 </script>
 
 <div>

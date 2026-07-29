@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Sidebar from './Sidebar.svelte'
+import Sidebar from './Sidebar.svelte'
 
-  let { children, onLogout }: { children: any; onLogout: () => void } = $props()
+let { children, onLogout }: { children: any; onLogout: () => void } = $props()
 </script>
 
 <div style="display: flex; min-height: 100vh;">

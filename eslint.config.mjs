@@ -1,15 +1,9 @@
-import js from "@eslint/js";
-import security from "eslint-plugin-security";
+import js from '@eslint/js'
+import security from 'eslint-plugin-security'
 
 export default [
   {
-    ignores: [
-      "node_modules/**",
-      "dist/**",
-      "ui/**",
-      ".claude/**",
-      "**/*.d.ts",
-    ],
+    ignores: ['node_modules/**', 'dist/**', 'ui/**', '.claude/**', '**/*.d.ts'],
   },
 
   js.configs.recommended,
@@ -17,18 +11,18 @@ export default [
   // JavaScript files: security plugin + strictness.
   // Applies to .js/.mjs/.cjs files in src/ and tests/.
   {
-    files: ["src/**/*.js", "src/**/*.mjs", "src/**/*.cjs", "tests/**/*.js", "tests/**/*.mjs"],
+    files: ['src/**/*.js', 'src/**/*.mjs', 'src/**/*.cjs', 'tests/**/*.js', 'tests/**/*.mjs'],
     plugins: { security },
     rules: {
       ...security.configs.recommended.rules,
-      "no-eval": "error",
-      "no-implied-eval": "error",
-      "no-new-func": "error",
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error',
     },
     languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-      globals: { console: "readonly", Bun: "readonly" },
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { console: 'readonly', Bun: 'readonly' },
     },
   },
 
@@ -52,4 +46,4 @@ export default [
   //     plugins: { elysia },
   //     rules: elysia.configs.recommended.rules,
   //   }
-];
+]

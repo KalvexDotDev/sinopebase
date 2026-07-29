@@ -12,10 +12,7 @@
     "**/*.test.ts",
     "**/*.spec.ts"
   ],
-  "reporters": [
-    "consoleFull",
-    "json"
-  ],
+  "reporters": ["consoleFull", "json"],
   "output": "./jscpd-report.json",
   "absolute": false
 }

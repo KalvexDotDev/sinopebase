@@ -149,10 +149,7 @@ async function main(): Promise<void> {
     console.log('DEV mode enabled')
   }
 
-  const tls =
-    flags.tlsCert && flags.tlsKey
-      ? { cert: flags.tlsCert, key: flags.tlsKey }
-      : undefined
+  const tls = flags.tlsCert && flags.tlsKey ? { cert: flags.tlsCert, key: flags.tlsKey } : undefined
 
   const server = new Sinopebase({
     port: flags.port,

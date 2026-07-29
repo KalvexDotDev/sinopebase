@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { health } from '../lib/api'
+import { health } from '../lib/api'
 
-  let data = $state<any>(null)
+let data = $state<any>(null)
 
-  $effect(() => {
-    health().then(r => { data = r }).catch(() => { data = { db: 'error', storage: 'error' } })
-  })
+$effect(() => {
+  health()
+    .then((r) => {
+      data = r
+    })
+    .catch(() => {
+      data = { db: 'error', storage: 'error' }
+    })
+})
 </script>
 
 <div>

@@ -70,10 +70,7 @@ export async function down(db) {
  * @param useTs - Whether to use .ts extension (default: true).
  * @returns The file name including extension.
  */
-export function migrationFileName(
-  migrationName: string,
-  useTs: boolean = true,
-): string {
+export function migrationFileName(migrationName: string, useTs: boolean = true): string {
   const ext = useTs ? '.ts' : '.js'
   return `${migrationName}${ext}`
 }

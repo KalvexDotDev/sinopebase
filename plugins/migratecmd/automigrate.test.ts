@@ -57,8 +57,18 @@ describe('automigrate', () => {
       const results: string[] = []
 
       const migrations: Migration[] = [
-        { name: 'm1', up: mock(async () => { results.push('m1') }) },
-        { name: 'm2', up: mock(async () => { results.push('m2') }) },
+        {
+          name: 'm1',
+          up: mock(async () => {
+            results.push('m1')
+          }),
+        },
+        {
+          name: 'm2',
+          up: mock(async () => {
+            results.push('m2')
+          }),
+        },
       ]
 
       const count = await runPendingMigrations(db, mdb, migrations)
@@ -78,8 +88,18 @@ describe('automigrate', () => {
       const results: string[] = []
 
       const migrations: Migration[] = [
-        { name: 'm1', up: mock(async () => { results.push('m1') }) },
-        { name: 'm2', up: mock(async () => { results.push('m2') }) },
+        {
+          name: 'm1',
+          up: mock(async () => {
+            results.push('m1')
+          }),
+        },
+        {
+          name: 'm2',
+          up: mock(async () => {
+            results.push('m2')
+          }),
+        },
       ]
 
       const count = await runPendingMigrations(db, mdb, migrations)
@@ -95,9 +115,7 @@ describe('automigrate', () => {
       })
 
       const mdb = createMigrationDB()
-      const migrations: Migration[] = [
-        { name: 'm1', up: mock(async () => {}) },
-      ]
+      const migrations: Migration[] = [{ name: 'm1', up: mock(async () => {}) }]
 
       const count = await runPendingMigrations(db, mdb, migrations)
       expect(count).toBe(0)
@@ -123,12 +141,16 @@ describe('automigrate', () => {
         {
           name: 'm1',
           up: mock(async () => {}),
-          down: mock(async () => { rolledBack.push('m1') }),
+          down: mock(async () => {
+            rolledBack.push('m1')
+          }),
         },
         {
           name: 'm2',
           up: mock(async () => {}),
-          down: mock(async () => { rolledBack.push('m2') }),
+          down: mock(async () => {
+            rolledBack.push('m2')
+          }),
         },
       ]
 

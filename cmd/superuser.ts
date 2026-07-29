@@ -124,27 +124,17 @@ async function createSuperuserRecord(
   }
 }
 
-async function updateSuperuserRecord(
-  db: IDatabase,
-  id: string,
-  email: string,
-): Promise<void> {
+async function updateSuperuserRecord(db: IDatabase, id: string, email: string): Promise<void> {
   await ensureSuperusersTable(db)
-  await db.update(
-    SUPERUSERS_TABLE,
-    [{ column: 'id', operator: 'eq', value: id }],
-    { email, updated: new Date().toISOString() },
-  )
+  await db.update(SUPERUSERS_TABLE, [{ column: 'id', operator: 'eq', value: id }], {
+    email,
+    updated: new Date().toISOString(),
+  })
 }
 
-async function deleteSuperuserRecord(
-  db: IDatabase,
-  id: string,
-): Promise<void> {
+async function deleteSuperuserRecord(db: IDatabase, id: string): Promise<void> {
   await ensureSuperusersTable(db)
-  await db.delete(SUPERUSERS_TABLE, [
-    { column: 'id', operator: 'eq', value: id },
-  ])
+  await db.delete(SUPERUSERS_TABLE, [{ column: 'id', operator: 'eq', value: id }])
 }
 
 // ---------------------------------------------------------------------------

@@ -1,26 +1,26 @@
 <script lang="ts">
-  import { aiChat } from '../lib/api'
+import { aiChat } from '../lib/api'
 
-  let prompt = $state('')
-  let response = $state('')
-  let loading = $state(false)
-  let messages = $state<Array<{ role: string; content: string }>>([])
+let prompt = $state('')
+let response = $state('')
+let loading = $state(false)
+let messages = $state<Array<{ role: string; content: string }>>([])
 
-  async function send() {
-    if (!prompt.trim()) return
-    loading = true
-    messages = [...messages, { role: 'user', content: prompt }]
-    try {
-      const data = await aiChat(messages)
-      const reply = data?.choices?.[0]?.message?.content || '[No response]'
-      messages = [...messages, { role: 'assistant', content: reply }]
-      response = reply
-    } catch {
-      response = 'Error: Failed to get AI response'
-    }
-    prompt = ''
-    loading = false
+async function send() {
+  if (!prompt.trim()) return
+  loading = true
+  messages = [...messages, { role: 'user', content: prompt }]
+  try {
+    const data = await aiChat(messages)
+    const reply = data?.choices?.[0]?.message?.content || '[No response]'
+    messages = [...messages, { role: 'assistant', content: reply }]
+    response = reply
+  } catch {
+    response = 'Error: Failed to get AI response'
   }
+  prompt = ''
+  loading = false
+}
 </script>
 
 <div>

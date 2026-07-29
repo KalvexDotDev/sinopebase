@@ -16,12 +16,16 @@ async function run() {
     for (const line of (await Bun.file(BASELINE).text()).split('\n')) {
       if (line.trim()) base.add(line.trim())
     }
-  } catch { /* no baseline yet */ }
+  } catch {
+    /* no baseline yet */
+  }
 
   const added = [...current].filter((e) => !base.has(e))
   const removed = [...base].filter((e) => !current.has(e))
 
-  console.log(`[typecheck-ci] current:${current.size} baseline:${base.size} fixed:${removed.length} new:${added.length}`)
+  console.log(
+    `[typecheck-ci] current:${current.size} baseline:${base.size} fixed:${removed.length} new:${added.length}`,
+  )
 
   if (added.length > 0) {
     console.log('NEW errors:')
@@ -31,7 +35,12 @@ async function run() {
   }
 
   if (removed.length > 0) {
-    console.log(`Errors fixed: ${removed.slice(0, 5).map((e) => e.slice(0, 80)).join(', ')}${removed.length > 5 ? ` ...+${removed.length - 5}` : ''}`)
+    console.log(
+      `Errors fixed: ${removed
+        .slice(0, 5)
+        .map((e) => e.slice(0, 80))
+        .join(', ')}${removed.length > 5 ? ` ...+${removed.length - 5}` : ''}`,
+    )
   }
   console.log('[typecheck-ci] gate passed')
 }

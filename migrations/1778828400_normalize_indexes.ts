@@ -52,11 +52,7 @@ export async function up(db: MigrationDB): Promise<void> {
  * Helper to create an index if it does not already exist.
  * Uses IF NOT EXISTS to avoid errors on re-run.
  */
-async function ensureIndex(
-  db: MigrationDB,
-  table: string,
-  ...columns: string[]
-): Promise<void> {
+async function ensureIndex(db: MigrationDB, table: string, ...columns: string[]): Promise<void> {
   const suffix = columns.join('_')
   const colList = columns.join(', ')
   await db.raw(`

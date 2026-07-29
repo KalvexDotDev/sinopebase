@@ -3,7 +3,11 @@
 // ---------------------------------------------------------------------------
 
 declare var window: { location: { origin: string } }
-declare var localStorage: { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+declare var localStorage: {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+}
 
 const BASE = window.location.origin
 
@@ -31,7 +35,10 @@ async function request<T = any>(
   options?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<{ data: T; error: { message: string; status: number } | null }> {
   const method = options?.method ?? 'GET'
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options?.headers }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...options?.headers,
+  }
   const token = getToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
 
@@ -101,7 +108,7 @@ export async function aiChat(messages: Array<{ role: string; content: string }>)
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
     },
     body: JSON.stringify({ messages }),
-  }).then(r => r.json())
+  }).then((r) => r.json())
 }
 
 // Health

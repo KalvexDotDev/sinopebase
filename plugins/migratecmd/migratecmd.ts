@@ -149,10 +149,7 @@ export class MigrateCmdPlugin {
    * Returns the combined list of migrations (system first, then app).
    */
   getMigrations(): Migration[] {
-    return [
-      ...(this.options.systemMigrations ?? []),
-      ...(this.options.appMigrations ?? []),
-    ]
+    return [...(this.options.systemMigrations ?? []), ...(this.options.appMigrations ?? [])]
   }
 
   /**

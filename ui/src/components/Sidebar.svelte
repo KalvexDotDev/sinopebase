@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { ROUTES, getCurrentRoute } from '../lib/router'
+import { ROUTES, getCurrentRoute } from '../lib/router'
 
-  let { onLogout }: { onLogout: () => void } = $props()
-  let current = $state(getCurrentRoute())
+let { onLogout }: { onLogout: () => void } = $props()
+let current = $state(getCurrentRoute())
 
-  function handleClick(path: string) {
-    window.location.hash = path
-    current = path
-  }
+function handleClick(path: string) {
+  window.location.hash = path
+  current = path
+}
 </script>
 
 <nav style="width: 260px; background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem; display: flex; flex-direction: column;">

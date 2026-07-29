@@ -64,9 +64,7 @@ describe('MigrateCmdPlugin', () => {
     const downMock = mock(async () => {})
 
     const plugin = new MigrateCmdPlugin({
-      appMigrations: [
-        { name: 'test_migration', up: upMock, down: downMock },
-      ],
+      appMigrations: [{ name: 'test_migration', up: upMock, down: downMock }],
     })
 
     expect(plugin.getMigrations().length).toBe(1)
@@ -80,9 +78,7 @@ describe('MigrateCmdPlugin', () => {
 
     const plugin = new MigrateCmdPlugin({
       automigrate: true,
-      appMigrations: [
-        { name: '001_test', up: upMock },
-      ],
+      appMigrations: [{ name: '001_test', up: upMock }],
     })
 
     await plugin.register(app)
@@ -96,8 +92,18 @@ describe('MigrateCmdPlugin', () => {
 
     const plugin = new MigrateCmdPlugin({
       appMigrations: [
-        { name: 'm1', up: mock(async () => { results.push('m1') }) },
-        { name: 'm2', up: mock(async () => { results.push('m2') }) },
+        {
+          name: 'm1',
+          up: mock(async () => {
+            results.push('m1')
+          }),
+        },
+        {
+          name: 'm2',
+          up: mock(async () => {
+            results.push('m2')
+          }),
+        },
       ],
     })
 

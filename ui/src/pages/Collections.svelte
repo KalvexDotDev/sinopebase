@@ -1,70 +1,99 @@
 <script lang="ts">
-  let tables = $state<string[]>([])
-  let selectedTable = $state('')
-  let records = $state<any[]>([])
-  let loading = $state(false)
-  let showCreate = $state(false)
-  let newRecord = $state<Record<string, string>>({})
-  let error = $state('')
-  let token = $state('')
-  let cols = $state<string[]>([])
+let tables = $state<string[]>([])
+let selectedTable = $state('')
+let records = $state<any[]>([])
+let loading = $state(false)
+let showCreate = $state(false)
+let newRecord = $state<Record<string, string>>({})
+let error = $state('')
+let token = $state('')
+let cols = $state<string[]>([])
 
-  const baseUrl = window.location.origin
+const baseUrl = window.location.origin
 
-  function getToken() { return localStorage.getItem('sb-access-token') || '' }
-  function authHeaders() { const t = getToken(); return t ? { Authorization: 'Bearer ' + t } : {} }
+function getToken() {
+  return localStorage.getItem('sb-access-token') || ''
+}
+function authHeaders() {
+  const t = getToken()
+  return t ? { Authorization: 'Bearer ' + t } : {}
+}
 
-  async function loadTables() {
-    token = getToken()
-    if (!token) { error = 'Sign in to browse data'; return }
-    // Try known tables
-    const known = ['private_items', 'user', 'session']
-    const found: string[] = []
-    for (const t of known) {
-      try {
-        const r = await fetch(baseUrl + '/rest/v1/' + t + '?limit=1', { headers: authHeaders() })
-        if (r.ok) found.push(t)
-      } catch {}
-    }
-    tables = found
-    error = ''
+async function loadTables() {
+  token = getToken()
+  if (!token) {
+    error = 'Sign in to browse data'
+    return
   }
-
-  async function loadRecords(table: string) {
-    selectedTable = table
-    loading = true
-    error = ''
+  // Try known tables
+  const known = ['private_items', 'user', 'session']
+  const found: string[] = []
+  for (const t of known) {
     try {
-      const res = await fetch(baseUrl + '/rest/v1/' + table + '?limit=50', { headers: authHeaders() })
-      if (!res.ok) { error = res.status + ' ' + res.statusText; records = []; loading = false; return }
-      const data = await res.json()
-      records = data
-      cols = data.length ? Object.keys(data[0]) : []
-    } catch (e: any) { error = e.message; records = [] }
-    loading = false
+      const r = await fetch(baseUrl + '/rest/v1/' + t + '?limit=1', { headers: authHeaders() })
+      if (r.ok) found.push(t)
+    } catch {}
   }
+  tables = found
+  error = ''
+}
 
-  async function deleteRecord(id: string) {
-    if (!confirm('Delete row ' + id + '?')) return
-    const idCol = cols[0] || 'id'
-    await fetch(baseUrl + '/rest/v1/' + selectedTable + '?' + idCol + '=eq.' + encodeURIComponent(id), {
-      method: 'DELETE', headers: authHeaders()
-    })
+async function loadRecords(table: string) {
+  selectedTable = table
+  loading = true
+  error = ''
+  try {
+    const res = await fetch(baseUrl + '/rest/v1/' + table + '?limit=50', { headers: authHeaders() })
+    if (!res.ok) {
+      error = res.status + ' ' + res.statusText
+      records = []
+      loading = false
+      return
+    }
+    const data = await res.json()
+    records = data
+    cols = data.length ? Object.keys(data[0]) : []
+  } catch (e: any) {
+    error = e.message
+    records = []
+  }
+  loading = false
+}
+
+async function deleteRecord(id: string) {
+  if (!confirm('Delete row ' + id + '?')) return
+  const idCol = cols[0] || 'id'
+  await fetch(
+    baseUrl + '/rest/v1/' + selectedTable + '?' + idCol + '=eq.' + encodeURIComponent(id),
+    {
+      method: 'DELETE',
+      headers: authHeaders(),
+    },
+  )
+  loadRecords(selectedTable)
+}
+
+async function createRecord() {
+  if (!selectedTable || !Object.keys(newRecord).length) return
+  const res = await fetch(baseUrl + '/rest/v1/' + selectedTable, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(newRecord),
+  })
+  if (res.ok) {
+    showCreate = false
+    newRecord = {}
     loadRecords(selectedTable)
-  }
+  } else error = 'Create failed: ' + res.status
+}
 
-  async function createRecord() {
-    if (!selectedTable || !Object.keys(newRecord).length) return
-    const res = await fetch(baseUrl + '/rest/v1/' + selectedTable, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Prefer: 'return=representation', ...authHeaders() },
-      body: JSON.stringify(newRecord),
-    })
-    if (res.ok) { showCreate = false; newRecord = {}; loadRecords(selectedTable) }
-    else error = 'Create failed: ' + res.status
-  }
-
-  $effect(() => { loadTables() })
+$effect(() => {
+  loadTables()
+})
 </script>
 
 <div>

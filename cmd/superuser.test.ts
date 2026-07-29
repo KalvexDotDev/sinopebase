@@ -17,12 +17,14 @@ describe('cmd/superuser CRUD operations', () => {
       cost: 4,
     })
 
-    const result = db.insert(SUPERUSERS_TABLE, [{
-      email: 'admin@test.com',
-      passwordHash,
-      created: new Date().toISOString(),
-      updated: new Date().toISOString(),
-    }])
+    const result = db.insert(SUPERUSERS_TABLE, [
+      {
+        email: 'admin@test.com',
+        passwordHash,
+        created: new Date().toISOString(),
+        updated: new Date().toISOString(),
+      },
+    ])
 
     expect(result[0]!['id']).toBeTruthy()
     expect(result[0]!['email']).toBe('admin@test.com')
@@ -41,11 +43,10 @@ describe('cmd/superuser CRUD operations', () => {
     expect(result.rows.length).toBe(1)
     const id = String(result.rows[0]!['id'])
 
-    const updated = db.update(
-      SUPERUSERS_TABLE,
-      [{ column: 'id', operator: 'eq', value: id }],
-      { email: 'updated@test.com', updated: new Date().toISOString() },
-    )
+    const updated = db.update(SUPERUSERS_TABLE, [{ column: 'id', operator: 'eq', value: id }], {
+      email: 'updated@test.com',
+      updated: new Date().toISOString(),
+    })
 
     expect(updated[0]!['email']).toBe('updated@test.com')
   })
@@ -56,9 +57,7 @@ describe('cmd/superuser CRUD operations', () => {
     })
     if (result.rows.length > 0) {
       const id = String(result.rows[0]!['id'])
-      const deleted = db.delete(SUPERUSERS_TABLE, [
-        { column: 'id', operator: 'eq', value: id },
-      ])
+      const deleted = db.delete(SUPERUSERS_TABLE, [{ column: 'id', operator: 'eq', value: id }])
       expect(deleted.length).toBe(1)
 
       const remaining = db.select(SUPERUSERS_TABLE, {

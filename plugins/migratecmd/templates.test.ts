@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import {
-  migrationTemplate,
-  migrationTemplateJS,
-  migrationFileName,
-} from './templates.ts'
+import { migrationTemplate, migrationTemplateJS, migrationFileName } from './templates.ts'
 
 describe('migration templates', () => {
   describe('migrationTemplate', () => {

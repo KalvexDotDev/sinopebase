@@ -30,10 +30,7 @@ async function loadAppliedMigrationNames(db: IDatabase): Promise<Set<string>> {
 /**
  * Records a migration as applied in the tracking table.
  */
-async function recordMigration(
-  db: IDatabase,
-  name: string,
-): Promise<void> {
+async function recordMigration(db: IDatabase, name: string): Promise<void> {
   await db.insert('_migrations', {
     name,
     applied_at: new Date().toISOString(),
@@ -43,13 +40,8 @@ async function recordMigration(
 /**
  * Removes a migration record from the tracking table (for rollback).
  */
-async function removeMigration(
-  db: IDatabase,
-  name: string,
-): Promise<void> {
-  await db.delete('_migrations', [
-    { column: 'name', operator: 'eq', value: name },
-  ])
+async function removeMigration(db: IDatabase, name: string): Promise<void> {
+  await db.delete('_migrations', [{ column: 'name', operator: 'eq', value: name }])
 }
 
 /**

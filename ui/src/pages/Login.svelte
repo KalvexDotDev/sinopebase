@@ -1,33 +1,33 @@
 <script lang="ts">
-  import { signIn } from '../lib/api'
+import { signIn } from '../lib/api'
 
-  let { onLogin }: { onLogin: () => void } = $props()
-  let email = $state('')
-  let password = $state('')
-  let error = $state('')
-  let loading = $state(false)
+let { onLogin }: { onLogin: () => void } = $props()
+let email = $state('')
+let password = $state('')
+let error = $state('')
+let loading = $state(false)
 
-  async function handleSubmit(e: Event) {
-    e.preventDefault()
-    if (!email || !password) {
-      error = 'Email and password are required'
-      return
-    }
-    loading = true
-    error = ''
-    try {
-      const result = await signIn(email, password)
-      if (result.error) {
-        error = result.error.message || 'Login failed'
-      } else {
-        onLogin()
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Login failed'
-    } finally {
-      loading = false
-    }
+async function handleSubmit(e: Event) {
+  e.preventDefault()
+  if (!email || !password) {
+    error = 'Email and password are required'
+    return
   }
+  loading = true
+  error = ''
+  try {
+    const result = await signIn(email, password)
+    if (result.error) {
+      error = result.error.message || 'Login failed'
+    } else {
+      onLogin()
+    }
+  } catch (err) {
+    error = err instanceof Error ? err.message : 'Login failed'
+  } finally {
+    loading = false
+  }
+}
 </script>
 
 <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg);">

@@ -33,11 +33,7 @@ export {
  * @param token - Verification token.
  * @returns HTML body string.
  */
-export function verificationBody(
-  appName: string,
-  appUrl: string,
-  token: string,
-): string {
+export function verificationBody(appName: string, appUrl: string, token: string): string {
   const link = `${appUrl}/_/#/auth/confirm-verification/${token}`
   return `<p>Hello,</p>
 <p>Thank you for registering with ${escapeHtml(appName)}.</p>
@@ -68,11 +64,7 @@ export function verificationBody(
  * @param token - Password reset token.
  * @returns HTML body string.
  */
-export function passwordResetBody(
-  appName: string,
-  appUrl: string,
-  token: string,
-): string {
+export function passwordResetBody(appName: string, appUrl: string, token: string): string {
   const link = `${appUrl}/_/#/auth/confirm-password-reset/${token}`
   return `<p>Hello,</p>
 <p>Click the button below to reset your ${escapeHtml(appName)} password.</p>
@@ -102,11 +94,7 @@ export function passwordResetBody(
  * @param token - Email change token.
  * @returns HTML body string.
  */
-export function confirmEmailChangeBody(
-  appName: string,
-  appUrl: string,
-  token: string,
-): string {
+export function confirmEmailChangeBody(appName: string, appUrl: string, token: string): string {
   const link = `${appUrl}/_/#/auth/confirm-email-change/${token}`
   return `<p>Hello,</p>
 <p>Click the button below to confirm your new email address for ${escapeHtml(appName)}.</p>
@@ -160,10 +148,7 @@ export function otpBody(appName: string, otp: string): string {
  * @param alertInfo - Human-readable information about the new login (device, location, etc.).
  * @returns HTML body string.
  */
-export function authAlertBody(
-  appName: string,
-  alertInfo: string,
-): string {
+export function authAlertBody(appName: string, alertInfo: string): string {
   return `<p>Hello,</p>
 <p>We detected a login to your ${escapeHtml(appName)} account from a new device or location:</p>
 <blockquote style="border-left:3px solid #e0e0e0;padding:10px 15px;margin:16px 0;color:#555555;">

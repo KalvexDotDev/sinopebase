@@ -14,9 +14,7 @@ describe('base mail helper', () => {
     await send(mockMailer, 'user@example.com', 'Subject', '<p>Body</p>')
 
     expect(sentMessages.length).toBe(1)
-    expect(sentMessages[0]!.to).toEqual([
-      { name: '', address: 'user@example.com' },
-    ])
+    expect(sentMessages[0]!.to).toEqual([{ name: '', address: 'user@example.com' }])
     expect(sentMessages[0]!.subject).toBe('Subject')
     expect(sentMessages[0]!.html).toBe('<p>Body</p>')
     expect(sentMessages[0]!.from.address).toBe('noreply@sinopebase.dev')

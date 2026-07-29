@@ -57,7 +57,7 @@ function resolveMailer(app: App): Mailer {
   }
   throw new Error(
     'Mailer not available on App instance. ' +
-    'Ensure the app has a configured SMTP or Sendmail mailer.',
+      'Ensure the app has a configured SMTP or Sendmail mailer.',
   )
 }
 

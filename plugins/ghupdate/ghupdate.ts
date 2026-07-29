@@ -104,10 +104,7 @@ export class GhUpdatePlugin {
    */
   async checkForUpdate(): Promise<string | null> {
     try {
-      const release = await fetchLatestRelease(
-        this.options.owner!,
-        this.options.repo!,
-      )
+      const release = await fetchLatestRelease(this.options.owner!, this.options.repo!)
 
       if (!release || !release.semver) {
         console.log('[ghupdate] Could not determine latest version')
@@ -119,13 +116,11 @@ export class GhUpdatePlugin {
       if (isGreaterThan(release.tagName, this.options.currentVersion)) {
         console.warn(
           `[ghupdate] New version available: ${release.tagName} ` +
-          `(current: ${this.options.currentVersion})\n` +
-          `  Download: ${release.htmlUrl}`,
+            `(current: ${this.options.currentVersion})\n` +
+            `  Download: ${release.htmlUrl}`,
         )
       } else {
-        console.log(
-          `[ghupdate] Up to date (${this.options.currentVersion})`,
-        )
+        console.log(`[ghupdate] Up to date (${this.options.currentVersion})`)
       }
 
       return release.tagName

@@ -1,10 +1,10 @@
 <script lang="ts">
-  let theme = $state(localStorage.getItem('sb-theme') || 'auto')
+let theme = $state(localStorage.getItem('sb-theme') || 'auto')
 
-  function setTheme(t: string) {
-    theme = t
-    localStorage.setItem('sb-theme', t)
-  }
+function setTheme(t: string) {
+  theme = t
+  localStorage.setItem('sb-theme', t)
+}
 </script>
 
 <div>

@@ -1,30 +1,30 @@
 <script lang="ts">
-  import Layout from './components/Layout.svelte'
-  import Login from './pages/Login.svelte'
-  import Dashboard from './pages/Dashboard.svelte'
-  import Collections from './pages/Collections.svelte'
-  import Functions from './pages/Functions.svelte'
-  import AI from './pages/AI.svelte'
-  import Settings from './pages/Settings.svelte'
-  import Logs from './pages/Logs.svelte'
-  import { getCurrentRoute, onRouteChange } from './lib/router'
+import Layout from './components/Layout.svelte'
+import Login from './pages/Login.svelte'
+import Dashboard from './pages/Dashboard.svelte'
+import Collections from './pages/Collections.svelte'
+import Functions from './pages/Functions.svelte'
+import AI from './pages/AI.svelte'
+import Settings from './pages/Settings.svelte'
+import Logs from './pages/Logs.svelte'
+import { getCurrentRoute, onRouteChange } from './lib/router'
 
-  let authenticated = $state(false)
-  let currentRoute = $state(getCurrentRoute())
+let authenticated = $state(false)
+let currentRoute = $state(getCurrentRoute())
 
-  onRouteChange((route) => {
-    currentRoute = route
-  })
+onRouteChange((route) => {
+  currentRoute = route
+})
 
-  function onLogin() {
-    authenticated = true
-    window.location.hash = '#/'
-  }
+function onLogin() {
+  authenticated = true
+  window.location.hash = '#/'
+}
 
-  function onLogout() {
-    authenticated = false
-    window.location.hash = '#/login'
-  }
+function onLogout() {
+  authenticated = false
+  window.location.hash = '#/login'
+}
 </script>
 
 {#if !authenticated}

@@ -23,10 +23,7 @@
         "tests/harness/**/*.test.ts",
         "tests/core/**/*.test.ts"
       ],
-      "exclude": [
-        "src/core/db-postgres-contract.test.ts",
-        "src/core/db-postgres-rls.test.ts"
-      ],
+      "exclude": ["src/core/db-postgres-contract.test.ts", "src/core/db-postgres-rls.test.ts"],
       "infrastructure": [],
       "onMissingInfrastructure": "fail",
       "fallbackPolicy": "forbid",
@@ -41,10 +38,7 @@
       "id": "component",
       "kind": "component",
       "releaseRequired": true,
-      "include": [
-        "tests/integration/app-lifecycle.test.ts",
-        "tests/integration/pb-api-*.test.ts"
-      ],
+      "include": ["tests/integration/app-lifecycle.test.ts", "tests/integration/pb-api-*.test.ts"],
       "infrastructure": [],
       "onMissingInfrastructure": "fail",
       "fallbackPolicy": "forbid",
@@ -59,15 +53,8 @@
       "id": "auth-contract",
       "kind": "contract",
       "releaseRequired": true,
-      "include": [
-        "tests/integration/auth.test.ts",
-        "tests/integration/auth-better.test.ts"
-      ],
-      "infrastructure": [
-        "TEST_POSTGRES_URL",
-        "SINOPEBASE_ANON_KEY",
-        "SINOPEBASE_SERVICE_ROLE_KEY"
-      ],
+      "include": ["tests/integration/auth.test.ts", "tests/integration/auth-better.test.ts"],
+      "infrastructure": ["TEST_POSTGRES_URL", "SINOPEBASE_ANON_KEY", "SINOPEBASE_SERVICE_ROLE_KEY"],
       "onMissingInfrastructure": "fail",
       "fallbackPolicy": "forbid",
       "isolation": {
@@ -82,11 +69,7 @@
       "kind": "contract",
       "releaseRequired": true,
       "include": ["tests/integration/postgrest.test.ts"],
-      "infrastructure": [
-        "TEST_POSTGRES_URL",
-        "SINOPEBASE_ANON_KEY",
-        "SINOPEBASE_SERVICE_ROLE_KEY"
-      ],
+      "infrastructure": ["TEST_POSTGRES_URL", "SINOPEBASE_ANON_KEY", "SINOPEBASE_SERVICE_ROLE_KEY"],
       "onMissingInfrastructure": "fail",
       "fallbackPolicy": "forbid",
       "isolation": {
@@ -123,11 +106,7 @@
       "kind": "contract",
       "releaseRequired": true,
       "include": ["tests/integration/realtime.test.ts"],
-      "infrastructure": [
-        "TEST_POSTGRES_URL",
-        "SINOPEBASE_ANON_KEY",
-        "SINOPEBASE_SERVICE_ROLE_KEY"
-      ],
+      "infrastructure": ["TEST_POSTGRES_URL", "SINOPEBASE_ANON_KEY", "SINOPEBASE_SERVICE_ROLE_KEY"],
       "onMissingInfrastructure": "fail",
       "fallbackPolicy": "forbid",
       "isolation": {
@@ -141,15 +120,8 @@
       "id": "postgres-rls-contract",
       "kind": "contract",
       "releaseRequired": true,
-      "include": [
-        "src/core/db-postgres-contract.test.ts",
-        "src/core/db-postgres-rls.test.ts"
-      ],
-      "infrastructure": [
-        "TEST_POSTGRES_URL",
-        "SINOPEBASE_ANON_KEY",
-        "SINOPEBASE_SERVICE_ROLE_KEY"
-      ],
+      "include": ["src/core/db-postgres-contract.test.ts", "src/core/db-postgres-rls.test.ts"],
+      "infrastructure": ["TEST_POSTGRES_URL", "SINOPEBASE_ANON_KEY", "SINOPEBASE_SERVICE_ROLE_KEY"],
       "onMissingInfrastructure": "fail",
       "fallbackPolicy": "forbid",
       "isolation": {

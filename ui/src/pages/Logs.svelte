@@ -1,23 +1,26 @@
 <script lang="ts">
-  let logs = $state<string[]>(['[API] GET /api/health 200 2ms', '[Auth] Session validated for user admin@example.com'])
+let logs = $state<string[]>([
+  '[API] GET /api/health 200 2ms',
+  '[Auth] Session validated for user admin@example.com',
+])
 
-  // Capture console logs
-  $effect(() => {
-    const originalLog = console.log
-    const originalError = console.error
-    console.log = (...args: any[]) => {
-      logs = [...logs.slice(-99), args.join(' ')]
-      originalLog.apply(console, args)
-    }
-    console.error = (...args: any[]) => {
-      logs = [...logs.slice(-99), '[ERROR] ' + args.join(' ')]
-      originalError.apply(console, args)
-    }
-    return () => {
-      console.log = originalLog
-      console.error = originalError
-    }
-  })
+// Capture console logs
+$effect(() => {
+  const originalLog = console.log
+  const originalError = console.error
+  console.log = (...args: any[]) => {
+    logs = [...logs.slice(-99), args.join(' ')]
+    originalLog.apply(console, args)
+  }
+  console.error = (...args: any[]) => {
+    logs = [...logs.slice(-99), '[ERROR] ' + args.join(' ')]
+    originalError.apply(console, args)
+  }
+  return () => {
+    console.log = originalLog
+    console.error = originalError
+  }
+})
 </script>
 
 <div>

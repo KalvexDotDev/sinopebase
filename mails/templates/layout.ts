@@ -13,10 +13,7 @@
  * @param appName - Optional application name (default: "Sinopebase").
  * @returns A complete HTML email document string.
  */
-export function renderEmailLayout(
-  content: string,
-  appName: string = 'Sinopebase',
-): string {
+export function renderEmailLayout(content: string, appName: string = 'Sinopebase'): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

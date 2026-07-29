@@ -14,9 +14,25 @@ import type { User } from '../sdk/auth'
 /** Minimal Kysely-like interface for refresh-token DB write-through. */
 export interface RefreshTokenDb {
   selectFrom(table: string): {
-    select(columns: string[]): { where(col: string, op: string, val: unknown): { execute(): Promise<Array<Record<string, unknown>>> } }
-    selectAll(): { where(col: string, op: string, val: unknown): { execute(): Promise<Array<Record<string, unknown>>> } }
-    where(col: string, op: string, val: unknown): { execute(): Promise<Array<Record<string, unknown>>> }
+    select(columns: string[]): {
+      where(
+        col: string,
+        op: string,
+        val: unknown,
+      ): { execute(): Promise<Array<Record<string, unknown>>> }
+    }
+    selectAll(): {
+      where(
+        col: string,
+        op: string,
+        val: unknown,
+      ): { execute(): Promise<Array<Record<string, unknown>>> }
+    }
+    where(
+      col: string,
+      op: string,
+      val: unknown,
+    ): { execute(): Promise<Array<Record<string, unknown>>> }
   }
   insertInto(table: string): {
     values(data: Record<string, unknown>): { execute(): Promise<unknown> }

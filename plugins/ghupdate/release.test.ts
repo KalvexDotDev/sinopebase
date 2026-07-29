@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import {
-  parseSemver,
-  compareSemver,
-  isGreaterThan,
-  isLessThan,
-  isEqual,
-} from './release.ts'
+import { parseSemver, compareSemver, isGreaterThan, isLessThan, isEqual } from './release.ts'
 
 describe('release version parser', () => {
   describe('parseSemver', () => {
