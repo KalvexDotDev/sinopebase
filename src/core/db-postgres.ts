@@ -70,7 +70,7 @@ export class PostgresDatabase implements IDatabase {
       'service_role',
     ])
     const defaultRole = config.runtimeRole ?? 'sinopebase_app'
-    if (defaultRole && ALLOWED_RUNTIME_ROLES.has(defaultRole)) {
+    if (process.env.NODE_ENV === 'production' && defaultRole && ALLOWED_RUNTIME_ROLES.has(defaultRole)) {
       this.writerPool.on('connect', (client: pg.PoolClient) => {
         // nosemgrep: ts-sql-injection-concat
         client.query(`SET ROLE ${defaultRole}`).catch(() => {
