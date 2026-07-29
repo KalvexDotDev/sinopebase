@@ -152,19 +152,6 @@ export class PostgresDatabase implements IDatabase {
     context: PostgresRequestContext,
     operation: (db: PostgresDatabase) => Promise<T>,
   ): Promise<T> {
-    // Check if the target role exists so we can skip SET LOCAL ROLE
-    // gracefully. SET LOCAL ROLE inside a transaction would abort the
-    // entire tx if the role is missing — checking first avoids that.
-    let roleExists = false
-    try {
-      const result = await sql`SELECT 1 FROM pg_roles WHERE rolname = ${context.role}`.execute(
-        this.writer,
-      )
-      roleExists = result.rows.length > 0
-    } catch {
-      // pg_roles lookup failed — proceed without role scoping.
-    }
-
     return this.writer.transaction().execute(async (transaction) => {
       const userId = context.userId ?? ''
       const claims = JSON.stringify({
@@ -178,12 +165,6 @@ export class PostgresDatabase implements IDatabase {
           set_config('request.jwt.claim.role', ${context.role}, true),
           set_config('request.jwt.claims', ${claims}, true)
       `.execute(transaction)
-
-      // SET LOCAL ROLE is scoped to the transaction so the connection
-      // reverts to the pool-default sinopebase_app role automatically.
-      if (roleExists) {
-        await sql`SET LOCAL ROLE ${sql.raw(context.role)}`.execute(transaction)
-      }
 
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
