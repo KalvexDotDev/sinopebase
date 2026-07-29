@@ -17,6 +17,7 @@ import type {
   OrderBy,
   SelectOptions,
 } from './db-interface'
+import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
 export type { Filter, OrderBy } from './db-interface'
 
@@ -109,11 +110,12 @@ export class PostgresDatabase implements IDatabase {
     if (this.readerPool) {
       await sql`SELECT 1`.execute(this.reader)
     }
-    // Request-context roles (anon, authenticated, service_role) must be
-    // created by the 1779000000_least_privilege_roles migration BEFORE the
-    // application starts in production. validateSchema() warns if they are
-    // missing. We deliberately do NOT create them at runtime — DDL belongs
-    // exclusively to migrations.
+    // Bootstrap request-context roles in non-production environments.
+    // Production deployments rely on the 1779000000_least_privilege_roles
+    // migration instead; validateSchema() warns if they are missing.
+    if (process.env.NODE_ENV !== 'production') {
+      await bootstrapPostgresRequestRoles(this.writerPool)
+    }
   }
 
   async close(): Promise<void> {
@@ -198,6 +200,12 @@ export class PostgresDatabase implements IDatabase {
       .catch(() => {
         /* best-effort — roles may not exist yet */
       })
+    await sql`GRANT SELECT ON ${sql.table(table)} TO anon`
+      .execute(this.writer)
+      .catch(() => undefined)
+    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ${sql.table(table)} TO authenticated`
+      .execute(this.writer)
+      .catch(() => undefined)
   }
 
   async hasTable(table: string): Promise<boolean> {
