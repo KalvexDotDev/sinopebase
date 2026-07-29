@@ -530,7 +530,7 @@ import { LocalFileStore } from '../tools/filesystem/store'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { S3FileStore } from '../tools/filesystem/store-s3'
 import { Equal } from '../tools/security/crypto'
-import { detectMode, type ValidatedConfig } from './config'
+import { detectMode, isDevSecret, type ValidatedConfig } from './config'
 import { MemoryDatabaseAdapter } from './db-memory-adapter'
 import {
   PostgresDatabase,
@@ -752,29 +752,28 @@ export class Sinopebase {
         const serviceKey = process.env.SINOPEBASE_SERVICE_ROLE_KEY
         const anonKey = process.env.SINOPEBASE_ANON_KEY
         const jwtSecret = process.env.JWT_SECRET || this.config.jwtSecret || ''
-        const JWT_DEV_FALLBACK = 'sinopebase-dev-jwt-secret-min-32-chars!!'
 
-        if (!serviceKey || serviceKey === 'test-service-role-key') {
+        if (!serviceKey || isDevSecret(serviceKey)) {
           throw new Error(
-            'SINOPEBASE_SERVICE_ROLE_KEY is unset or using the "test-service-role-key" default. ' +
+            'SINOPEBASE_SERVICE_ROLE_KEY is unset or uses a dev/placeholder pattern. ' +
               'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
           )
         }
-        if (!anonKey || anonKey === 'test-anon-key') {
+        if (!anonKey || isDevSecret(anonKey)) {
           throw new Error(
-            'SINOPEBASE_ANON_KEY is unset or using the "test-anon-key" default. ' +
+            'SINOPEBASE_ANON_KEY is unset or uses a dev/placeholder pattern. ' +
               'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
           )
         }
-        if (!jwtSecret || jwtSecret === JWT_DEV_FALLBACK) {
+        if (!jwtSecret || isDevSecret(jwtSecret)) {
           if (this.mode === 'production') {
             throw new Error(
-              'JWT_SECRET is unset or using the dev fallback. ' +
+              'JWT_SECRET is unset or uses a dev/placeholder pattern. ' +
                 'Set it to a cryptographically random value (≥32 chars) before starting in production mode.',
             )
           }
           logger.warn(
-            'JWT_SECRET is using the dev fallback in PostgreSQL mode. Set JWT_SECRET to a cryptographically random value in production.',
+            'JWT_SECRET uses a dev/placeholder pattern in PostgreSQL mode. Set JWT_SECRET to a cryptographically random value in production.',
           )
         }
 
@@ -1254,6 +1253,9 @@ export class Sinopebase {
     // (NOT_FOUND branch) at the top of the chain. Using onError instead of
     // .all('*') prevents shadowing of routes registered after listen().
 
+    // ── Production fail-closed: verify infrastructure before listening ──
+    await this.requiredInfrastructure()
+
     const port = this.config.port ?? 8090
     const host = this.config.host ?? '0.0.0.0'
     if (this.config.tls) {
@@ -1534,6 +1536,86 @@ export class Sinopebase {
   private async ensureTables(): Promise<void> {
     if (!this.database) return
     await this.database.createTable('todos')
+  }
+
+  /**
+   * Preflight infrastructure check run just before listen().
+   *
+   * Verifies that all critical subsystems are healthy before the server
+   * starts accepting connections. If any check fails, a descriptive error
+   * is thrown and the server never enters the listening state.
+   */
+  private async requiredInfrastructure(): Promise<void> {
+    const errors: string[] = []
+
+    // 1. PostgreSQL connectivity — run SELECT 1 on the primary pool
+    if (this.database instanceof PostgresDatabase) {
+      try {
+        const pool = this.database.getPool()
+        const client = await pool.connect()
+        await client.query('SELECT 1')
+        client.release()
+      } catch (err) {
+        errors.push(
+          `PostgreSQL connectivity check failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+    } else if (this.mode === 'production') {
+      errors.push('PostgreSQL database is not initialized in production mode.')
+    }
+
+    // 2. Auth is initialized in production mode
+    if (this.mode === 'production' && this.auth === null) {
+      errors.push('Auth (better-auth) is not initialized in production mode.')
+    }
+
+    // 3. File store readiness — verify S3 connectivity via listBuckets()
+    if (this.fileStore) {
+      if (this.fileStore instanceof S3FileStore) {
+        try {
+          await this.fileStore.listBuckets()
+        } catch (err) {
+          errors.push(
+            `S3 file store connectivity check failed: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+      }
+      // LocalFileStore is always ready — no remote connectivity needed
+    } else if (this.mode === 'production') {
+      errors.push('File store is not initialized in production mode.')
+    }
+
+    // 4. JWT secret is not a dev/placeholder secret
+    const jwtSecret = this.config.jwtSecret || process.env.JWT_SECRET || ''
+    if (jwtSecret && isDevSecret(jwtSecret)) {
+      errors.push(
+        'JWT_SECRET matches a dev/placeholder secret pattern. ' +
+          'Set a cryptographically random value (≥32 chars) for production.',
+      )
+    }
+
+    // 5. Service role key is not a dev/placeholder secret
+    if (this.cachedServiceRoleKey && isDevSecret(this.cachedServiceRoleKey)) {
+      errors.push(
+        'SINOPEBASE_SERVICE_ROLE_KEY matches a dev/placeholder secret pattern. ' +
+          'Set a cryptographically random value (≥32 chars) for production.',
+      )
+    }
+
+    // 6. Anon key is not a dev/placeholder secret
+    if (this.cachedAnonKey && isDevSecret(this.cachedAnonKey)) {
+      errors.push(
+        'SINOPEBASE_ANON_KEY matches a dev/placeholder secret pattern. ' +
+          'Set a cryptographically random value (≥32 chars) for production.',
+      )
+    }
+
+    if (errors.length > 0) {
+      throw new Error(
+        `Infrastructure preflight check failed (${errors.length} issue(s)):\n  - ` +
+          errors.join('\n  - '),
+      )
+    }
   }
 }
 
