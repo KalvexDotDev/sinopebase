@@ -407,6 +407,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     }
     const b = (body ?? {}) as Record<string, unknown>
     const rawExpiresIn = b.expiresIn
+    const rawMethod = b.method
     return storageOperation(set, async () => {
       const { context, access } = await resolveStorageAccess(options, request)
       if (access) await access.authorizeSignedUrl(context, bucket, path)
@@ -416,7 +417,8 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
           : typeof rawExpiresIn === 'string'
             ? parseInt(rawExpiresIn, 10) || 3600
             : 3600
-      const token = signUrl(bucket, path, expiresInSec)
+      const method: 'GET' | 'PUT' = rawMethod === 'PUT' ? 'PUT' : 'GET'
+      const token = signUrl(bucket, path, expiresInSec, method)
       const signedURL = `/storage/v1/object/signed/${token}`
       return { signedURL }
     })
@@ -440,11 +442,15 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     return storageOperation(set, async () => {
       let bucket: string
       let path: string
+      let method: string
       try {
-        ;({ bucket, path } = verifySignedUrl(token))
+        ;({ bucket, path, method } = verifySignedUrl(token))
       } catch (err) {
         const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
         throw new StorageAccessError(403, '403', message)
+      }
+      if (method !== 'GET') {
+        throw new StorageAccessError(403, '403', 'Token method mismatch: expected GET')
       }
       const buffer = await store.read(bucket, path)
       return new Response(buffer, {
@@ -455,6 +461,48 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       })
     })
   })
+
+  // PUT /storage/v1/object/signed/upload/:token — Verify HMAC token and upload file
+  app.put(
+    '/storage/v1/object/signed/upload/:token',
+    async ({ params, request, set }) => {
+      const token = params.token
+      if (!token) {
+        set.status = 400
+        return {
+          data: null,
+          error: {
+            message: 'Token is required',
+            details: '',
+            hint: '',
+            code: '400',
+          },
+        }
+      }
+      return storageOperation(set, async () => {
+        let bucket: string
+        let path: string
+        let method: string
+        try {
+          ;({ bucket, path, method } = verifySignedUrl(token))
+        } catch (err) {
+          const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
+          throw new StorageAccessError(403, '403', message)
+        }
+        if (method !== 'PUT') {
+          throw new StorageAccessError(403, '403', 'Token method mismatch: expected PUT')
+        }
+        const data = await request.arrayBuffer()
+        if (!data || data.byteLength === 0) {
+          throw new StorageAccessError(400, '400', 'File body is required')
+        }
+        await store.ensureBucket(bucket)
+        await store.save(bucket, path, data)
+        return { Id: `${bucket}/${path}`, Key: `${bucket}/${path}` }
+      })
+    },
+    { parse: () => undefined },
+  )
 
   return app
 }
