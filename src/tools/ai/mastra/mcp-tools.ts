@@ -160,7 +160,7 @@ export function createMCPTools(
           (requestDb) => requestDb.select(table, { filters, limit }),
         )
         if (error) return { error }
-        return { rows: result, count: result!.length }
+        return { rows: result, count: result?.length ?? 0 }
       },
     })
 

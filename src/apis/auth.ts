@@ -22,7 +22,7 @@ import {
   verifyAccessToken,
   verifyRefreshToken,
 } from './auth-jwt'
-import { authStore } from './auth-store'
+import { authStore, type RefreshTokenDb } from './auth-store'
 import { generateFamilyId, generateSessionId, generateTokenId } from './auth-utils'
 
 // ---------------------------------------------------------------------------
@@ -358,7 +358,7 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
             }
 
             // 1. Look up refresh token in the dedicated table
-            const typedDb = db as any
+            const typedDb = db as RefreshTokenDb
 
             const tokenRows = await typedDb
               .selectFrom('refresh_tokens')
@@ -544,7 +544,7 @@ async function persistRefreshTokenOnSignIn(
   auth: BetterAuthInstance,
   signInResult: { token: string; user: { id: string } },
 ): Promise<void> {
-  const typedDb = (auth as Record<string, unknown>).__db as any
+  const typedDb = (auth as Record<string, unknown>).__db as RefreshTokenDb | undefined
   if (!typedDb?.selectFrom) return
 
   try {

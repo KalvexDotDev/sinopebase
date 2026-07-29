@@ -73,7 +73,7 @@ export const DEV_SECRET_PATTERNS = [
 export function isDevSecret(value: string): boolean {
   for (const pattern of DEV_SECRET_PATTERNS) {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
-    const regex = new RegExp('^' + escaped + '$', 'i')
+    const regex = new RegExp(`^${escaped}$`, 'i')
     if (regex.test(value)) return true
   }
   return false

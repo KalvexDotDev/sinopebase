@@ -9,7 +9,7 @@
 import { betterAuth } from 'better-auth'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
 import type pg from 'pg'
-import { Kysely, sql } from 'kysely'
+import { type Kysely, sql } from 'kysely'
 import type { BetterAuthDatabase } from './adapter'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 

@@ -11,6 +11,26 @@
 
 import type { User } from '../sdk/auth'
 
+/** Minimal Kysely-like interface for refresh-token DB write-through. */
+export interface RefreshTokenDb {
+  selectFrom(table: string): {
+    select(columns: string[]): { where(col: string, op: string, val: unknown): { execute(): Promise<Array<Record<string, unknown>>> } }
+    selectAll(): { where(col: string, op: string, val: unknown): { execute(): Promise<Array<Record<string, unknown>>> } }
+    where(col: string, op: string, val: unknown): { execute(): Promise<Array<Record<string, unknown>>> }
+  }
+  insertInto(table: string): {
+    values(data: Record<string, unknown>): { execute(): Promise<unknown> }
+  }
+  updateTable(table: string): {
+    set(data: Record<string, unknown>): {
+      where(col: string, op: string, val: unknown): { execute(): Promise<unknown> }
+    }
+  }
+  deleteFrom(table: string): {
+    where(col: string, op: string, val: unknown): { execute(): Promise<unknown> }
+  }
+}
+
 export interface StoredUser {
   id: string
   email: string
@@ -51,8 +71,8 @@ class AuthStore {
   private refreshTokens = new Map<string, StoredRefreshToken>()
   /** Map<familyId, RefreshTokenFamily> */
   private refreshTokenFamilies = new Map<string, RefreshTokenFamily>()
-  /** Optional Kysely DB instance for persisting refresh tokens to PostgreSQL */
-  private db: any = null
+  /** Minimal Kysely-like interface for the refresh-token write-through path. */
+  private db: RefreshTokenDb | null = null
 
   /**
    * Set a Kysely database instance for persisting refresh token operations
@@ -63,8 +83,7 @@ class AuthStore {
    *   - invalidateSession
    *   - invalidateUser
    */
-  /** @param db — A Kysely instance connected to a PostgreSQL database. */
-  setDatabase(db: any): void {
+  setDatabase(db: RefreshTokenDb): void {
     this.db = db
   }
 
