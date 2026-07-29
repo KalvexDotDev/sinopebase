@@ -46,8 +46,33 @@ console.log(data)
 
 ## 4. Admin UI
 
-Open `http://localhost:8090/_/` — login, manage collections, browse records,
-deploy edge functions, and interact with AI agents.
+Open `http://localhost:8090/_/` in your browser.
+
+**Sign in with your service role key** (set via `SINOPEBASE_SERVICE_ROLE_KEY` env var). The admin dashboard provides:
+
+- **Table Editor** — browse, filter, sort, edit, import/export data
+- **Auth Users** — manage users, reset passwords, view sessions
+- **Storage** — upload, download, manage files and buckets
+- **API Docs** — auto-generated curl + JS examples
+- **Realtime Inspector** — monitor WebSocket connections
+- **Backups** — create, restore, and schedule backups
+- **Metrics** — request rate, latency, errors dashboard
+- **Logs** — server-side request log viewer
+- **AI Playground** — chat with Mastra agents
+
+### Running with TLS (HTTPS)
+
+```bash
+# Generate a self-signed certificate for local development
+bash scripts/gen-dev-cert.sh
+
+# Start with TLS
+bun run cmd/serve.ts --tls-cert dev-certs/cert.pem --tls-key dev-certs/key.pem
+
+# The server now listens on HTTPS (port 8090) with HTTP→HTTPS redirect on port 80
+```
+
+For production, TLS is automatically handled by Railway's edge proxy — no app-level TLS configuration is needed. See [Deployment](deployment.md) for details.
 
 ## Project Structure
 
