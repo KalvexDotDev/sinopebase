@@ -1,6 +1,9 @@
 # dependencies (bun install)
 node_modules
 
+# external project compose files (not for this repo)
+docker-compose.alt.yml
+
 # output
 out
 dist
