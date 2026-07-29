@@ -20,6 +20,9 @@ import { RequestEntityTooLargeError } from './api_error_aliases'
 /** Default maximum body size (32 MiB). */
 export const DEFAULT_MAX_BODY_SIZE = 32 * 1024 * 1024
 
+/** Default maximum upload size (100 MiB). */
+export const DEFAULT_MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+
 // ---------------------------------------------------------------------------
 // Limited reader
 // ---------------------------------------------------------------------------
@@ -99,5 +102,35 @@ export function bodyLimit(limitBytes: number) {
       get: () => limited,
       configurable: true,
     })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Upload body limit
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns an Elysia **onRequest** hook that enforces an upload body size
+ * limit by checking the `Content-Length` header before any body parsing
+ * occurs.
+ *
+ * This is a lighter-weight check than [[bodyLimit]] — it does NOT wrap the
+ * body stream. It is intended to run as a pre-parse guard on upload routes
+ * so that oversized requests are rejected with 413 before any body bytes
+ * are read.
+ *
+ * If `maxBytes <= 0` the limit is disabled.
+ */
+export function uploadBodyLimit(maxBytes?: number) {
+  const limit = maxBytes ?? DEFAULT_MAX_UPLOAD_SIZE
+  return async (ctx: { request: Request; set: { status?: number } }) => {
+    if (limit <= 0) return
+
+    const contentLength = Number(ctx.request.headers.get('content-length') ?? 0)
+    if (contentLength > limit) {
+      throw new RequestEntityTooLargeError(
+        `Upload body exceeds the ${limit} byte limit.`,
+      )
+    }
   }
 }

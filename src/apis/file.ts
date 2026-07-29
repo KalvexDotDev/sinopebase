@@ -4,9 +4,15 @@
  * Implements the /storage/v1/* endpoints backed by the local filesystem.
  * Routes mirror the Supabase Storage API for SDK compatibility.
  */
+import { randomUUID } from 'node:crypto'
+import { appendFile, readFile, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Elysia } from 'elysia'
 import type { PostgresRequestContext } from '../core/db-postgres'
 import type { IFileStore } from '../tools/filesystem/store-interface'
+import { RequestEntityTooLargeError } from './api_error_aliases'
+import { DEFAULT_MAX_UPLOAD_SIZE, uploadBodyLimit } from './middlewares_body_limit'
 import { SignedUrlError, signUrl, verifySignedUrl } from './signed-url'
 import { StorageAccessError, type StorageAccessPolicy } from './storage-access'
 
@@ -19,6 +25,8 @@ interface ParsedUploadBody {
 export interface StoragePluginOptions {
   resolveContext?: (request: Request) => PostgresRequestContext | undefined
   access?: StorageAccessPolicy
+  /** Maximum size for uploaded files in bytes (default 100 MB). */
+  maxUploadSize?: number
 }
 
 function exactArrayBuffer(buffer: Buffer): ArrayBuffer {
@@ -38,8 +46,112 @@ function isParsedUploadBody(value: unknown): value is ParsedUploadBody {
   )
 }
 
-async function parseUploadBody(request: Request, contentType: string): Promise<ParsedUploadBody> {
-  const raw = Buffer.from(await request.arrayBuffer())
+/**
+ * Maximum chunk size held in memory while streaming an upload body.
+ * Once this threshold is exceeded the body is spilled to a temp file.
+ */
+const UPLOAD_IN_MEMORY_THRESHOLD = 1024 * 1024 // 1 MiB
+
+/**
+ * Stream the request body to either an in-memory buffer (small payloads)
+ * or a temporary file (payloads exceeding [[UPLOAD_IN_MEMORY_THRESHOLD]]).
+ *
+ * The function enforces a hard `maxBytes` limit during streaming and
+ * throws [[RequestEntityTooLargeError]] if the body exceeds it.
+ *
+ * Cleanup: if a temp file was created it is deleted before the function
+ * returns (success or failure).
+ */
+async function readBodyStreamed(
+  request: Request,
+  maxBytes: number,
+): Promise<ArrayBuffer> {
+  const contentLength = Number(request.headers.get('content-length') ?? 0)
+  if (contentLength > maxBytes) {
+    throw new RequestEntityTooLargeError(
+      `Upload body exceeds the ${maxBytes} byte limit.`,
+    )
+  }
+
+  const reader = request.body?.getReader()
+  if (!reader) return new ArrayBuffer(0)
+
+  let totalRead = 0
+  const firstChunks: Uint8Array[] = []
+  let tempFile: string | null = null
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value || value.byteLength === 0) continue
+
+      totalRead += value.byteLength
+
+      if (totalRead > maxBytes) {
+        throw new RequestEntityTooLargeError(
+          `Upload body exceeds the ${maxBytes} byte limit.`,
+        )
+      }
+
+      if (tempFile) {
+        // Write this chunk directly to the temp file.
+        await appendFile(tempFile, value)
+      } else if (totalRead > UPLOAD_IN_MEMORY_THRESHOLD) {
+        // First chunk that pushes us over the threshold: flush everything
+        // accumulated so far to a temp file.
+        tempFile = join(tmpdir(), `sinope-upload-${randomUUID()}`)
+        const all = new Uint8Array(totalRead)
+        let offset = 0
+        for (const c of firstChunks) {
+          all.set(c, offset)
+          offset += c.byteLength
+        }
+        all.set(value, offset)
+        await writeFile(tempFile, all)
+        // Drop the in-memory references so the GC can reclaim them.
+        firstChunks.length = 0
+      } else {
+        firstChunks.push(value)
+      }
+    }
+
+    if (tempFile) {
+      const buf = await readFile(tempFile)
+      return buf.buffer.slice(
+        buf.byteOffset,
+        buf.byteOffset + buf.byteLength,
+      ) as ArrayBuffer
+    }
+
+    // Everything fits in memory — concatenate in one shot.
+    const combined = new Uint8Array(totalRead)
+    let offset = 0
+    for (const c of firstChunks) {
+      combined.set(c, offset)
+      offset += c.byteLength
+    }
+    return combined.buffer.slice(
+      combined.byteOffset,
+      combined.byteOffset + combined.byteLength,
+    ) as ArrayBuffer
+  } finally {
+    if (tempFile) {
+      try {
+        await unlink(tempFile)
+      } catch {
+        // Best-effort cleanup — never crash on temp-file removal.
+      }
+    }
+  }
+}
+
+async function parseUploadBody(
+  request: Request,
+  contentType: string,
+  maxUploadSize: number,
+): Promise<ParsedUploadBody> {
+  const raw = Buffer.from(await readBodyStreamed(request, maxUploadSize))
   if (!contentType.startsWith('multipart/form-data')) {
     return { data: exactArrayBuffer(raw), contentType, fields: {} }
   }
@@ -107,6 +219,11 @@ async function storageOperation<T>(
  */
 export function createStoragePlugin(store: IFileStore, options: StoragePluginOptions = {}) {
   const app = new Elysia({ name: 'sinopebase-storage' })
+  const maxUploadSize = options.maxUploadSize ?? DEFAULT_MAX_UPLOAD_SIZE
+
+  // Upload body limit — checks Content-Length before body parsing,
+  // then the parse function streams the body with full enforcement.
+  app.onRequest(uploadBodyLimit(maxUploadSize))
 
   // ── Bucket operations ──
 
@@ -279,7 +396,8 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     {
       // Elysia's default form-data parser drops the empty field name used by
       // storage-js. Preserve FormData, and preserve raw upload bytes too.
-      parse: ({ request }) => parseUploadBody(request, request.headers.get('content-type') ?? ''),
+      parse: ({ request }) =>
+        parseUploadBody(request, request.headers.get('content-type') ?? '', maxUploadSize),
     },
   )
 
