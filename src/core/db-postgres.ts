@@ -169,6 +169,7 @@ export class PostgresDatabase implements IDatabase {
             set_config('request.jwt.claim.role', ${context.role}, true),
             set_config('request.jwt.claims', ${claims}, true)
         `.execute(transaction)
+        await sql`SELECT set_config('role', ${context.role}, true)`.execute(transaction)
       }
 
       const scoped = Object.create(this) as PostgresDatabase
