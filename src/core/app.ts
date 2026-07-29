@@ -507,6 +507,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Elysia } from 'elysia'
 import { Cron } from '~/tools/cron/cron'
+import type { MigrationDB } from '../../migrations/types'
 import {
   ApiError,
   BadRequestError,
@@ -538,6 +539,8 @@ import {
   type PostgresRequestContext,
 } from './db-postgres'
 import { generateRequestId, logger } from './logger'
+import { loadMigrationsFromDirectory } from './migrations_loader'
+import { MigrationRunner } from './migrations_runner'
 
 export interface AppConfig {
   /** PostgreSQL connection URL (empty string = use in-memory db) */
@@ -746,6 +749,14 @@ export class Sinopebase {
       await pg.connect()
       this.database = pg
       logger.info('Database', { provider: 'PostgreSQL', status: 'connected' })
+
+      // Run pending system migrations (PocketBase pattern: migrate on startup).
+      // Migrations are tracked in the _migrations table and skipped if already
+      // applied. In non-production, bootstrapPostgresRequestRoles() (called by
+      // connect()) creates request-context roles at runtime so the least-
+      // privilege migration is a no-op. In production, the migration creates
+      // roles that the pool-level SET ROLE depends on.
+      await this.runSystemMigrations()
 
       // Validate database roles and schema preflight before proceeding.
       // Migration 1779000000_least_privilege_roles must have been applied.
@@ -1446,6 +1457,40 @@ export class Sinopebase {
   /** Expose the config. */
   getConfig(): AppConfig {
     return { ...this.config }
+  }
+
+  /**
+   * Apply pending system migrations (PocketBase pattern: migrate on startup).
+   *
+   * Migrations are tracked in the `_migrations` table — already-applied
+   * migrations are skipped. In non-production, bootstrapPostgresRequestRoles()
+   * creates request-context roles at runtime so the least-privilege migration
+   * is a no-op. In production, this is the only path that creates those roles.
+   */
+  async runSystemMigrations(): Promise<void> {
+    if (!(this.database instanceof PostgresDatabase)) return
+
+    const pool = this.database.getPool()
+    const migrationDB: MigrationDB = {
+      raw: async (sql: string) => {
+        await pool.query(sql)
+      },
+    }
+
+    // Auto-discover migration files from the migrations/ directory.
+    // Files are loaded by <timestamp>_<name>.ts naming convention.
+    const migrationsDir = resolve(import.meta.dir, '../../migrations')
+    const discovered = await loadMigrationsFromDirectory(migrationsDir)
+
+    if (discovered.length === 0) return
+
+    const runner = new MigrationRunner(this.database, migrationDB)
+    runner.registerAll(discovered)
+
+    const count = await runner.run()
+    if (count > 0) {
+      logger.info('Migrations', { applied: count, status: 'complete' })
+    }
   }
 
   /**

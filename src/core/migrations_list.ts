@@ -7,6 +7,8 @@
  * and are tracked in a `_migrations` table.
  */
 
+import type { MigrationDB } from '../../migrations/types'
+
 /**
  * A single migration definition.
  */
@@ -15,10 +17,10 @@ export interface Migration {
   name: string
 
   /** The apply function that runs the migration. */
-  up: () => Promise<void>
+  up: (db: MigrationDB) => Promise<void>
 
   /** Optional rollback function. */
-  down?: () => Promise<void>
+  down?: (db: MigrationDB) => Promise<void>
 }
 
 /**

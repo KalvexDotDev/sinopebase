@@ -22,19 +22,19 @@ export async function up(db: MigrationDB): Promise<void> {
       "subject": "Login from a new location",
       "body": "<p>Hello,</p><p>We detected a login to your {APP_NAME} account from a new device or location:</p><p><em>{ALERT_INFO}</em></p><p><strong>If this wasn''t you, please change your password immediately.</strong></p><p>Thanks,<br>{APP_NAME} team</p>"
     }',
-    updated = datetime('now')
+    updated = now()
     WHERE key = 'auth_alert_template'
   `)
 
   // Also update any collection auth options that have the old default template
   await db.raw(`
     UPDATE _collections
-    SET options = json_set(
-      options,
-      '$.authAlert.template.body',
-      '<p>Hello,</p><p>We detected a login to your {APP_NAME} account from a new device or location:</p><p><em>{ALERT_INFO}</em></p><p><strong>If this wasn''t you, please change your password immediately.</strong></p><p>Thanks,<br>{APP_NAME} team</p>'
-    ),
-    updated = datetime('now')
+    SET options = jsonb_set(
+      options::jsonb,
+      '{authAlert,template,body}',
+      '"<p>Hello,</p><p>We detected a login to your {APP_NAME} account from a new device or location:</p><p><em>{ALERT_INFO}</em></p><p><strong>If this wasn''t you, please change your password immediately.</strong></p><p>Thanks,<br>{APP_NAME} team</p>"'::jsonb
+    )::text,
+    updated = now()
     WHERE type = 'auth'
   `)
 }
@@ -50,7 +50,7 @@ export async function down(db: MigrationDB): Promise<void> {
       "subject": "New login from {ALERT_INFO}",
       "body": "<p>Hello,</p><p>Someone (hopefully you) has logged in from: {ALERT_INFO}</p><p>If this wasn''t you, please change your password.</p><p>Thanks,<br>{APP_NAME} team</p>"
     }',
-    updated = datetime('now')
+    updated = now()
     WHERE key = 'auth_alert_template'
   `)
 }

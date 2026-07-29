@@ -391,12 +391,8 @@ export class BaseApp extends Sinopebase implements App {
     await this.onBackupRestoreHook.trigger(event)
   }
 
-  async runSystemMigrations(): Promise<void> {
-    // Placeholder — migration runner not yet integrated
-  }
-
   async runAppMigrations(): Promise<void> {
-    // Placeholder — migration runner not yet integrated
+    // App migrations are registered by plugins — no-op by default.
   }
 
   async runAllMigrations(): Promise<void> {

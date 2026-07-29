@@ -18,7 +18,7 @@ export async function up(db: MigrationDB): Promise<void> {
     CREATE TABLE IF NOT EXISTS _migrations (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
       name TEXT NOT NULL UNIQUE,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      applied_at TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -28,8 +28,8 @@ export async function up(db: MigrationDB): Promise<void> {
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
       key TEXT NOT NULL UNIQUE,
       value TEXT NOT NULL DEFAULT '',
-      created TEXT NOT NULL DEFAULT (datetime('now')),
-      updated TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now()),
+      updated TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -48,8 +48,8 @@ export async function up(db: MigrationDB): Promise<void> {
       update_rule TEXT,
       delete_rule TEXT,
       options TEXT NOT NULL DEFAULT '{}',
-      created TEXT NOT NULL DEFAULT (datetime('now')),
-      updated TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now()),
+      updated TEXT NOT NULL DEFAULT (now())
     )
   `)
 }

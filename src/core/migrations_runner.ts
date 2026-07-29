@@ -7,6 +7,7 @@
  * any new migrations during bootstrap.
  */
 
+import type { MigrationDB } from '../../migrations/types'
 import type { IDatabase } from './db-interface'
 import type { Migration } from './migrations_list'
 
@@ -20,14 +21,17 @@ export class MigrationRunner {
   /**
    * Creates a new MigrationRunner.
    *
-   * @param db - The database instance.
+   * @param db - The database instance for tracking.
+   * @param migrationDB - Raw SQL executor passed to migration up/down functions.
    * @param tableName - The table name for tracking migrations.
    */
   private db: IDatabase
+  private migrationDB: MigrationDB
   private tableName: string
 
-  constructor(db: IDatabase, tableName = '_migrations') {
+  constructor(db: IDatabase, migrationDB: MigrationDB, tableName = '_migrations') {
     this.db = db
+    this.migrationDB = migrationDB
     this.tableName = tableName
   }
 
@@ -49,10 +53,19 @@ export class MigrationRunner {
 
   /**
    * Ensures the migrations tracking table exists.
+   *
+   * Uses raw SQL so the tracking table can be created before any
+   * other migration infrastructure exists.
    */
   async ensureTable(): Promise<void> {
     if (!(await this.db.hasTable(this.tableName))) {
-      await this.db.createTable(this.tableName)
+      await this.migrationDB.raw(`
+        CREATE TABLE IF NOT EXISTS ${this.tableName} (
+          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          name TEXT NOT NULL,
+          applied_at TIMESTAMP DEFAULT now()
+        )
+      `)
     }
   }
 
@@ -90,12 +103,14 @@ export class MigrationRunner {
     let count = 0
 
     for (const migration of pending) {
-      await migration.up()
+      await migration.up(this.migrationDB)
 
-      await this.db.insert(this.tableName, {
-        name: migration.name,
-        appliedAt: new Date().toISOString(),
-      })
+      // Track migration as applied. Migration names come from the filename
+      // regex (timestamps + snake_case), so string interpolation is safe here.
+      // nosemgrep: ts-sql-injection-concat
+      await this.migrationDB.raw(
+        `INSERT INTO ${this.tableName} (name, applied_at) VALUES ('${migration.name}', '${new Date().toISOString()}')`,
+      )
 
       this.applied.add(migration.name)
       count++

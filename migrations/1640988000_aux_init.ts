@@ -21,8 +21,8 @@ export async function up(db: MigrationDB): Promise<void> {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL DEFAULT '',
       token_key TEXT NOT NULL DEFAULT '',
-      created TEXT NOT NULL DEFAULT (datetime('now')),
-      updated TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now()),
+      updated TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -33,7 +33,7 @@ export async function up(db: MigrationDB): Promise<void> {
       level INTEGER NOT NULL DEFAULT 0,
       message TEXT NOT NULL DEFAULT '',
       data TEXT NOT NULL DEFAULT '{}',
-      created TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -45,8 +45,8 @@ export async function up(db: MigrationDB): Promise<void> {
       record_id TEXT NOT NULL,
       provider TEXT NOT NULL,
       provider_id TEXT NOT NULL,
-      created TEXT NOT NULL DEFAULT (datetime('now')),
-      updated TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now()),
+      updated TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -57,7 +57,7 @@ export async function up(db: MigrationDB): Promise<void> {
       collection_id TEXT NOT NULL,
       record_id TEXT NOT NULL,
       fingerprint TEXT NOT NULL,
-      created TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -69,9 +69,9 @@ export async function up(db: MigrationDB): Promise<void> {
       record_id TEXT NOT NULL,
       method TEXT NOT NULL DEFAULT '',
       value TEXT NOT NULL DEFAULT '',
-      verified TEXT NOT NULL DEFAULT (datetime('now')),
-      created TEXT NOT NULL DEFAULT (datetime('now')),
-      updated TEXT NOT NULL DEFAULT (datetime('now'))
+      verified TEXT NOT NULL DEFAULT (now()),
+      created TEXT NOT NULL DEFAULT (now()),
+      updated TEXT NOT NULL DEFAULT (now())
     )
   `)
 
@@ -83,8 +83,8 @@ export async function up(db: MigrationDB): Promise<void> {
       record_id TEXT NOT NULL,
       password TEXT NOT NULL DEFAULT '',
       attempts INTEGER NOT NULL DEFAULT 0,
-      created TEXT NOT NULL DEFAULT (datetime('now')),
-      updated TEXT NOT NULL DEFAULT (datetime('now'))
+      created TEXT NOT NULL DEFAULT (now()),
+      updated TEXT NOT NULL DEFAULT (now())
     )
   `)
 

@@ -156,21 +156,29 @@ export class PostgresDatabase implements IDatabase {
     operation: (db: PostgresDatabase) => Promise<T>,
   ): Promise<T> {
     return this.writer.transaction().execute(async (transaction) => {
-      if (context.role !== 'service_role') {
-        const userId = context.userId ?? ''
-        const claims = JSON.stringify({
-          sub: userId || undefined,
-          role: context.role,
-        })
+      const userId = context.userId ?? ''
+      const claims = JSON.stringify({
+        sub: userId || undefined,
+        role: context.role,
+      })
 
-        await sql`
-          SELECT
-            set_config('request.jwt.claim.sub', ${userId}, true),
-            set_config('request.jwt.claim.role', ${context.role}, true),
-            set_config('request.jwt.claims', ${claims}, true)
-        `.execute(transaction)
-        await sql`SELECT set_config('role', ${context.role}, true)`.execute(transaction)
-      }
+      // Set PostgREST-compatible GUC parameters so auth.uid() and
+      // current_setting('request.jwt.claims') work inside RLS policies.
+      await sql`
+        SELECT
+          set_config('request.jwt.claim.sub', ${userId}, true),
+          set_config('request.jwt.claim.role', ${context.role}, true),
+          set_config('request.jwt.claims', ${claims}, true)
+      `.execute(transaction)
+      await sql`SELECT set_config('role', ${context.role}, true)`.execute(transaction)
+
+      // SET LOCAL ROLE switches the actual PostgreSQL role for RLS policy
+      // evaluation.  Scoped to the transaction so the connection reverts to
+      // the pool-default role automatically on COMMIT / ROLLBACK.
+      // Supabase PostgREST uses the same pattern: authenticator role connects,
+      // then SET LOCAL ROLE <anon|authenticated|service_role> per request.
+      // nosemgrep: ts-sql-injection-concat — role names come from a trusted union type
+      await sql`SET LOCAL ROLE ${sql.raw(context.role)}`.execute(transaction)
 
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
@@ -196,7 +204,7 @@ export class PostgresDatabase implements IDatabase {
       )
     `.execute(this.writer)
 
-    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`
+    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role`
       .execute(this.writer)
       .catch(() => {
         /* best-effort — roles may not exist yet */
@@ -205,6 +213,9 @@ export class PostgresDatabase implements IDatabase {
       .execute(this.writer)
       .catch(() => undefined)
     await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ${sql.table(table)} TO authenticated`
+      .execute(this.writer)
+      .catch(() => undefined)
+    await sql`GRANT ALL ON ${sql.table(table)} TO service_role`
       .execute(this.writer)
       .catch(() => undefined)
   }

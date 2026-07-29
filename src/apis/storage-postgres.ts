@@ -76,15 +76,17 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     `.execute(writer)
 
     // Grant schema access and table permissions to request roles.
-    await sql`GRANT USAGE ON SCHEMA storage TO anon, authenticated`
+    await sql`GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role`
       .execute(writer)
       .catch(() => undefined)
-    await sql`GRANT SELECT, INSERT ON storage.buckets TO anon, authenticated`.execute(writer)
-    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated`.execute(
+    await sql`GRANT SELECT, INSERT ON storage.buckets TO anon, authenticated, service_role`.execute(
+      writer,
+    )
+    await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated, service_role`.execute(
       writer,
     )
     // Also grant the sequences so inserts that generate UUIDs work under SET ROLE.
-    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`
+    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role`
       .execute(writer)
       .catch(() => undefined)
 
@@ -97,10 +99,10 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
       LANGUAGE sql STABLE
       AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$
     `.execute(writer)
-    await sql`GRANT USAGE ON SCHEMA auth TO anon, authenticated`
+    await sql`GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role`
       .execute(writer)
       .catch(() => undefined)
-    await sql`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated`
+    await sql`GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role`
       .execute(writer)
       .catch(() => undefined)
 

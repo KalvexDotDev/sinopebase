@@ -50,7 +50,7 @@ describePostgres('PostgreSQL request RLS context', () => {
       );
       ALTER TABLE sinopebase_rls_context_test ENABLE ROW LEVEL SECURITY;
       GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON sinopebase_rls_context_test TO anon, authenticated;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON sinopebase_rls_context_test TO anon, authenticated, service_role;
       GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated;
       DO $$
       BEGIN
