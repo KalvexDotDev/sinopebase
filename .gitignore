@@ -47,3 +47,4 @@ trivy-results.sarif
 junit.xml
 jscpd-report.jsonsemgrep-out.json
 jscpd-report.json/jscpd-report.json
+jscpd-report.json/
