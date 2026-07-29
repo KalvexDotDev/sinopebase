@@ -13,9 +13,9 @@
 // ---------------------------------------------------------------------------
 
 import type { Filter, IDatabase } from '~/core/db-interface'
+import { PostgresDatabase, type PostgresRequestContext } from '~/core/db-postgres'
 import type { IFileStore } from '~/tools/filesystem/store-interface'
 import type { Tool } from './agent'
-import { PostgresDatabase, type PostgresRequestContext } from '~/core/db-postgres'
 
 // ---------------------------------------------------------------------------
 // Types

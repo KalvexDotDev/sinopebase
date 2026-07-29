@@ -8,10 +8,10 @@
 
 import { betterAuth } from 'better-auth'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
-import type pg from 'pg'
 import { type Kysely, sql } from 'kysely'
-import type { BetterAuthDatabase } from './adapter'
+import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
+import type { BetterAuthDatabase } from './adapter'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
 let tablesEnsured = false
