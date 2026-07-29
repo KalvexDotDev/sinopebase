@@ -76,6 +76,21 @@ interface RealtimeHubOptions<TContext> {
   maxDeliveryQueue?: number
   /** Maximum payload body length in bytes for broadcast messages (default 102400 = 100 KB). */
   maxBroadcastPayloadSize?: number
+  /**
+   * Whitelist of allowed topics for subscription. Each entry supports exact
+   * match or a trailing `/*` wildcard (e.g. `"realtime:*"` matches
+   * `"realtime:chat"` and `"realtime:presence"`). Unlisted topics are
+   * rejected during phx_join. When unset or empty, all topics are allowed.
+   */
+  topicWhitelist?: string[]
+  /**
+   * When true, client-originated broadcast events are rejected.
+   * Default false. In production mode this should be true — only the
+   * server may broadcast.
+   */
+  disableClientBroadcast?: boolean
+  /** Maximum number of messages a single client may send per minute (default 300). */
+  maxMessagesPerMinute?: number
 }
 
 /** Minimal subset shared by ElysiaWS and test doubles. */
@@ -114,6 +129,17 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   private nextBindingId = 1
   private readonly maxDeliveryQueue: number
   private readonly maxBroadcastPayloadSize: number
+  private readonly topicWhitelist: string[]
+  private readonly disableClientBroadcast: boolean
+  private readonly maxMessagesPerMinute: number
+
+  /**
+   * Per-connection rate limiting: maps client key to an array of
+   * Unix-millisecond timestamps for messages received within the
+   * current sliding window. Cleaned periodically during message
+   * processing and on client removal.
+   */
+  private readonly messageCounters = new Map<string, number[]>()
 
   /**
    * Per-client message serialisation queue (per-batch, not persistent).
@@ -137,6 +163,9 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     this.options = options
     this.maxDeliveryQueue = options.maxDeliveryQueue ?? 256
     this.maxBroadcastPayloadSize = options.maxBroadcastPayloadSize ?? 102400
+    this.topicWhitelist = options.topicWhitelist ?? []
+    this.disableClientBroadcast = options.disableClientBroadcast ?? false
+    this.maxMessagesPerMinute = options.maxMessagesPerMinute ?? 300
   }
 
   /** Resolve the stable connection key. Elysia assigns `ws.id` once per connection;
@@ -151,6 +180,49 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     const id = `synthetic-${this.nextBindingId++}`
     data._realtimeCid = id
     return id
+  }
+
+  /**
+   * Check whether a topic matches any entry in the whitelist.
+   * Supports exact match and trailing `/*` wildcard (prefix match).
+   */
+  private isTopicAllowed(topic: string): boolean {
+    for (const pattern of this.topicWhitelist) {
+      if (pattern.endsWith('/*')) {
+        const prefix = pattern.slice(0, -1) // strip trailing `*`
+        if (topic === prefix.slice(0, -1) || topic.startsWith(prefix)) return true
+      }
+      if (pattern === topic) return true
+    }
+    return false
+  }
+
+  /**
+   * Check and record a message from the given client key against the
+   * per-minute rate limit. Returns true if the message is within the
+   * limit, or false if the client has exceeded it.
+   */
+  private checkRateLimit(key: string): boolean {
+    const now = Date.now()
+    const windowMs = 60_000 // 1 minute
+    let timestamps = this.messageCounters.get(key)
+    if (!timestamps) {
+      timestamps = []
+      this.messageCounters.set(key, timestamps)
+    }
+
+    // Prune timestamps outside the sliding window.
+    const cutoff = now - windowMs
+    while (timestamps.length > 0 && timestamps[0] < cutoff) {
+      timestamps.shift()
+    }
+
+    if (timestamps.length >= this.maxMessagesPerMinute) {
+      return false
+    }
+
+    timestamps.push(now)
+    return true
   }
 
   async handleMessage(ws: WSClient, rawMessage: unknown): Promise<void> {
@@ -168,6 +240,17 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   private async processMessage(ws: WSClient, rawMessage: unknown, key: string): Promise<void> {
     const msg = parsePhoenixMessage(rawMessage)
     if (!msg) return
+
+    // ── Per-connection rate limit ──
+    // Check and record this message against the client's sliding window.
+    // When the limit is exceeded, send a phx_reply error and skip processing.
+    if (!this.checkRateLimit(key)) {
+      sendPhoenix(ws, msg, 'phx_reply', {
+        status: 'error',
+        response: { reason: 'rate limit exceeded' },
+      })
+      return
+    }
 
     let entry = this.clients.get(key)
 
@@ -208,6 +291,15 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           this.options.canJoinTopic &&
           !this.options.canJoinTopic(context, msg.topic)
         ) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'topic not authorized' },
+          })
+          return
+        }
+
+        // ── Topic whitelist check ──
+        if (this.topicWhitelist.length > 0 && !this.isTopicAllowed(msg.topic)) {
           sendPhoenix(ws, msg, 'phx_reply', {
             status: 'error',
             response: { reason: 'topic not authorized' },
@@ -295,6 +387,15 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           return
         }
 
+        // ── Client broadcast disabled (config-driven) ──
+        if (this.disableClientBroadcast) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'client broadcast disabled' },
+          })
+          return
+        }
+
         const broadcastPayload = msg.payload
         const broadcastEvent =
           typeof broadcastPayload.event === 'string' ? broadcastPayload.event : ''
@@ -348,6 +449,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     const key = this.connKey(ws)
     this.clients.delete(key)
     this.messageQueue.delete(key)
+    this.messageCounters.delete(key)
   }
 
   async preparePostgresChange(change: PostgresChange): Promise<PreparedRealtimeChange> {
