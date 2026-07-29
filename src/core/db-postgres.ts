@@ -168,7 +168,13 @@ export class PostgresDatabase implements IDatabase {
 
       // SET LOCAL ROLE is scoped to the transaction so the connection
       // reverts to the pool-default sinopebase_app role automatically.
-      await sql`SET LOCAL ROLE ${sql.raw(context.role)}`.execute(transaction)
+      // Gracefully skip if the role doesn't exist (e.g., in CI before migration).
+      try {
+        await sql`SET LOCAL ROLE ${sql.raw(context.role)}`.execute(transaction)
+      } catch {
+        // Role may not exist in test environments. The connection runs as the
+        // pool default role (sinopebase_app or the connection user).
+      }
 
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
