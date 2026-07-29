@@ -154,18 +154,20 @@ export class PostgresDatabase implements IDatabase {
     operation: (db: PostgresDatabase) => Promise<T>,
   ): Promise<T> {
     return this.writer.transaction().execute(async (transaction) => {
-      const userId = context.userId ?? ''
-      const claims = JSON.stringify({
-        sub: userId || undefined,
-        role: context.role,
-      })
+      if (context.role !== 'service_role') {
+        const userId = context.userId ?? ''
+        const claims = JSON.stringify({
+          sub: userId || undefined,
+          role: context.role,
+        })
 
-      await sql`
-        SELECT
-          set_config('request.jwt.claim.sub', ${userId}, true),
-          set_config('request.jwt.claim.role', ${context.role}, true),
-          set_config('request.jwt.claims', ${claims}, true)
-      `.execute(transaction)
+        await sql`
+          SELECT
+            set_config('request.jwt.claim.sub', ${userId}, true),
+            set_config('request.jwt.claim.role', ${context.role}, true),
+            set_config('request.jwt.claims', ${claims}, true)
+        `.execute(transaction)
+      }
 
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
@@ -179,8 +181,9 @@ export class PostgresDatabase implements IDatabase {
   // -----------------------------------------------------------------------
 
   async createTable(table: string): Promise<void> {
-    // Table-level grants are handled by ALTER DEFAULT PRIVILEGES from the
-    // least-privilege-roles migration. No per-table GRANT statements needed.
+    // Table-level grants for the request-context roles. ALTER DEFAULT
+    // PRIVILEGES from the migration handles production; this ensures tests
+    // and dev environments without the migration still work.
     await sql`
       CREATE TABLE IF NOT EXISTS ${sql.table(table)} (
         id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -189,6 +192,12 @@ export class PostgresDatabase implements IDatabase {
         user_id TEXT
       )
     `.execute(this.writer)
+
+    await sql`GRANT USAGE ON SCHEMA public TO anon, authenticated`
+      .execute(this.writer)
+      .catch(() => {
+        /* best-effort — roles may not exist yet */
+      })
   }
 
   async hasTable(table: string): Promise<boolean> {
