@@ -569,6 +569,8 @@ export interface AppConfig {
   anonKey?: string
   /** Server bind hostname */
   host?: string
+  /** Enable PG LISTEN/NOTIFY for cross-process realtime fan-out (default false). */
+  enablePgNotify?: boolean
   /** Application name shown in the admin UI. */
   appName?: string
   /** TLS certificate and key file paths */
@@ -610,6 +612,9 @@ export class Sinopebase {
   private server: Elysia | null = null
   private pendingServer: Elysia | null = null
   private _redirectServer: ReturnType<typeof Bun.serve> | null = null
+  private _pgListener: import('../apis/realtime-pg-listener').PgRealtimeListener | null = null
+  /** Unique process identifier for PG LISTEN/NOTIFY self-skip. */
+  private processId: string = ''
   private database: IDatabase | null = null
   private fileStore: IFileStore | null = null
   private auth: AuthInstance | null = null
@@ -923,6 +928,30 @@ export class Sinopebase {
         )
       },
     })
+
+    // ── PG LISTEN/NOTIFY listener for cross-process realtime fan-out (C1) ──
+    this.processId = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
+    if (this.config.enablePgNotify && this.database instanceof PostgresDatabase) {
+      try {
+        const { PgRealtimeListener, attachRealtimeTriggers } = await import(
+          '../apis/realtime-pg-listener'
+        )
+        const pool = this.database.getPool()
+        this._pgListener = new PgRealtimeListener({
+          pool,
+          hub: realtime,
+          processId: this.processId,
+          log: (msg, data) => logger.info(msg, data),
+        })
+        await this._pgListener.start()
+        // Attach triggers to existing tables after migrations have run
+        await attachRealtimeTriggers(pool, (msg, data) => logger.info(msg, data))
+      } catch (err) {
+        logger.warn('[realtime-pg] Failed to start PG listener', {
+          error: (err as Error).message,
+        })
+      }
+    }
 
     // ── Request ID store (closed over by onRequest + onAfterResponse) ──
     const requestMeta = new WeakMap<Request, { startTime: number; requestId: string }>()
@@ -1509,6 +1538,12 @@ export class Sinopebase {
       this._redirectServer = null
     }
 
+    // Stop the PG LISTEN/NOTIFY listener if active
+    if (this._pgListener) {
+      try { await this._pgListener.stop() } catch { /* ignore */ }
+      this._pgListener = null
+    }
+
     // Close the database connection pool before clearing state.
     if (this.database instanceof PostgresDatabase) {
       try {
@@ -1643,6 +1678,7 @@ export class Sinopebase {
       serviceRoleKey: this.config.serviceRoleKey || process.env.SINOPEBASE_SERVICE_ROLE_KEY || '',
       anonKey: this.config.anonKey || process.env.SINOPEBASE_ANON_KEY || '',
       appName: this.config.appName ?? 'Sinopebase',
+      enablePgNotify: this.config.enablePgNotify ?? false,
       port: this.config.port ?? 8090,
       host: this.config.host ?? '0.0.0.0',
       tls: this.config.tls,

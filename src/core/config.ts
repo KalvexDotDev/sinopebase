@@ -12,6 +12,7 @@ export const ProductionConfig = z.object({
   serviceRoleKey: z.string().min(32),
   anonKey: z.string().min(32),
   appName: z.string().default('Sinopebase'),
+  enablePgNotify: z.boolean().default(false),
   port: z.number().int().min(1).max(65535).default(8090),
   host: z.string().default('0.0.0.0'),
   tls: z.object({ cert: z.string(), key: z.string() }).optional(),
