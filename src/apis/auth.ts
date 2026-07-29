@@ -313,6 +313,8 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
           // Sign up via better-auth, then sign in to get a session token
           await auth.api.signUpEmail({ body: { email, password, name: '' } })
           const signInResult = await auth.api.signInEmail({ body: { email, password } })
+          // Store initial refresh token entry for rotation tracking
+          await persistRefreshTokenOnSignIn(auth, signInResult)
           return bridgeSignInResponse(signInResult)
         } catch (err: unknown) {
           set.status = 400
@@ -330,6 +332,8 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
           }
           try {
             const result = await auth.api.signInEmail({ body: { email, password } })
+            // Store initial refresh token entry for rotation tracking
+            await persistRefreshTokenOnSignIn(auth, result)
             return bridgeSignInResponse(result)
           } catch (err: unknown) {
             set.status = 400
@@ -346,34 +350,142 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
             return errorResponse('Invalid refresh token', 400)
           }
           try {
-            const row = await lookupSessionByToken(auth, refresh_token)
-            if (!row) {
+            const db = (auth as Record<string, unknown>).__db
+            if (!db) {
+              // No DB available — cannot perform rotation
               set.status = 400
               return errorResponse('Invalid refresh token', 400)
             }
-            // TODO(v0.5): Use auth.api.refreshSession() when better-auth exposes it.
-            // Currently uses direct DB token rotation as migration bridge.
-            const db = auth.__db
-            if (db?.updateTable) {
+
+            // 1. Look up refresh token in the dedicated table
+            const typedDb = db as any
+
+            const tokenRows = await typedDb
+              .selectFrom('refresh_tokens')
+              .selectAll()
+              .where('token_id', '=', refresh_token)
+              .execute()
+
+            // Fallback: if no refresh_tokens entry exists, check session table directly
+            // (supports sessions created before the refresh_tokens table existed)
+            if (!tokenRows[0]) {
+              const row = await lookupSessionByToken(auth, refresh_token)
+              if (!row) {
+                set.status = 400
+                return errorResponse('Invalid refresh token', 400)
+              }
+              // Legacy rotation: update session token directly
               const newToken = crypto.randomUUID().replace(/-/g, '')
-              const rows = await db
+              const sessions = await typedDb
                 .selectFrom('session')
-                .select('session.id')
-                .where('session.token', '=', refresh_token)
+                .select(['id'])
+                .where('token', '=', refresh_token)
                 .execute()
-              const sessionId = (rows[0] as Record<string, unknown> | undefined)?.id as
+              const sessionId = (sessions[0] as Record<string, unknown> | undefined)?.id as
                 | string
                 | undefined
               if (sessionId) {
-                await db
+                await typedDb
                   .updateTable('session')
-                  .set({ token: newToken, updatedAt: new Date() })
-                  .where('session.id', '=', sessionId)
+                  .set({ token: newToken, updatedAt: new Date() } as Record<string, unknown>)
+                  .where('id', '=', sessionId)
                   .execute()
               }
-              return bridgeSignInResponse({ token: newToken, user: row })
+              return bridgeSignInResponse(
+                { token: newToken, user: row } as BetterAuthSignInResult,
+              )
             }
-            return bridgeSignInResponse({ token: refresh_token, user: row })
+
+            const tokenRecord = tokenRows[0] as Record<string, unknown>
+            const tokenId = tokenRecord.token_id as string
+            const userId = tokenRecord.user_id as string
+            const sessionId = tokenRecord.session_id as string
+            const familyId = tokenRecord.family_id as string
+            const consumed = tokenRecord.consumed as boolean
+            const compromised = tokenRecord.compromised as boolean
+            const expiresAt = tokenRecord.expires_at as Date
+
+            // 2. Check expiry
+            if (expiresAt < new Date()) {
+              set.status = 400
+              return errorResponse('Invalid refresh token', 400)
+            }
+
+            // 3. Check compromised flag
+            if (compromised) {
+              set.status = 400
+              return errorResponse('Invalid refresh token', 400)
+            }
+
+            // 4. Check consumed flag — REPLAY DETECTION
+            if (consumed) {
+              // Mark entire family as compromised
+              await typedDb
+                .updateTable('refresh_tokens')
+                .set({ compromised: true } as Record<string, unknown>)
+                .where('family_id', '=', familyId)
+                .execute()
+              // Log audit event
+              console.error(
+                `[AUDIT] Refresh token replay detected: token_id=${tokenId}, family=${familyId}, user=${userId}`,
+              )
+              set.status = 400
+              return errorResponse('Invalid refresh token', 400)
+            }
+
+            // 5. Look up session to get user info
+            const sessions = await typedDb
+              .selectFrom('session')
+              .select(['userId'])
+              .where('id', '=', sessionId)
+              .execute()
+            const sessionUserId = (sessions[0] as Record<string, unknown> | undefined)
+              ?.userId as string | undefined
+            if (!sessionUserId) {
+              set.status = 400
+              return errorResponse('Invalid refresh token', 400)
+            }
+
+            // 6. Mark old token as consumed
+            await typedDb
+              .updateTable('refresh_tokens')
+              .set({ consumed: true } as Record<string, unknown>)
+              .where('token_id', '=', tokenId)
+              .execute()
+
+            // 7. Generate new tokens
+            const newToken = crypto.randomUUID().replace(/-/g, '')
+            const newRefreshTokenId = crypto.randomUUID().replace(/-/g, '')
+
+            // Update session token
+            await typedDb
+              .updateTable('session')
+              .set({ token: newToken, updatedAt: new Date() } as Record<string, unknown>)
+              .where('id', '=', sessionId)
+              .execute()
+
+            // Create new refresh token record
+            const expiresAtDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            await typedDb
+              .insertInto('refresh_tokens')
+              .values({
+                token_id: newRefreshTokenId,
+                user_id: userId,
+                session_id: sessionId,
+                family_id: familyId,
+                parent_token_id: tokenId,
+                consumed: false,
+                compromised: false,
+                expires_at: expiresAtDate,
+                created_at: new Date(),
+              } as Record<string, unknown>)
+              .execute()
+
+            // 8. Return new session with tokens
+            const userRow = await lookupSessionByToken(auth, newToken)
+            return bridgeSignInResponse(
+              { token: newToken, user: userRow } as BetterAuthSignInResult,
+            )
           } catch {
             set.status = 400
             return errorResponse('Invalid refresh token', 400)
@@ -417,4 +529,51 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
         }
       })
   )
+}
+
+// ---------------------------------------------------------------------------
+// Refresh token persistence helper
+// ---------------------------------------------------------------------------
+
+/**
+ * After a successful sign-in (or sign-up + sign-in), store an initial
+ * refresh token entry in the `refresh_tokens` table so the rotation
+ * and replay-detection flow works for this session.
+ */
+async function persistRefreshTokenOnSignIn(
+  auth: BetterAuthInstance,
+  signInResult: { token: string; user: { id: string } },
+): Promise<void> {
+  const typedDb = (auth as Record<string, unknown>).__db as any
+  if (!typedDb?.selectFrom) return
+
+  try {
+    const sessions = await typedDb
+      .selectFrom('session')
+      .select(['id'])
+      .where('token', '=', signInResult.token)
+      .execute()
+    if (!sessions[0]) return
+
+    const sessionId = sessions[0].id as string
+    const newRefreshTokenId = crypto.randomUUID().replace(/-/g, '')
+    const familyId = crypto.randomUUID().replace(/-/g, '')
+
+    await typedDb
+      .insertInto('refresh_tokens')
+      .values({
+        token_id: newRefreshTokenId,
+        user_id: signInResult.user.id,
+        session_id: sessionId,
+        family_id: familyId,
+        parent_token_id: null,
+        consumed: false,
+        compromised: false,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        created_at: new Date(),
+      } as Record<string, unknown>)
+      .execute()
+  } catch {
+    // Non-fatal — refresh token storage is best-effort during sign-in
+  }
 }

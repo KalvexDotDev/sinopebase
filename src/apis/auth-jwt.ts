@@ -18,6 +18,8 @@ export interface JwtPayload {
   iat: number
   /** Session identifier — used for targeted invalidation */
   sid?: string
+  /** Token type claim — enforces semantic separation at the cryptographic level */
+  type?: 'access' | 'refresh'
 }
 
 export interface JwtRefreshPayload {
@@ -29,6 +31,8 @@ export interface JwtRefreshPayload {
   exp: number
   iss: string
   aud: string
+  /** Token type claim — enforces semantic separation at the cryptographic level */
+  type?: 'access' | 'refresh'
 }
 
 function getSecret(): Uint8Array {
@@ -60,6 +64,7 @@ export async function generateAccessToken(user: User, sessionId: string): Promis
     aud: user.aud ?? TOKEN_AUDIENCE,
     sid: sessionId,
     jti: crypto.randomUUID(),
+    type: 'access',
   })
     .setProtectedHeader({ alg: 'HS256', kid: 'sinopebase-v1' })
     .setIssuer(TOKEN_ISSUER)
@@ -89,6 +94,7 @@ export async function generateRefreshToken(
     sid: sessionId,
     jti: tokenId,
     family: familyId,
+    type: 'refresh',
   })
     .setProtectedHeader({ alg: 'HS256', kid: 'sinopebase-v1' })
     .setIssuer(TOKEN_ISSUER)

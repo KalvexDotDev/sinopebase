@@ -3,6 +3,10 @@
  * Temporary until the database layer is wired in.
  *
  * v2: Adds refresh token families with rotation tracking and replay detection.
+ * v3: Adds optional Kysely persistence — refresh token operations write
+ *     through to a `refresh_tokens` PostgreSQL table when a DB is set via
+ *     setDatabase(). The in-memory store remains the source of truth for
+ *     the JOSE fallback path; DB writes are best-effort (fire-and-forget).
  */
 
 import type { User } from '../sdk/auth'
@@ -47,6 +51,22 @@ class AuthStore {
   private refreshTokens = new Map<string, StoredRefreshToken>()
   /** Map<familyId, RefreshTokenFamily> */
   private refreshTokenFamilies = new Map<string, RefreshTokenFamily>()
+  /** Optional Kysely DB instance for persisting refresh tokens to PostgreSQL */
+  private db: any = null
+
+  /**
+   * Set a Kysely database instance for persisting refresh token operations
+   * to the `refresh_tokens` table. When set, the following methods also
+   * write through to PostgreSQL (fire-and-forget):
+   *   - addRefreshToken
+   *   - consumeRefreshToken
+   *   - invalidateSession
+   *   - invalidateUser
+   */
+  /** @param db — A Kysely instance connected to a PostgreSQL database. */
+  setDatabase(db: any): void {
+    this.db = db
+  }
 
   async createUser(email: string, passwordHash: string): Promise<StoredUser> {
     if (this.usersByEmail.has(email)) {
@@ -111,18 +131,40 @@ class AuthStore {
     }
 
     // Store the token
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
     this.refreshTokens.set(tokenId, {
       tokenId,
       userId,
       sessionId,
       familyId,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt,
       consumed: false,
       parentTokenId,
     })
 
     // Add to family chain
     family.tokenIds.push(tokenId)
+
+    // Write through to DB (fire-and-forget)
+    if (this.db) {
+      this.db
+        .insertInto('refresh_tokens')
+        .values({
+          token_id: tokenId,
+          user_id: userId,
+          session_id: sessionId,
+          family_id: familyId,
+          parent_token_id: parentTokenId ?? null,
+          consumed: false,
+          compromised: false,
+          expires_at: expiresAt,
+          created_at: new Date(),
+        } as Record<string, unknown>)
+        .execute()
+        .catch(() => {
+          /* fire-and-forget */
+        })
+    }
   }
 
   /**
@@ -166,6 +208,17 @@ class AuthStore {
           this.refreshTokens.delete(tid)
         }
       }
+      // Write through to DB (fire-and-forget)
+      if (this.db) {
+        this.db
+          .updateTable('refresh_tokens')
+          .set({ compromised: true } as Record<string, unknown>)
+          .where('family_id', '=', data.familyId)
+          .execute()
+          .catch(() => {
+            /* fire-and-forget */
+          })
+      }
       return { valid: false, replay: true, compromised: true }
     }
 
@@ -180,6 +233,18 @@ class AuthStore {
     const data = this.refreshTokens.get(tokenId)
     if (data) {
       data.consumed = true
+    }
+
+    // Write through to DB (fire-and-forget)
+    if (this.db) {
+      this.db
+        .updateTable('refresh_tokens')
+        .set({ consumed: true } as Record<string, unknown>)
+        .where('token_id', '=', tokenId)
+        .execute()
+        .catch(() => {
+          /* fire-and-forget */
+        })
     }
   }
 
@@ -197,10 +262,24 @@ class AuthStore {
     for (const tid of tokensToRemove) {
       this.refreshTokens.delete(tid)
     }
+    const familiesToCompromise: string[] = []
     for (const family of this.refreshTokenFamilies.values()) {
       if (family.sessionId === sid) {
         family.compromised = true
+        familiesToCompromise.push(family.userId)
       }
+    }
+
+    // Write through to DB (fire-and-forget)
+    if (this.db && familiesToCompromise.length > 0) {
+      this.db
+        .updateTable('refresh_tokens')
+        .set({ compromised: true } as Record<string, unknown>)
+        .where('session_id', '=', sid)
+        .execute()
+        .catch(() => {
+          /* fire-and-forget */
+        })
     }
   }
 
@@ -218,10 +297,24 @@ class AuthStore {
     for (const tid of tokensToRemove) {
       this.refreshTokens.delete(tid)
     }
+    const familiesToCompromise: string[] = []
     for (const family of this.refreshTokenFamilies.values()) {
       if (family.userId === userId) {
         family.compromised = true
+        familiesToCompromise.push(family.userId)
       }
+    }
+
+    // Write through to DB (fire-and-forget)
+    if (this.db && familiesToCompromise.length > 0) {
+      this.db
+        .updateTable('refresh_tokens')
+        .set({ compromised: true } as Record<string, unknown>)
+        .where('user_id', '=', userId)
+        .execute()
+        .catch(() => {
+          /* fire-and-forget */
+        })
     }
   }
 
@@ -235,6 +328,18 @@ class AuthStore {
       for (const tid of family.tokenIds) {
         this.refreshTokens.delete(tid)
       }
+    }
+
+    // Write through to DB (fire-and-forget)
+    if (this.db) {
+      this.db
+        .updateTable('refresh_tokens')
+        .set({ compromised: true } as Record<string, unknown>)
+        .where('family_id', '=', familyId)
+        .execute()
+        .catch(() => {
+          /* fire-and-forget */
+        })
     }
   }
 
@@ -253,6 +358,18 @@ class AuthStore {
       if (family.userId === userId) {
         family.compromised = true
       }
+    }
+
+    // Write through to DB (fire-and-forget)
+    if (this.db) {
+      this.db
+        .updateTable('refresh_tokens')
+        .set({ compromised: true } as Record<string, unknown>)
+        .where('user_id', '=', userId)
+        .execute()
+        .catch(() => {
+          /* fire-and-forget */
+        })
     }
   }
 
