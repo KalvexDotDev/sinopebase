@@ -72,8 +72,7 @@ export class PostgresDatabase implements IDatabase {
     const defaultRole = config.runtimeRole ?? 'sinopebase_app'
     if (defaultRole && ALLOWED_RUNTIME_ROLES.has(defaultRole)) {
       this.writerPool.on('connect', (client: pg.PoolClient) => {
-        // nosemgrep: ts-sql-injection-concat — SET ROLE does not support parameterized queries.
-        // The role name is validated against ALLOWED_RUNTIME_ROLES before interpolation.
+        // nosemgrep: ts-sql-injection-concat
         client.query(`SET ROLE ${defaultRole}`).catch(() => {
           /* best-effort — connection works without it */
         })
@@ -105,6 +104,14 @@ export class PostgresDatabase implements IDatabase {
     await sql`SELECT 1`.execute(this.writer)
     if (this.readerPool) {
       await sql`SELECT 1`.execute(this.reader)
+    }
+    // In non-production environments, ensure the request-context roles exist.
+    // Production deployments run the migration instead.
+    if (process.env.NODE_ENV !== 'production') {
+      const { bootstrapPostgresRequestRoles } = await import('./postgres-role-bootstrap')
+      await bootstrapPostgresRequestRoles(this.writerPool).catch(() => {
+        /* best-effort — tests may run without superuser */
+      })
     }
   }
 
