@@ -109,14 +109,11 @@ export class PostgresDatabase implements IDatabase {
     if (this.readerPool) {
       await sql`SELECT 1`.execute(this.reader)
     }
-    // In non-production environments, ensure the request-context roles exist.
-    // Production deployments run the migration instead.
-    if (process.env.NODE_ENV !== 'production') {
-      const { bootstrapPostgresRequestRoles } = await import('./postgres-role-bootstrap')
-      await bootstrapPostgresRequestRoles(this.writerPool).catch(() => {
-        /* best-effort — tests may run without superuser */
-      })
-    }
+    // Request-context roles (anon, authenticated, service_role) must be
+    // created by the 1779000000_least_privilege_roles migration BEFORE the
+    // application starts in production. validateSchema() warns if they are
+    // missing. We deliberately do NOT create them at runtime — DDL belongs
+    // exclusively to migrations.
   }
 
   async close(): Promise<void> {
