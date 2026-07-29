@@ -48,3 +48,33 @@ export function detectMode(): 'production' | 'development' {
   if (process.env.SINOPEBASE_PRODUCTION === 'true') return 'production'
   return 'development'
 }
+
+/**
+ * Known dev/placeholder secret patterns.
+ *
+ * Each pattern supports `*` as a wildcard matching any sequence of characters.
+ * Production deployments MUST reject secrets that match any of these patterns.
+ */
+export const DEV_SECRET_PATTERNS = [
+  'sinopebase-dev-*',
+  'test-*',
+  'changeme*',
+  'password',
+  'admin',
+  'secret',
+] as const
+
+/**
+ * Check whether a secret value matches any known dev/placeholder pattern.
+ *
+ * Converts each pattern to a case-insensitive regex (`*` becomes `.*`)
+ * and tests the value. Returns `true` if any pattern matches.
+ */
+export function isDevSecret(value: string): boolean {
+  for (const pattern of DEV_SECRET_PATTERNS) {
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+    const regex = new RegExp('^' + escaped + '$', 'i')
+    if (regex.test(value)) return true
+  }
+  return false
+}
