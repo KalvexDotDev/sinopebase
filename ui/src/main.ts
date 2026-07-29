@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import './styles/app.css'
 import { mount } from 'svelte'
 import App from './App.svelte'
 

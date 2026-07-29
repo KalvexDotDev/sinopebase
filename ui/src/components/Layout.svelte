@@ -1,12 +1,11 @@
 <script lang="ts">
-import Sidebar from './Sidebar.svelte'
-
-let { children, onLogout }: { children: any; onLogout: () => void } = $props()
+  import Sidebar from './Sidebar.svelte'
+  let { children, onLogout }: { children: any; onLogout: () => void } = $props()
 </script>
 
-<div style="display: flex; min-height: 100vh;">
+<div style="display: flex; min-height: 100vh; background: var(--bg);">
   <Sidebar {onLogout} />
-  <main style="flex: 1; padding: 2rem; overflow-y: auto;">
+  <main style="flex: 1; padding: var(--space-xl); overflow-y: auto; background: var(--bg);">
     {#if children}
       {@render children()}
     {/if}

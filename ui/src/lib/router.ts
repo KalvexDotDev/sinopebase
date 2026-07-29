@@ -15,12 +15,19 @@ export type Route = {
 }
 
 export const ROUTES: Route[] = [
-  { path: '#/', label: 'Dashboard', icon: '📊' },
-  { path: '#/collections', label: 'Database', icon: '🗄️' },
+  { path: '#/', label: 'Dashboard', icon: '◫' },
+  { path: '#/tables', label: 'Table Editor', icon: '◧' },
+  { path: '#/auth', label: 'Auth Users', icon: '◉' },
+  { path: '#/storage', label: 'Storage', icon: '◲' },
+  { path: '#/policies', label: 'RLS Policies', icon: '◩' },
+  { path: '#/api-docs', label: 'API Docs', icon: '◫' },
+  { path: '#/realtime', label: 'Realtime', icon: '◎' },
+  { path: '#/backups', label: 'Backups', icon: '◴' },
+  { path: '#/metrics', label: 'Metrics', icon: '◷' },
+  { path: '#/ai', label: 'AI', icon: '◈' },
   { path: '#/functions', label: 'Edge Functions', icon: '⚡' },
-  { path: '#/ai', label: 'AI', icon: '🤖' },
-  { path: '#/settings', label: 'Settings', icon: '⚙️' },
-  { path: '#/logs', label: 'Logs', icon: '📋' },
+  { path: '#/settings', label: 'Settings', icon: '⚙' },
+  { path: '#/logs', label: 'Logs', icon: '◷' },
 ]
 
 export function getCurrentRoute(): string {

@@ -1,38 +1,64 @@
 <script lang="ts">
-import { ROUTES, getCurrentRoute } from '../lib/router'
+  import { ROUTES, getCurrentRoute } from '../lib/router'
 
-let { onLogout }: { onLogout: () => void } = $props()
-let current = $state(getCurrentRoute())
+  let { onLogout }: { onLogout: () => void } = $props()
+  let current = $state(getCurrentRoute())
 
-function handleClick(path: string) {
-  window.location.hash = path
-  current = path
-}
+  // React to hash changes
+  $effect(() => {
+    const handler = () => { current = getCurrentRoute() }
+    window.addEventListener('hashchange', handler)
+    return () => window.removeEventListener('hashchange', handler)
+  })
+
+  function handleClick(path: string) {
+    window.location.hash = path
+    current = path
+  }
 </script>
 
-<nav style="width: 260px; background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem; display: flex; flex-direction: column;">
-  <div style="margin-bottom: 2rem;">
-    <h1 style="font-size: 1.25rem; font-weight: 700; color: var(--primary);">⚡ Sinopebase</h1>
-    <p style="font-size: 0.75rem; color: var(--text-secondary);">Admin v0.2</p>
+<nav style="width: 240px; flex-shrink: 0; background: var(--ink); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 100vh;">
+  <!-- Brand -->
+  <div style="padding: var(--space-lg); border-bottom: 1px solid var(--border);">
+    <h1 style="font-family: var(--font-display); font-size: 22px; font-weight: 500; color: var(--primary); margin: 0; line-height: 1.2;">
+      Sinopebase
+    </h1>
+    <p style="font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); letter-spacing: 0.08em; margin-top: 2px;">
+      Admin v0.5
+    </p>
   </div>
 
-  <ul style="list-style: none; flex: 1;">
+  <!-- Nav links -->
+  <div style="flex: 1; overflow-y: auto; padding: var(--space-sm);">
     {#each ROUTES as route}
-      <li>
-        <button
-          onclick={() => handleClick(route.path)}
-          style="width: 100%; text-align: left; padding: 0.625rem 1rem; border: none; background: {current === route.path ? 'var(--primary)' : 'transparent'}; color: {current === route.path ? '#fff' : 'var(--text)'}; border-radius: 0.5rem; cursor: pointer; font-size: 0.875rem; margin-bottom: 0.25rem;"
-        >
-          {route.icon} {route.label}
-        </button>
-      </li>
+      <button
+        onclick={() => handleClick(route.path)}
+        style="display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+          padding: 8px 12px; border: none;
+          background: {current === route.path ? 'var(--char)' : 'transparent'};
+          color: {current === route.path ? 'var(--text)' : 'var(--text-secondary)'};
+          border-radius: var(--radius-none); cursor: pointer;
+          font-family: var(--font-ui); font-size: 13px; font-weight: 500;
+          margin-bottom: 1px; transition: background 0.12s ease, color 0.12s ease;"
+      >
+        <span style="font-size: 14px; width: 20px; text-align: center;">{route.icon}</span>
+        {route.label}
+        {#if current === route.path}
+          <span style="margin-left: auto; width: 4px; height: 4px; border-radius: 50%; background: var(--lichen);"></span>
+        {/if}
+      </button>
     {/each}
-  </ul>
+  </div>
 
-  <button
-    onclick={onLogout}
-    style="padding: 0.5rem 1rem; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); border-radius: 0.5rem; cursor: pointer;"
-  >
-    Logout
-  </button>
+  <!-- Footer -->
+  <div style="padding: var(--space-md); border-top: 1px solid var(--border);">
+    <button
+      onclick={onLogout}
+      style="width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+        background: transparent; color: var(--text-secondary); border-radius: var(--radius-none);
+        cursor: pointer; font-family: var(--font-ui); font-size: 13px; transition: color 0.18s ease, border-color 0.18s ease;"
+    >
+      Sign Out
+    </button>
+  </div>
 </nav>

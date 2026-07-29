@@ -1,47 +1,123 @@
 <script lang="ts">
-let logs = $state<string[]>([
-  '[API] GET /api/health 200 2ms',
-  '[Auth] Session validated for user admin@example.com',
-])
+  import { getLogs } from '../lib/api'
 
-// Capture console logs
-$effect(() => {
-  const originalLog = console.log
-  const originalError = console.error
-  console.log = (...args: any[]) => {
-    logs = [...logs.slice(-99), args.join(' ')]
-    originalLog.apply(console, args)
+  let entries = $state<Array<{ id: string; level: number; message: string; data: Record<string, unknown>; created: string }>>([])
+  let loading = $state(true)
+  let error = $state('')
+  let page = $state(1)
+  let perPage = $state(50)
+  let filterLevel = $state<number | null>(null)
+  let filterPath = $state('')
+  let autoRefresh = $state(false)
+
+  async function load() {
+    loading = true; error = ''
+    const result = await getLogs({ page, perPage })
+    if (result.data) {
+      entries = result.data.items ?? []
+    } else if (result.error) {
+      error = result.error.message
+    }
+    loading = false
   }
-  console.error = (...args: any[]) => {
-    logs = [...logs.slice(-99), '[ERROR] ' + args.join(' ')]
-    originalError.apply(console, args)
+
+  $effect(() => { load() })
+  $effect(() => {
+    if (!autoRefresh) return
+    const interval = setInterval(load, 5000)
+    return () => clearInterval(interval)
+  })
+
+  function levelLabel(level: number): string {
+    if (level <= 1) return 'ERROR'
+    if (level <= 2) return 'WARN'
+    if (level <= 3) return 'INFO'
+    return 'DEBUG'
   }
-  return () => {
-    console.log = originalLog
-    console.error = originalError
+
+  function levelColor(level: number): string {
+    if (level <= 1) return 'var(--danger)'
+    if (level <= 2) return '#e0c46e'
+    if (level <= 3) return 'var(--lichen)'
+    return 'var(--text-muted)'
   }
-})
 </script>
 
 <div>
-  <h2 style="font-size: 1.5rem; margin-bottom: 2rem;">Logs</h2>
-
-  <div style="background: var(--surface); border-radius: 0.75rem; border: 1px solid var(--border); overflow: hidden;">
-    <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-      <span style="font-weight: 600;">Console Output</span>
-      <span style="font-size: 0.75rem; color: var(--text-secondary);">{logs.length} entries</span>
+  <div class="flex items-center justify-between mb-lg">
+    <div>
+      <h2 style="margin: 0;">Logs</h2>
+      <p class="label" style="margin-top: 4px;">Server-side request logs</p>
     </div>
-    <div style="max-height: 500px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 0.8125rem;">
-      {#if logs.length === 0}
-        <div style="padding: 1rem; color: var(--text-secondary);">No log entries</div>
-      {:else}
-        {#each logs as log, i}
-          <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); color: var(--text);">
-            <span style="color: var(--text-secondary); margin-right: 0.5rem;">#{logs.length - i}</span>
-            {log}
-          </div>
-        {/each}
-      {/if}
+    <div class="flex gap-sm items-center">
+      <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
+        <input type="checkbox" bind:checked={autoRefresh} />
+        Auto-refresh
+      </label>
+      <button class="btn-ghost" style="height: 32px; padding: 4px 12px; font-size: 12px;" onclick={load}>
+        ↻ Refresh
+      </button>
+    </div>
+  </div>
+
+  {#if error}<div class="toast toast-error" style="margin-bottom: var(--space-md);">{error}</div>{/if}
+
+  <div class="flex gap-sm mb-md">
+    <select
+      style="font-family:var(--font-ui);font-size:13px;padding:4px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);"
+      onchange={(e: Event) => { filterLevel = (e.target as HTMLSelectElement).value ? Number((e.target as HTMLSelectElement).value) : null; page = 1 }}
+    >
+      <option value="">All Levels</option>
+      <option value="1">ERROR</option>
+      <option value="2">WARN</option>
+      <option value="3">INFO</option>
+      <option value="4">DEBUG</option>
+    </select>
+    <input class="input input-sm" style="width: 200px;" placeholder="Filter path…" bind:value={filterPath}
+      oninput={() => { page = 1 }} />
+  </div>
+
+  {#if loading}
+    <div class="card" style="padding: var(--space-lg);">
+      {#each Array(8) as _}<div class="skeleton" style="height: 24px; margin-bottom: 6px;"></div>{/each}
+    </div>
+  {:else if entries.length === 0}
+    <div class="card" style="text-align: center; padding: var(--space-xl);">
+      <p style="color: var(--text-secondary);">No log entries found</p>
+    </div>
+  {:else}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 60px;">Level</th>
+            <th>Message</th>
+            <th style="width: 160px;">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each entries as entry}
+            <tr>
+              <td>
+                <span style="color: {levelColor(entry.level)}; font-weight: 600; font-size: 11px;">
+                  {levelLabel(entry.level)}
+                </span>
+              </td>
+              <td><code style="font-size: 12px;">{entry.message}</code></td>
+              <td style="font-size: 12px; color: var(--text-muted);">{new Date(entry.created).toLocaleString()}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-between" style="margin-top: var(--space-md);">
+    <span style="font-size: 13px; color: var(--text-secondary);">Page {page}</span>
+    <div class="flex gap-sm">
+      <button class="btn-icon" disabled={page <= 1} onclick={() => { page-- }}>←</button>
+      <button class="btn-icon" onclick={() => { page++ }}>→</button>
     </div>
   </div>
 </div>

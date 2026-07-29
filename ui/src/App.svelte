@@ -1,44 +1,70 @@
 <script lang="ts">
-import Layout from './components/Layout.svelte'
-import Login from './pages/Login.svelte'
-import Dashboard from './pages/Dashboard.svelte'
-import Collections from './pages/Collections.svelte'
-import Functions from './pages/Functions.svelte'
-import AI from './pages/AI.svelte'
-import Settings from './pages/Settings.svelte'
-import Logs from './pages/Logs.svelte'
-import { getCurrentRoute, onRouteChange } from './lib/router'
+  import Layout from './components/Layout.svelte'
+  import Login from './pages/Login.svelte'
+  import Dashboard from './pages/Dashboard.svelte'
+  import Collections from './pages/Collections.svelte'
+  import AuthUsers from './pages/AuthUsers.svelte'
+  import Storage from './pages/Storage.svelte'
+  import RLSPolicies from './pages/RLSPolicies.svelte'
+  import ApiDocs from './pages/ApiDocs.svelte'
+  import RealtimeInspector from './pages/RealtimeInspector.svelte'
+  import Backups from './pages/Backups.svelte'
+  import MetricsPage from './pages/Metrics.svelte'
+  import AI from './pages/AI.svelte'
+  import Functions from './pages/Functions.svelte'
+  import Settings from './pages/Settings.svelte'
+  import Logs from './pages/Logs.svelte'
+  import { getCurrentRoute } from './lib/router'
+  import { getServiceRoleKey } from './lib/api'
 
-let authenticated = $state(false)
-let currentRoute = $state(getCurrentRoute())
+  let authenticated = $state(false)
+  let currentRoute = $state(getCurrentRoute())
 
-onRouteChange((route) => {
-  currentRoute = route
-})
+  // Check for existing service role key on mount
+  $effect(() => {
+    if (getServiceRoleKey()) authenticated = true
+    const handler = () => { currentRoute = getCurrentRoute() }
+    window.addEventListener('hashchange', handler)
+    return () => window.removeEventListener('hashchange', handler)
+  })
 
-function onLogin() {
-  authenticated = true
-  window.location.hash = '#/'
-}
+  function onLogin() {
+    authenticated = true
+    window.location.hash = '#/'
+  }
 
-function onLogout() {
-  authenticated = false
-  window.location.hash = '#/login'
-}
+  function onLogout() {
+    authenticated = false
+    window.location.hash = '#/login'
+  }
 </script>
 
 {#if !authenticated}
-  <Login onLogin={onLogin} />
+  <Login {onLogin} />
 {:else}
-  <Layout onLogout={onLogout}>
+  <Layout {onLogout}>
     {#if currentRoute === '#/'}
       <Dashboard />
-    {:else if currentRoute === '#/collections'}
+    {:else if currentRoute === '#/tables'}
       <Collections />
-    {:else if currentRoute === '#/functions'}
-      <Functions />
+    {:else if currentRoute === '#/auth'}
+      <AuthUsers />
+    {:else if currentRoute === '#/storage'}
+      <Storage />
+    {:else if currentRoute === '#/policies'}
+      <RLSPolicies />
+    {:else if currentRoute === '#/api-docs'}
+      <ApiDocs />
+    {:else if currentRoute === '#/realtime'}
+      <RealtimeInspector />
+    {:else if currentRoute === '#/backups'}
+      <Backups />
+    {:else if currentRoute === '#/metrics'}
+      <MetricsPage />
     {:else if currentRoute === '#/ai'}
       <AI />
+    {:else if currentRoute === '#/functions'}
+      <Functions />
     {:else if currentRoute === '#/settings'}
       <Settings />
     {:else if currentRoute === '#/logs'}

@@ -1,0 +1,124 @@
+<script lang="ts">
+  import { getServiceRoleKey } from '../lib/api'
+
+  let users = $state<Array<Record<string, unknown>>>([])
+  let loading = $state(true)
+  let error = $state('')
+  let search = $state('')
+  let showCreate = $state(false)
+  let newEmail = $state('')
+  let newPassword = $state('')
+
+  const token = $derived(getServiceRoleKey())
+
+  async function loadUsers() {
+    loading = true; error = ''
+    try {
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const res = await fetch(`${window.location.origin}/rest/v1/user?select=*&order=created_at.desc&limit=200`, { headers })
+      if (res.ok) users = await res.json()
+      else error = `Failed to load users: ${res.status}`
+    } catch (e: any) { error = e.message }
+    loading = false
+  }
+
+  async function createUser() {
+    if (!newEmail || !newPassword) { error = 'Email and password required'; return }
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${window.location.origin}/auth/v1/admin/users`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ email: newEmail, password: newPassword, email_confirm: true }),
+    })
+    if (res.ok) { showCreate = false; newEmail = ''; newPassword = ''; loadUsers() }
+    else error = `Create failed: ${res.status}`
+  }
+
+  async function deleteUser(id: string) {
+    if (!confirm(`Delete user ${id}?`)) return
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    await fetch(`${window.location.origin}/auth/v1/admin/users/${id}`, { method: 'DELETE', headers })
+    loadUsers()
+  }
+
+  $effect(() => { loadUsers() })
+
+  const filtered = $derived(users.filter((u) => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    const email = String(u.email ?? '').toLowerCase()
+    return email.includes(q)
+  }))
+</script>
+
+<div>
+  <div class="flex items-center justify-between mb-lg">
+    <div>
+      <h2 style="margin: 0;">Auth Users</h2>
+      <p class="label" style="margin-top: 4px;">{users.length} users</p>
+    </div>
+    <div class="flex gap-sm">
+      <input class="input input-sm" style="width: 200px;" placeholder="Search by email…" bind:value={search} />
+      <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={() => { showCreate = !showCreate; newEmail = ''; newPassword = '' }}>
+        + New User
+      </button>
+    </div>
+  </div>
+
+  {#if error}<div class="toast toast-error" style="margin-bottom: var(--space-md);">{error}</div>{/if}
+
+  {#if showCreate}
+    <div class="card mb-md">
+      <div class="label mb-sm">Create User</div>
+      <div style="display: flex; gap: var(--space-sm); align-items: flex-end;">
+        <div style="flex: 1;">
+          <span style="font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 2px;">Email</span>
+          <input class="input input-sm" bind:value={newEmail} placeholder="user@example.com" />
+        </div>
+        <div style="flex: 1;">
+          <span style="font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 2px;">Password</span>
+          <input class="input input-sm" type="password" bind:value={newPassword} placeholder="min 8 chars" />
+        </div>
+        <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={createUser}>Create</button>
+        <button class="btn-ghost" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={() => { showCreate = false }}>Cancel</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if loading}
+    <div class="card" style="padding: var(--space-xl);">
+      {#each Array(5) as _}<div class="skeleton" style="height: 36px; margin-bottom: 8px;"></div>{/each}
+    </div>
+  {:else if filtered.length === 0}
+    <div class="card" style="text-align: center; padding: var(--space-xl);">
+      <p style="color: var(--text-secondary);">No users found</p>
+    </div>
+  {:else}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Verified</th>
+            <th>Created</th>
+            <th style="width: 60px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each filtered as user}
+            <tr>
+              <td><code>{user.email}</code></td>
+              <td><span class="chip">{user.role || 'user'}</span></td>
+              <td>{user.email_verified ? '✓' : '—'}</td>
+              <td style="font-size: 12px; color: var(--text-muted);">{user.created_at ? new Date(user.created_at as string).toLocaleDateString() : '—'}</td>
+              <td><button class="btn-icon" onclick={() => deleteUser(user.id as string)}>✕</button></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+</div>

@@ -96,8 +96,9 @@
     </div>
 
     {#if mode === 'service_role'}
-      <label style="display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem;">Service Role Key</label>
+      <label for="service-key-input" style="display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem;">Service Role Key</label>
       <input
+        id="service-key-input"
         type="password"
         bind:value={serviceKey}
         placeholder="sb_service_role_..."
@@ -107,16 +108,18 @@
         Find this in your environment variables (<code>SINOPEBASE_SERVICE_ROLE_KEY</code>) or <code>.env</code> file.
       </p>
     {:else}
-      <label style="display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem;">Email</label>
+      <label for="login-email" style="display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem;">Email</label>
       <input
+        id="login-email"
         type="email"
         bind:value={email}
         placeholder="admin@example.com"
         style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 0.5rem; margin-bottom: 1rem; background: var(--bg); color: var(--text);"
       />
 
-      <label style="display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem;">Password</label>
+      <label for="login-password" style="display: block; margin-bottom: 0.25rem; font-weight: 500; font-size: 0.875rem;">Password</label>
       <input
+        id="login-password"
         type="password"
         bind:value={password}
         placeholder="Enter your password"

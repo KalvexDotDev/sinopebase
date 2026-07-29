@@ -1279,6 +1279,12 @@ export class Sinopebase {
       s5.use(createLogsPlugin(this.database, isSuperuser))
     }
 
+    // ── Admin Tables API — GET /api/admin/tables (service_role only) ──
+    if (this.database) {
+      const { createAdminTablesPlugin } = await import('../apis/admin-tables')
+      s5.use(createAdminTablesPlugin(this.database, isSuperuser))
+    }
+
     // ── Collections API — /api/collections/* (service_role only) ──
     if (this.database) {
       const { createCollectionPlugin } = await import('../apis/collection')
