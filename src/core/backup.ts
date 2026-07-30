@@ -99,6 +99,14 @@ export async function pgDump(connectionString: string, outputPath: string): Prom
     env.PGPASSWORD = parsed.password
   }
 
+  // Try pg_dump first; fall back to SQL-based export if not available
+  try {
+    const which = Bun.spawnSync(['which', 'pg_dump'], { stdout: 'pipe' })
+    if (which.exitCode !== 0) throw new Error('pg_dump not found')
+  } catch {
+    return sqlDump(connectionString, outputPath)
+  }
+
   const proc = Bun.spawn(
     [
       'pg_dump',
@@ -137,6 +145,92 @@ export async function pgDump(connectionString: string, outputPath: string): Prom
 // ---------------------------------------------------------------------------
 // psql restore
 // ---------------------------------------------------------------------------
+
+/**
+// ---------------------------------------------------------------------------
+// SQL-based fallback dump (no pg_dump required)
+// ---------------------------------------------------------------------------
+
+/**
+ * Export database schema + data using SQL queries via the connection pool.
+ * Produces a .sql file with CREATE TABLE statements and INSERT rows.
+ */
+export async function sqlDump(connectionString: string, outputPath: string): Promise<string> {
+  const { Pool } = await import('pg')
+  const pool = new Pool({ connectionString, max: 1 })
+  try {
+    const { writeFile } = await import('node:fs/promises')
+    const lines: string[] = [
+      '-- Sinopebase SQL Dump',
+      `-- Generated: ${new Date().toISOString()}`,
+      '',
+    ]
+
+    // Get all user tables
+    const tables = await pool.query(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      ORDER BY table_name
+    `)
+
+    for (const row of tables.rows) {
+      const table = row.table_name as string
+
+      // Dump schema
+      const cols = await pool.query(`
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = $1
+        ORDER BY ordinal_position
+      `, [table])
+
+      const colDefs = cols.rows.map((c: any) => {
+        let def = `  "${c.column_name}" ${c.data_type}`
+        if (c.is_nullable === 'NO') def += ' NOT NULL'
+        if (c.column_default) def += ` DEFAULT ${c.column_default}`
+        return def
+      }).join(',\n')
+
+      // Get PKs
+      const pks = await pool.query(`
+        SELECT kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
+        WHERE tc.table_schema = 'public' AND tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
+      `, [table])
+
+      if (pks.rows.length > 0) {
+        const pkCols = pks.rows.map((r: any) => `"${r.column_name}"`).join(', ')
+        colDefs += `,\n  PRIMARY KEY (${pkCols})`
+      }
+
+      lines.push(`-- Table: ${table}`)
+      lines.push(`DROP TABLE IF EXISTS "${table}" CASCADE;`)
+      lines.push(`CREATE TABLE "${table}" (\n${colDefs}\n);`)
+      lines.push('')
+
+      // Dump data as INSERT
+      const data = await pool.query(`SELECT * FROM "${table}"`)
+      for (const dr of data.rows) {
+        const vals = Object.values(dr).map((v) => {
+          if (v === null) return 'NULL'
+          if (typeof v === 'boolean') return v ? 'true' : 'false'
+          if (typeof v === 'number') return String(v)
+          if (v instanceof Date) return `'${v.toISOString()}'`
+          return `'${String(v).replace(/'/g, "''")}'`
+        })
+        const colNames = Object.keys(dr).map((c) => `"${c}"`).join(', ')
+        lines.push(`INSERT INTO "${table}" (${colNames}) VALUES (${vals.join(', ')});`)
+      }
+      lines.push('')
+    }
+
+    await writeFile(outputPath, lines.join('\n'), 'utf-8')
+    return outputPath
+  } finally {
+    await pool.end()
+  }
+}
 
 /**
  * Restore a SQL dump file via psql.

@@ -90,6 +90,12 @@ export const authPlugin = new Elysia({ name: 'sinopebase-auth-fallback' })
     authStore.addRefreshToken(tokenId, user.id, sessionId, familyId)
 
     return sessionResponse(user, accessToken, refreshToken)
+  }, {
+    detail: {
+      tags: ['Auth'],
+      summary: 'Sign up with email and password',
+      description: 'Creates a new user account and returns an access token, refresh token, and user profile. Passwords are hashed with bcrypt via Bun.password.',
+    },
   })
 
   .post('/auth/v1/token', async ({ body, query, set }) => {
