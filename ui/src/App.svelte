@@ -14,15 +14,13 @@
   import Functions from './pages/Functions.svelte'
   import Settings from './pages/Settings.svelte'
   import Logs from './pages/Logs.svelte'
-  import { getCurrentRoute } from './lib/router'
-  import { getServiceRoleKey } from './lib/api'
+  import { getCurrentRoute, navigate } from './lib/router'
+  import { getServiceRoleKey, clearTokens } from './lib/api'
 
-  let authenticated = $state(false)
+  let authenticated = $state(getServiceRoleKey() !== null)
   let currentRoute = $state(getCurrentRoute())
 
-  // Check for existing service role key on mount
   $effect(() => {
-    if (getServiceRoleKey()) authenticated = true
     const handler = () => { currentRoute = getCurrentRoute() }
     window.addEventListener('hashchange', handler)
     return () => window.removeEventListener('hashchange', handler)
@@ -30,12 +28,13 @@
 
   function onLogin() {
     authenticated = true
-    window.location.hash = '#/'
+    navigate('#/')
   }
 
   function onLogout() {
+    clearTokens()
     authenticated = false
-    window.location.hash = '#/login'
+    navigate('#/login')
   }
 </script>
 
