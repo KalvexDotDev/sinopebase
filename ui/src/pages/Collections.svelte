@@ -21,6 +21,9 @@
   let deleteId = $state('')
   let deleteLabel = $state('')
   let editCell = $state<{ row: number; col: string; val: string } | null>(null)
+  let showDropTable = $state(false)
+  let dropTableName = $state('')
+  let dropTableConfirm = $state('')
 
   const token = $derived(getServiceRoleKey())
   function h(): Record<string, string> { return token ? { Authorization: `Bearer ${token}` } : {} }
@@ -62,6 +65,48 @@
   $effect(() => { loadTables() })
   $effect(() => { if (selectedTable) { page = 1; loadRows() } })
   $effect(() => { if (selectedTable && page) loadRows() })
+
+  async function doDropTable() {
+    if (dropTableConfirm !== dropTableName) return
+    try {
+      await fetch(`${origin}/api/admin/tables/${dropTableName}`, { method: 'DELETE', headers: h() })
+      if (selectedTable === dropTableName) selectedTable = ''
+      showDropTable = false; dropTableConfirm = ''
+      loadTables()
+    } catch (e: any) { error = e.message }
+  }
+
+  // ── Create table wizard ──
+  let showCreateTable = $state(false)
+  let newTableName = $state('')
+  let newColumns = $state<Array<{ name: string; type: string; nullable: boolean; pk: boolean }>>([{ name: '', type: 'text', nullable: true, pk: false }])
+  let createSubmitting = $state(false)
+  let createError = $state('')
+  let createOk = $state('')
+
+  function openCreateTable() { showCreateTable = true; newTableName = ''; newColumns = [{ name: '', type: 'text', nullable: true, pk: false }]; createError = ''; createOk = '' }
+
+  function addColumn() { newColumns = [...newColumns, { name: '', type: 'text', nullable: true, pk: false }] }
+  function removeColumn(i: number) { if (newColumns.length > 1) newColumns = newColumns.filter((_, j) => j !== i) }
+
+  async function doCreateTable() {
+    if (!newTableName) { createError = 'Table name required'; return }
+    createSubmitting = true; createError = ''; createOk = ''
+    const cols = newColumns.filter((c) => c.name)
+    if (cols.length === 0) { createError = 'At least one named column required'; createSubmitting = false; return }
+    try {
+      const res = await fetch(`${origin}/api/admin/tables`, {
+        method: 'POST', headers: { ...h(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newTableName, columns: cols.map((c) => ({ name: c.name, type: c.type, nullable: c.nullable, primary: c.pk })) }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (res.ok) { createOk = `Table "${newTableName}" created.`; loadTables(); setTimeout(() => { showCreateTable = false; createOk = '' }, 1500) }
+      else { createError = j.message || `Error ${res.status}` }
+    } catch (e: any) { createError = e.message }
+    createSubmitting = false
+  }
+
+  const PG_TYPES = ['text', 'varchar', 'integer', 'bigint', 'real', 'double precision', 'boolean', 'timestamp with time zone', 'date', 'jsonb', 'uuid']
 
   function openAdd() { showAdd = true; addForm = {}; addError = '' }
   function closeAdd() { showAdd = false; addForm = {} }
@@ -127,6 +172,10 @@
 
 <div class="flex gap-lg" style="align-items: flex-start; height: calc(100vh - 80px);">
   <nav style="width: 220px; flex-shrink: 0; overflow-y: auto; max-height: 100%;" class="card p-lg">
+    <div class="flex items-center justify-between mb-sm">
+      <span class="label">Tables</span>
+      <button class="btn-icon" style="width: 24px; height: 24px; font-size: 14px;" onclick={openCreateTable} title="Create table">+</button>
+    </div>
     <input class="input" style="margin-bottom: var(--space-md);" placeholder="Search tables…" bind:value={tableSearch} />
     {#if filteredTables.length === 0}
       <p style="color: var(--text-muted); font-size: 13px;">No tables</p>
@@ -137,7 +186,12 @@
           style="display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 6px 10px; border: none; background: {selectedTable === t.name ? 'var(--char)' : 'transparent'}; color: {selectedTable === t.name ? 'var(--text)' : 'var(--text-secondary)'}; border-radius: var(--radius-none); cursor: pointer; font-family: var(--font-mono); font-size: 12px; margin-bottom: 1px;"
         >
           <span>{t.name}</span>
-          <span style="color: var(--text-muted); font-size: 10px;">{t.columns.length}c</span>
+          <span style="display: flex; align-items: center; gap: 4px;">
+            <span style="color: var(--text-muted); font-size: 10px;">{t.columns.length}c</span>
+            <span style="color: var(--text-muted); font-size: 9px; cursor: pointer; padding: 0 2px;"
+              onclick={(e: Event) => { e.stopPropagation(); dropTableName = t.name; showDropTable = true; dropTableConfirm = '' }}
+              title="Drop table">✕</span>
+          </span>
         </button>
       {/each}
     {/if}
@@ -272,6 +326,73 @@
       <div class="flex gap-sm" style="justify-content: flex-end;">
         <button class="btn-ghost" style="height: 32px; font-size: 13px;" onclick={() => { deleteId = ''; deleteLabel = '' }}>Cancel</button>
         <button class="btn-danger" style="height: 32px; font-size: 13px;" onclick={doDelete}>Delete</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Create table wizard -->
+{#if showCreateTable}
+  <div style="position: fixed; inset: 0; z-index: 100; display: flex;">
+    <div style="flex: 1; background: rgba(0,0,0,0.5);" onclick={() => { showCreateTable = false }}></div>
+    <div style="width: 480px; max-width: 90vw; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto;">
+      <div style="padding: var(--space-lg); border-bottom: 1px solid var(--border);">
+        <h3 style="margin: 0;">Create Table</h3>
+      </div>
+      <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;"
+        onsubmit={(e) => { e.preventDefault(); doCreateTable() }}>
+        <div>
+          <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">Table name</label>
+          <input class="input" bind:value={newTableName} placeholder="my_table" />
+        </div>
+        <div class="label">Columns</div>
+        {#each newColumns as col, i (i)}
+          <div style="display: flex; gap: var(--space-xs); align-items: flex-end;">
+            <div style="flex: 1;"><input class="input input-sm" bind:value={col.name} placeholder="column_name" /></div>
+            <div style="width: 140px;">
+              <select bind:value={col.type} style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 12px;">
+                {#each PG_TYPES as t}<option value={t}>{t}</option>{/each}
+              </select>
+            </div>
+            <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
+              <input type="checkbox" bind:checked={col.nullable} /> Null</label>
+            <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
+              <input type="checkbox" bind:checked={col.pk} /> PK</label>
+            <button type="button" class="btn-icon" style="width: 26px; height: 26px; font-size: 10px;"
+              onclick={() => removeColumn(i)} disabled={newColumns.length <= 1}>✕</button>
+          </div>
+        {/each}
+        <button type="button" class="btn-ghost" style="height: 28px; padding: 2px 12px; font-size: 11px; align-self: flex-start;"
+          onclick={addColumn}>+ Add Column</button>
+        {#if createError}<div style="color: var(--danger); font-size: 13px;">{createError}</div>{/if}
+        {#if createOk}<div style="color: var(--lichen); font-size: 13px;">{createOk}</div>{/if}
+        <div class="flex gap-sm" style="margin-top: var(--space-md);">
+          <button type="submit" class="btn-primary" style="flex: 1; height: 36px; font-size: 13px;" disabled={createSubmitting}>
+            {createSubmitting ? 'Creating…' : 'Create Table'}
+          </button>
+          <button type="button" class="btn-ghost" style="height: 36px; font-size: 13px;" onclick={() => { showCreateTable = false }}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+{#if showDropTable}
+  <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100;">
+    <div class="card" style="max-width: 400px; width: 90%; padding: var(--space-lg);">
+      <h3 style="margin-bottom: var(--space-sm);">Drop Table</h3>
+      <p style="color: var(--danger); font-size: 14px; margin-bottom: var(--space-md);">
+        This permanently deletes <code>{dropTableName}</code> and all its data.
+      </p>
+      <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: var(--space-sm);">
+        Type <code>{dropTableName}</code> to confirm:
+      </p>
+      <input class="input" style="margin-bottom: var(--space-lg);" bind:value={dropTableConfirm} placeholder={dropTableName} />
+      <div class="flex gap-sm" style="justify-content: flex-end;">
+        <button class="btn-ghost" style="height: 32px; font-size: 13px;" onclick={() => { showDropTable = false; dropTableConfirm = '' }}>Cancel</button>
+        <button class="btn-danger" style="height: 32px; font-size: 13px;"
+          disabled={dropTableConfirm !== dropTableName}
+          onclick={doDropTable}>Drop "{dropTableName}"</button>
       </div>
     </div>
   </div>
