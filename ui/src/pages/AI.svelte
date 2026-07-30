@@ -138,7 +138,7 @@
     </div>
 
     <!-- Messages -->
-    <div style="flex: 1; overflow-y: auto; margin-bottom: var(--space-md);" class="card" style="padding: var(--space-lg);">
+    <div class="card" style="flex: 1; overflow-y: auto; margin-bottom: var(--space-md); padding: var(--space-lg);">
       {#if messages.length === 0}
         <div style="text-align: center; padding: var(--space-2xl); color: var(--text-muted);">
           <p style="font-size: 17px; margin-bottom: var(--space-sm);">AI Playground</p>
