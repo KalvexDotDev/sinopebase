@@ -11,11 +11,7 @@
   let newBucketPublic = $state(false)
 
   const token = $derived(getServiceRoleKey())
-  const headers = $derived.by(() => {
-    const h: Record<string, string> = {}
-    if (token) h['Authorization'] = `Bearer ${token}`
-    return h
-  })
+  function headers(): Record<string, string> { return token ? { Authorization: `Bearer ${token}` } : {} }
 
   async function loadBuckets() {
     try {
@@ -36,6 +32,8 @@
           size: f.metadata?.size ?? 0,
           last_modified: f.metadata?.lastModified ?? '',
         }))
+      } else {
+        files = [] // empty bucket or not found — show empty list
       }
     } catch { files = [] }
     loading = false
@@ -47,7 +45,7 @@
       method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newBucketName, public: newBucketPublic }),
     })
-    if (res.ok) { showCreate = false; newBucketName = ''; loadBuckets() }
+    if (res.ok) { showCreate = false; selectedBucket = newBucketName; newBucketName = ''; loadBuckets() }
     else error = `Create failed: ${res.status}`
   }
 
