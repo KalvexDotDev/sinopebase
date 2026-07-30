@@ -11,7 +11,7 @@
   let newBucketPublic = $state(false)
 
   const token = $derived(getServiceRoleKey())
-  const headers = $derived(() => {
+  const headers = $derived.by(() => {
     const h: Record<string, string> = {}
     if (token) h['Authorization'] = `Bearer ${token}`
     return h
@@ -102,7 +102,7 @@
   <div class="flex gap-md" style="align-items: flex-start;">
     <nav style="width: 200px;" class="card" class:p-sm>
       <div class="label mb-sm">Buckets</div>
-      {#each buckets as b}
+      {#each buckets as b (b.name)}
         <button
           onclick={() => loadFiles(b.name)}
           style="display: block; width: 100%; text-align: left; padding: 6px 8px; border: none;
@@ -142,7 +142,7 @@
             <table>
               <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
               <tbody>
-                {#each files as f}
+                {#each files as f (f.name)}
                   <tr>
                     <td><code>{f.name}</code></td>
                     <td>{f.size > 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`}</td>
