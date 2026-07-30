@@ -63,6 +63,8 @@ export function createAdminDdlPlugin(
         message: `Failed: ${err instanceof Error ? err.message : String(err)}`,
       }
     }
+  }, {
+    detail: { tags: ['Admin'], summary: 'Create a new table', description: 'Creates a table in the public schema with the specified columns, types, and constraints.' },
   })
 
   app.delete('/api/admin/tables/:name', async ({ request, params, set }) => {
@@ -87,6 +89,8 @@ export function createAdminDdlPlugin(
         message: `Failed: ${err instanceof Error ? err.message : String(err)}`,
       }
     }
+  }, {
+    detail: { tags: ['Admin'], summary: 'Drop a table', description: 'Permanently deletes a table and all its data from the public schema. Requires type-name confirmation in the UI.' },
   })
 
   return app

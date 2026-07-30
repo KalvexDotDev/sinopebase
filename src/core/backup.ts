@@ -323,19 +323,27 @@ export async function listBackups(backupDir: string): Promise<BackupFileInfo[]> 
   const files: BackupFileInfo[] = []
 
   for (const entry of entries) {
-    if (!entry.isFile()) continue
+    if (!entry.isDirectory()) continue
 
     const fullPath = join(backupDir, entry.name)
     try {
       const st = await stat(fullPath)
+      // Sum up sizes of files in the backup directory
+      let size = st.size
+      try {
+        const contents = await readdir(fullPath)
+        for (const f of contents) {
+          try { size += (await stat(join(fullPath, f))).size } catch { /* skip */ }
+        }
+      } catch { /* use dir size */ }
       files.push({
         name: entry.name,
         path: fullPath,
-        size: st.size,
+        size,
         modified: st.mtime.toISOString(),
       })
     } catch {
-      // Skip files that can't be stat'd
+      // Skip entries that can't be stat'd
     }
   }
 
