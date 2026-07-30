@@ -188,9 +188,9 @@
           <span>{t.name}</span>
           <span style="display: flex; align-items: center; gap: 4px;">
             <span style="color: var(--text-muted); font-size: 10px;">{t.columns.length}c</span>
-            <span style="color: var(--text-muted); font-size: 9px; cursor: pointer; padding: 0 2px;"
+            <button class="btn-icon" style="width: 16px; height: 16px; font-size: 8px; padding: 0; border: none;"
               onclick={(e: Event) => { e.stopPropagation(); dropTableName = t.name; showDropTable = true; dropTableConfirm = '' }}
-              title="Drop table">✕</span>
+              title="Drop table">✕</button>
           </span>
         </button>
       {/each}
