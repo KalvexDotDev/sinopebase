@@ -35,8 +35,8 @@
     else { const j = await res.json().catch(() => ({})); error = `Create failed: ${res.status} — ${j.message || ''}` }
   }
 
-  async function deleteUser(id: string) {
-    if (!confirm(`Delete user ${id}?`)) return
+  async function deleteUser(id: string, email: string) {
+    if (!confirm(`Delete user "${email}"?`)) return
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`${window.location.origin}/rest/v1/user?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers })
@@ -113,9 +113,9 @@
             <tr>
               <td><code>{user.email}</code></td>
               <td><span class="chip">{user.role || 'user'}</span></td>
-              <td>{user.email_verified ? '✓' : '—'}</td>
-              <td style="font-size: 12px; color: var(--text-muted);">{user.created_at ? new Date(user.created_at as string).toLocaleDateString() : '—'}</td>
-              <td><button class="btn-icon" onclick={() => deleteUser(user.id as string)}>✕</button></td>
+              <td>{user.emailVerified ? '✓' : '—'}</td>
+              <td style="font-size: 12px; color: var(--text-muted);">{user.createdAt ? new Date(user.createdAt as string).toLocaleDateString() : '—'}</td>
+              <td><button class="btn-icon" onclick={() => deleteUser(user.id as string, user.email as string)}>✕</button></td>
             </tr>
           {/each}
         </tbody>
