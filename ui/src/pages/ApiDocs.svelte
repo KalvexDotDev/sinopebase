@@ -44,7 +44,10 @@
     return match ? { tag: match.tag, desc: match.desc } : { tag: 'Other', desc: '' }
   }
 
-  function endpointSummary(path: string, method: string): string {
+  function endpointSummary(path: string, method: string, op: any): string {
+    // Prefer detail from the OpenAPI spec (added via route handler detail annotations)
+    if (op?.detail?.summary) return op.detail.summary
+    if (op?.detail?.description) return op.detail.description.slice(0, 120)
     const m = method.toUpperCase()
     const segments = path.split('/').filter(Boolean)
     const last = segments[segments.length - 1] ?? ''
@@ -134,7 +137,7 @@
                   {/each}
                   <code style="flex: 1; font-size: 13px;">{path}</code>
                   <span style="color: var(--text-muted); font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    {endpointSummary(path, verbs[0]!)}
+                    {endpointSummary(path, verbs[0]!, detail)}
                   </span>
                   <span style="color: var(--text-muted); font-size: 10px;">{expanded === path ? '▴' : '▾'}</span>
                 </button>

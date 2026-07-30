@@ -1331,6 +1331,12 @@ export class Sinopebase {
       }
     }
 
+    // ── Admin DDL API — POST /api/admin/tables (create table) ──
+    if (this.database instanceof PostgresDatabase) {
+      const { createAdminDdlPlugin } = await import('../apis/admin-ddl')
+      s5.use(createAdminDdlPlugin(this.database.getPool(), isSuperuser))
+    }
+
     // ── Admin RLS API — POST /api/admin/rls/enable ──
     if (this.database instanceof PostgresDatabase) {
       const { createAdminRlsPlugin } = await import('../apis/admin-rls')

@@ -15,6 +15,7 @@ export default defineConfig({
       '/rest': 'http://127.0.0.1:8090',
       '/storage': 'http://127.0.0.1:8090',
       '/realtime': 'http://127.0.0.1:8090',
+      '/openapi': 'http://127.0.0.1:8090',
     },
   },
 })

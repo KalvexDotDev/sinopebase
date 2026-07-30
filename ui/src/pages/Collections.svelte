@@ -181,18 +181,18 @@
       <p style="color: var(--text-muted); font-size: 13px;">No tables</p>
     {:else}
       {#each filteredTables as t (t.name)}
-        <button
-          onclick={() => { selectedTable = t.name; editCell = null }}
+        <div
           style="display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 6px 10px; border: none; background: {selectedTable === t.name ? 'var(--char)' : 'transparent'}; color: {selectedTable === t.name ? 'var(--text)' : 'var(--text-secondary)'}; border-radius: var(--radius-none); cursor: pointer; font-family: var(--font-mono); font-size: 12px; margin-bottom: 1px;"
         >
-          <span>{t.name}</span>
+          <span style="flex: 1; cursor: pointer;" onclick={() => { selectedTable = t.name; editCell = null }}>{t.name}</span>
           <span style="display: flex; align-items: center; gap: 4px;">
             <span style="color: var(--text-muted); font-size: 10px;">{t.columns.length}c</span>
-            <button class="btn-icon" style="width: 16px; height: 16px; font-size: 8px; padding: 0; border: none;"
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <span style="color: var(--text-muted); font-size: 9px; cursor: pointer; padding: 0 2px;"
               onclick={(e: Event) => { e.stopPropagation(); dropTableName = t.name; showDropTable = true; dropTableConfirm = '' }}
-              title="Drop table">✕</button>
+              title="Drop table">✕</span>
           </span>
-        </button>
+        </div>
       {/each}
     {/if}
   </nav>
