@@ -69,6 +69,17 @@
     else error = `Upload failed: ${res.status}`
   }
 
+  async function downloadFile(name: string) {
+    if (!selectedBucket) return
+    const res = await fetch(`${window.location.origin}/storage/v1/object/${selectedBucket}/${name}`, { headers: headers() })
+    if (res.ok) {
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = name; a.click()
+      URL.revokeObjectURL(url)
+    } else { error = `Download failed: ${res.status}` }
+  }
+
   async function deleteFile(name: string) {
     if (!selectedBucket) return
     await fetch(`${window.location.origin}/storage/v1/object/${selectedBucket}`, {
@@ -156,7 +167,7 @@
                     <td>{f.size > 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`}</td>
                     <td style="color: var(--text-muted);">{f.last_modified ? new Date(f.last_modified).toLocaleString() : '—'}</td>
                     <td>
-                      <a href="{window.location.origin}/storage/v1/object/{selectedBucket}/{f.name}" download class="btn-icon" style="text-decoration: none;">↓</a>
+                      <button class="btn-icon" onclick={() => downloadFile(f.name)} title="Download">↓</button>
                       <button class="btn-icon" style="font-size: 10px;" onclick={() => deleteFile(f.name)} title="Delete">✕</button>
                     </td>
                   </tr>
