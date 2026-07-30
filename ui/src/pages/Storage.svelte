@@ -24,7 +24,7 @@
   async function loadFiles(bucket: string) {
     selectedBucket = bucket; loading = true
     try {
-      const res = await fetch(`${window.location.origin}/storage/v1/object/list/${bucket}`, { headers: headers() })
+      const res = await fetch(`${window.location.origin}/storage/v1/object/list/${bucket}`, { method: 'POST', headers: headers() })
       if (res.ok) {
         const data = await res.json() as Array<{ name: string; metadata?: { size: number; lastModified: string } }>
         files = data.map((f) => ({
