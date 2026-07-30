@@ -123,7 +123,7 @@ export async function listRecords(collection: string, query?: string) {
 // ── Admin Tables ──
 
 export async function listTables() {
-  return request<Array<{ schema: string; name: string; columns: Array<{ name: string; type: string; nullable: boolean }> }>>('/rest/v1/?limit=0')
+  return request<Array<{ schema: string; name: string; columns: Array<{ name: string; type: string; nullable: boolean; isPrimaryKey: boolean }>; hasRLS: boolean }>>('/api/admin/tables')
 }
 
 // ── Settings ──
