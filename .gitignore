@@ -52,3 +52,6 @@ jscpd-report.jsonsemgrep-out.json
 jscpd-report.json/jscpd-report.json
 jscpd-report.json/
 .claude/workflows/*.js
+
+# Licensed design assets (not our IP)
+design.md
