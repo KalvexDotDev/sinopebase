@@ -1,61 +1,82 @@
 <script lang="ts">
-import { aiChat } from '../lib/api'
+  import { aiChat, getServiceRoleKey } from '../lib/api'
 
-let prompt = $state('')
-let response = $state('')
-let loading = $state(false)
-let messages = $state<Array<{ role: string; content: string }>>([])
+  let prompt = $state('')
+  let messages = $state<Array<{ role: string; content: string }>>([])
+  let loading = $state(false)
+  let useStudio = $state(false)
+  let studioUrl = $state('')
 
-async function send() {
-  if (!prompt.trim()) return
-  loading = true
-  messages = [...messages, { role: 'user', content: prompt }]
-  try {
-    const data = await aiChat(messages)
-    const reply = data?.choices?.[0]?.message?.content || '[No response]'
-    messages = [...messages, { role: 'assistant', content: reply }]
-    response = reply
-  } catch {
-    response = 'Error: Failed to get AI response'
+  const token = $derived(getServiceRoleKey())
+
+  $effect(() => {
+    // Try to detect Mastra Studio — if it's running, use the iframe
+    const studio = localStorage.getItem('mastra-studio-url') || 'http://127.0.0.1:3443'
+    fetch(`${studio}/api/health`).then((r) => {
+      if (r.ok) { useStudio = true; studioUrl = studio }
+    }).catch(() => { useStudio = false })
+  })
+
+  async function send() {
+    if (!prompt.trim()) return
+    loading = true
+    messages = [...messages, { role: 'user', content: prompt }]
+    try {
+      const data = await aiChat(messages)
+      const reply = data?.choices?.[0]?.message?.content || data?.message || '[No response]'
+      messages = [...messages, { role: 'assistant', content: reply }]
+    } catch {
+      messages = [...messages, { role: 'assistant', content: 'Error: AI backend unavailable.' }]
+    }
+    prompt = ''
+    loading = false
   }
-  prompt = ''
-  loading = false
-}
 </script>
 
 <div>
-  <h2 style="font-size: 1.5rem; margin-bottom: 2rem;">AI Playground</h2>
-
-  <div style="background: var(--surface); border-radius: 0.75rem; border: 1px solid var(--border); padding: 2rem; max-width: 800px;">
-    <div style="margin-bottom: 1rem; min-height: 200px; max-height: 400px; overflow-y: auto;">
-      {#each messages as msg}
-        <div style="margin-bottom: 1rem; padding: 0.75rem; border-radius: 0.5rem; background: {msg.role === 'user' ? 'var(--bg)' : '#eef2ff'};">
-          <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.25rem;">
-            {msg.role === 'user' ? 'You' : 'AI'}
-          </div>
-          <div>{msg.content}</div>
-        </div>
-      {/each}
-      {#if loading}
-        <div style="color: var(--text-secondary); font-style: italic;">Thinking...</div>
+  <div class="flex items-center justify-between mb-lg">
+    <h2 style="margin: 0;">AI Playground</h2>
+    <div class="flex items-center gap-sm">
+      {#if useStudio}
+        <span class="chip" style="font-size: 12px;">● Mastra Studio</span>
       {/if}
-    </div>
-
-    <div style="display: flex; gap: 0.5rem;">
-      <input
-        type="text"
-        bind:value={prompt}
-        placeholder="Ask anything..."
-        style="flex: 1; padding: 0.625rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);"
-        onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' && !loading) send() }}
-      />
-      <button
-        onclick={send}
-        disabled={loading || !prompt.trim()}
-        style="padding: 0.625rem 1.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer;"
-      >
-        Send
-      </button>
+      <button class="btn-ghost" style="height: 28px; padding: 2px 12px; font-size: 11px;"
+        onclick={() => {
+          const url = prompt('Mastra Studio URL:', studioUrl || 'http://127.0.0.1:3443')
+          if (url) { localStorage.setItem('mastra-studio-url', url); studioUrl = url; useStudio = true }
+        }}>Configure</button>
     </div>
   </div>
+
+  {#if useStudio}
+    <iframe src={studioUrl} style="width: 100%; height: calc(100vh - 140px); border: 1px solid var(--border); border-radius: var(--radius-none);"
+      title="Mastra Studio" />
+  {:else}
+    <div class="card" style="max-width: 800px;">
+      <div style="margin-bottom: var(--space-md); min-height: 200px; max-height: 400px; overflow-y: auto;">
+        {#if messages.length === 0}
+          <p style="color: var(--text-muted); text-align: center; padding: var(--space-xl);">
+            No messages yet. The AI backend is running in mock mode — install Mastra for full agent capabilities.
+          </p>
+        {/if}
+        {#each messages as msg}
+          <div style="margin-bottom: var(--space-md); padding: var(--space-md); border: 1px solid var(--border);
+            background: {msg.role === 'user' ? 'var(--char)' : 'var(--surface)'};">
+            <div class="label" style="margin-bottom: 4px;">{msg.role === 'user' ? 'You' : 'AI'}</div>
+            <div style="font-size: 14px; line-height: 1.6; white-space: pre-wrap;">{msg.content}</div>
+          </div>
+        {/each}
+        {#if loading}
+          <div style="color: var(--text-muted); padding: var(--space-sm);">Thinking…</div>
+        {/if}
+      </div>
+      <div style="display: flex; gap: var(--space-sm);">
+        <input class="input" style="flex: 1;" bind:value={prompt} placeholder="Ask anything…"
+          onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' && !loading) send() }} />
+        <button class="btn-primary" style="height: 44px;" disabled={loading || !prompt.trim()} onclick={send}>
+          Send
+        </button>
+      </div>
+    </div>
+  {/if}
 </div>
