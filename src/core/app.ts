@@ -1310,7 +1310,9 @@ export class Sinopebase {
     // ── Admin Tables API — GET /api/admin/tables (service_role only) ──
     if (this.database) {
       const { createAdminTablesPlugin } = await import('../apis/admin-tables')
-      s5.use(createAdminTablesPlugin(this.database, isSuperuser))
+      if (this.database instanceof PostgresDatabase) {
+        s5.use(createAdminTablesPlugin(this.database.getPool(), isSuperuser))
+      }
     }
 
     // ── Collections API — /api/collections/* (service_role only) ──
