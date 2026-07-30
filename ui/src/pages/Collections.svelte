@@ -274,7 +274,7 @@
 
   <div class="flex gap-md" style="align-items: flex-start;">
     <!-- Table sidebar -->
-    <nav style="width: 220px; flex-shrink: 0;" class="card" class:p-sm>
+    <nav style="width: 220px; flex-shrink: 0;" class="card p-sm">
       <div class="label mb-sm">Tables</div>
       {#if tables.length === 0}
         <p style="color: var(--text-muted); font-size: 13px;">No tables found</p>

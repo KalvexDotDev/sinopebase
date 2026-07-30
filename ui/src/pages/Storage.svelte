@@ -100,7 +100,7 @@
   {/if}
 
   <div class="flex gap-md" style="align-items: flex-start;">
-    <nav style="width: 200px;" class="card" class:p-sm>
+    <nav style="width: 200px;" class="card p-sm">
       <div class="label mb-sm">Buckets</div>
       {#each buckets as b (b.name)}
         <button
