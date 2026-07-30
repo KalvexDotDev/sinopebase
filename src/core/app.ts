@@ -506,6 +506,7 @@ import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Elysia } from 'elysia'
+import { openapi } from '@elysia/openapi'
 import { Cron } from '~/tools/cron/cron'
 import type { MigrationDB } from '../../migrations/types'
 import {
@@ -969,6 +970,21 @@ export class Sinopebase {
     // Use const chains (not let reassignment) so TypeScript infers the full
     // Elysia type after each .use(), .error(), .get(), etc.
     const server = new Elysia({ name: 'sinopebase' })
+      // OpenAPI spec generation — provider: null means no Scalar/Swagger UI,
+      // we serve the raw spec at /openapi/json for our native admin UI to consume.
+      .use(
+        openapi({
+          provider: null,
+          documentation: {
+            info: {
+              title: 'Sinopebase API',
+              version: '0.5.0',
+              description: 'PocketBase-shaped, Supabase-compatible backend. REST, Auth, Storage, Realtime, Admin.',
+            },
+            servers: [{ url: `http://${this.config.host ?? '127.0.0.1'}:${this.config.port ?? 8090}` }],
+          },
+        }),
+      )
       // Register all custom error classes so onError gets full type narrowing (H7)
       .error({
         ApiError,

@@ -29,9 +29,18 @@ export function setServiceRoleKey(key: string): void {
   localStorage.setItem('sb-service-role-key', key)
 }
 
+export function getAnonKey(): string | null {
+  return localStorage.getItem('sb-anon-key')
+}
+
+export function setAnonKey(key: string): void {
+  localStorage.setItem('sb-anon-key', key)
+}
+
 export function clearTokens(): void {
   localStorage.removeItem('sb-access-token')
   localStorage.removeItem('sb-service-role-key')
+  localStorage.removeItem('sb-anon-key')
 }
 
 /** Returns the best available token — service_role takes precedence. */
