@@ -1201,6 +1201,13 @@ export class Sinopebase {
     // ── Admin UI — serve built Svelte SPA from /_/ (returns Elysia, H9: auth-guarded) ──
     const s4 = this.mountAdminUI(s3)
 
+    // ── Admin API auth helper — validates service_role token ──
+    const isSuperuser = (req: Request): boolean => {
+      const h = req.headers.get('authorization') ?? ''
+      const tok = h.startsWith('Bearer ') ? h.slice(7) : h
+      return Equal(tok, this.cachedServiceRoleKey)
+    }
+
     // ── Backup / restore endpoints — service-role only ──
     if (!existsSync(this.resolvedBackupDir)) {
       await mkdir(this.resolvedBackupDir, { recursive: true })
@@ -1208,9 +1215,8 @@ export class Sinopebase {
 
     const s5 = s4
       // GET /api/admin/backups — list available backups
-      .get('/api/admin/backups', async ({ set, request }) => {
-        const ctx = postgrestContexts.get(request)
-        if (ctx?.role !== 'service_role') {
+      .get('/api/admin/backups', async ({ request, set }) => {
+        if (!isSuperuser(request)) {
           set.status = 403
           return { code: 403, message: 'Only service_role can list backups.' }
         }
@@ -1228,9 +1234,8 @@ export class Sinopebase {
       })
 
       // POST /api/admin/backup — create a backup
-      .post('/api/admin/backup', async ({ body, set, request }) => {
-        const ctx = postgrestContexts.get(request)
-        if (ctx?.role !== 'service_role') {
+      .post('/api/admin/backup', async ({ request, body, set }) => {
+        if (!isSuperuser(request)) {
           set.status = 403
           return { code: 403, message: 'Only service_role can create backups.' }
         }
@@ -1252,9 +1257,8 @@ export class Sinopebase {
       })
 
       // POST /api/admin/restore — restore a backup
-      .post('/api/admin/restore', async ({ body, set, request }) => {
-        const ctx = postgrestContexts.get(request)
-        if (ctx?.role !== 'service_role') {
+      .post('/api/admin/restore', async ({ request, body, set }) => {
+        if (!isSuperuser(request)) {
           set.status = 403
           return { code: 403, message: 'Only service_role can restore backups.' }
         }
@@ -1279,11 +1283,6 @@ export class Sinopebase {
       })
 
     // ── Settings API — GET/PATCH /api/settings (service_role only) ──
-    const isSuperuser = (req: Request) => {
-      const ctx = postgrestContexts.get(req)
-      return ctx?.role === 'service_role'
-    }
-
     const { createSettingsPlugin } = await import('../apis/settings')
     s5.use(
       createSettingsPlugin(

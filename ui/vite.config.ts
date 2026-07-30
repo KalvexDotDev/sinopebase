@@ -12,6 +12,9 @@ export default defineConfig({
     proxy: {
       '/api': 'http://127.0.0.1:8090',
       '/auth': 'http://127.0.0.1:8090',
+      '/rest': 'http://127.0.0.1:8090',
+      '/storage': 'http://127.0.0.1:8090',
+      '/realtime': 'http://127.0.0.1:8090',
     },
   },
 })
