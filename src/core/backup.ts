@@ -184,7 +184,7 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
         ORDER BY ordinal_position
       `, [table])
 
-      const colDefs = cols.rows.map((c: any) => {
+      let colDefs = cols.rows.map((c: any) => {
         let def = `  "${c.column_name}" ${c.data_type}`
         if (c.is_nullable === 'NO') def += ' NOT NULL'
         if (c.column_default) def += ` DEFAULT ${c.column_default}`
