@@ -69,6 +69,16 @@
     else error = `Upload failed: ${res.status}`
   }
 
+  async function deleteFile(name: string) {
+    if (!selectedBucket) return
+    await fetch(`${window.location.origin}/storage/v1/object/${selectedBucket}`, {
+      method: 'DELETE',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: [name] }),
+    })
+    loadFiles(selectedBucket)
+  }
+
   $effect(() => { loadBuckets() })
 </script>
 
@@ -147,6 +157,7 @@
                     <td style="color: var(--text-muted);">{f.last_modified ? new Date(f.last_modified).toLocaleString() : '—'}</td>
                     <td>
                       <a href="{window.location.origin}/storage/v1/object/{selectedBucket}/{f.name}" download class="btn-icon" style="text-decoration: none;">↓</a>
+                      <button class="btn-icon" style="font-size: 10px;" onclick={() => deleteFile(f.name)} title="Delete">✕</button>
                     </td>
                   </tr>
                 {/each}
