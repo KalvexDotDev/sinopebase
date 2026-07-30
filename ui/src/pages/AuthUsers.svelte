@@ -16,7 +16,7 @@
     try {
       const headers: Record<string, string> = {}
       if (token) headers['Authorization'] = `Bearer ${token}`
-      const res = await fetch(`${window.location.origin}/rest/v1/user?select=*&order=created_at.desc&limit=200`, { headers })
+      const res = await fetch(`${window.location.origin}/rest/v1/user?select=*&order=createdAt.desc&limit=200`, { headers })
       if (res.ok) users = await res.json()
       else error = `Failed to load users: ${res.status}`
     } catch (e: any) { error = e.message }
@@ -27,19 +27,20 @@
     if (!newEmail || !newPassword) { error = 'Email and password required'; return }
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
-    const res = await fetch(`${window.location.origin}/auth/v1/admin/users`, {
+    const res = await fetch(`${window.location.origin}/auth/v1/signup`, {
       method: 'POST', headers,
-      body: JSON.stringify({ email: newEmail, password: newPassword, email_confirm: true }),
+      body: JSON.stringify({ email: newEmail, password: newPassword }),
     })
     if (res.ok) { showCreate = false; newEmail = ''; newPassword = ''; loadUsers() }
-    else error = `Create failed: ${res.status}`
+    else { const j = await res.json().catch(() => ({})); error = `Create failed: ${res.status} — ${j.message || ''}` }
   }
 
   async function deleteUser(id: string) {
     if (!confirm(`Delete user ${id}?`)) return
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
-    await fetch(`${window.location.origin}/auth/v1/admin/users/${id}`, { method: 'DELETE', headers })
+    const res = await fetch(`${window.location.origin}/rest/v1/user?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+    if (!res.ok) { error = `Delete failed: ${res.status}`; return }
     loadUsers()
   }
 
