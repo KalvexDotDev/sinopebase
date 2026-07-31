@@ -61,9 +61,9 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) 
         Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30),
       )
 
-      const rows = await selectRows(db, '_logs', { sort: '-created' })
+      const rows = await selectRows(db, '_logs')
 
-      const logs = rows.map((r) => ({
+      let logs = rows.map((r) => ({
         id: String(r.id ?? ''),
         level: Number(r.level ?? 0),
         message: String(r.message ?? ''),
@@ -71,6 +71,9 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) 
         created: String(r.created ?? ''),
         updated: String(r.updated ?? ''),
       }))
+
+      // Sort newest first
+      logs.sort((a, b) => (b.created > a.created ? 1 : -1))
 
       const totalItems = logs.length
       const totalPages = Math.ceil(totalItems / perPage)
