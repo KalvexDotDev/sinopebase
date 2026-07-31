@@ -9,6 +9,7 @@
 
   const token = $derived(getServiceRoleKey())
   const origin = window.location.origin
+  // Needed for the API route column
 
   async function load() {
     const r = await listFunctions()
@@ -55,12 +56,12 @@
   {:else}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Path</th><th>Size</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>API Route</th><th>Size</th><th></th></tr></thead>
         <tbody>
           {#each functions as fn (fn.name)}
             <tr>
               <td><code style="font-size: 14px;">{fn.name}</code></td>
-              <td style="color: var(--text-muted); font-size: 12px;"><code>{fn.path}</code></td>
+              <td style="color: var(--lichen); font-size: 12px;"><code>{origin}/api/functions/v1/{fn.name}</code></td>
               <td style="color: var(--text-muted);">{fn.size} bytes</td>
               <td>
                 <Button variant="ghost" size="sm" disabled={invokeName === fn.name}
