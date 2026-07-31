@@ -246,16 +246,13 @@ export class MastraPlugin {
           }
         }
 
+        if (!(await checkAuth(request))) {
+          set.status = 401
+          return { error: 'Unauthorized', status: 401 }
+        }
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)
-          if (requireAuth && !user) {
-            set.status = 401
-            return { error: 'Unauthorized', status: 401 }
-          }
           if (user) return withRequestContext(user, doHandle)
-        } else if (requireAuth) {
-          set.status = 401
-          return { error: 'Auth unavailable', status: 401 }
         }
         return doHandle()
       })
@@ -293,16 +290,13 @@ export class MastraPlugin {
           return new Response(readable, { headers: { 'Content-Type': 'text/event-stream' } })
         }
 
+        if (!(await checkAuth(request))) {
+          set.status = 401
+          return { error: 'Unauthorized', status: 401 }
+        }
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)
-          if (requireAuth && !user) {
-            set.status = 401
-            return { error: 'Unauthorized', status: 401 }
-          }
           if (user) return withRequestContext(user, doHandle)
-        } else if (requireAuth) {
-          set.status = 401
-          return { error: 'Auth unavailable', status: 401 }
         }
         return doHandle()
       })
