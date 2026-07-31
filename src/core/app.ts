@@ -1086,7 +1086,7 @@ export class Sinopebase {
             const pool = this.database.getPool()
             pool.query(
               `INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`,
-              [0, `${request.method} ${pathname}`, JSON.stringify({ status: set.status ?? 200, duration_ms: duration, request_id: meta.requestId })],
+              [0, `${request.method} ${pathname}`, JSON.stringify({ method: request.method, path: pathname, status: set.status ?? 200, duration_ms: duration, request_id: meta.requestId })],
             ).catch(() => { /* best-effort */ })
           }
           requestMeta.delete(request)
