@@ -12,14 +12,6 @@
   // Needed for the API route column
 
   async function load() {
-    const r = await listFunctions()
-    if (r.data) {
-      functions = Array.isArray(r.data) ? r.data : r.data.data || []
-    }
-    loading = false
-  }
-
-  async function load() {
     try {
       // The DropFunctions manage route requires auth
       const headers: Record<string, string> = {}
