@@ -1068,16 +1068,27 @@ export class Sinopebase {
         const meta = requestMeta.get(request)
         if (meta) {
           const duration = Math.round(performance.now() - meta.startTime)
+          const pathname = new URL(request.url).pathname
           try {
             logger.info('request', {
               request_id: meta.requestId,
               method: request.method,
-              path: new URL(request.url).pathname,
+              path: pathname,
               status: set.status ?? 200,
               duration_ms: duration,
             })
           } catch {
             // best-effort — never crash on logging
+          }
+          // Persist to _logs table if we have a database
+          if (this.database instanceof PostgresDatabase) {
+            try {
+              const pool = this.database.getPool()
+              await pool.query(
+                `INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`,
+                [0, `${request.method} ${pathname}`, JSON.stringify({ status: set.status ?? 200, duration_ms: duration, request_id: meta.requestId })],
+              )
+            } catch { /* best-effort */ }
           }
           requestMeta.delete(request)
         }

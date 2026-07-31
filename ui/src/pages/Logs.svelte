@@ -2,123 +2,80 @@
   import { getLogs } from '../lib/api'
   import Button from '../components/Button.svelte'
 
-  let entries = $state<Array<{ id: string; level: number; message: string; data: Record<string, unknown>; created: string }>>([])
+  let entries = $state<Array<{ id: string; level: number; message: string; created: string }>>([])
   let loading = $state(true)
   let error = $state('')
   let page = $state(1)
-  let perPage = $state(50)
-  let filterLevel = $state<number | null>(null)
-  let filterPath = $state('')
-  let autoRefresh = $state(false)
+  let autoRefresh = $state(true)
+  let filter = $state('')
 
   async function load() {
     loading = true; error = ''
-    const result = await getLogs({ page, perPage })
-    if (result.data) {
-      entries = result.data.items ?? []
-    } else if (result.error) {
-      error = result.error.message
-    }
+    try {
+      const result = await getLogs({ page, perPage: 100 })
+      if (result.data) entries = result.data.items ?? []
+      else if (result.error) error = result.error.message
+    } catch (e: any) { error = e.message }
     loading = false
   }
 
   $effect(() => { load() })
+
   $effect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(load, 5000)
-    return () => clearInterval(interval)
+    const i = setInterval(load, 3000)
+    return () => clearInterval(i)
   })
 
   function levelLabel(level: number): string {
-    if (level <= 1) return 'ERROR'
+    if (level <= 1) return 'ERR'
     if (level <= 2) return 'WARN'
     if (level <= 3) return 'INFO'
-    return 'DEBUG'
+    return 'DBG'
   }
 
   function levelColor(level: number): string {
-    if (level <= 1) return 'var(--danger)'
+    if (level <= 1) return '#e0a3a3'
     if (level <= 2) return '#e0c46e'
-    if (level <= 3) return 'var(--lichen)'
-    return 'var(--text-muted)'
+    if (level <= 3) return '#a7e0c2'
+    return '#9aa0a6'
   }
+
+  const filtered = $derived(filter ? entries.filter((e) => e.message.toLowerCase().includes(filter.toLowerCase())) : entries)
 </script>
 
 <div>
-  <div class="flex items-center justify-between mb-lg">
+  <div class="flex items-center justify-between mb-md">
     <div>
       <h2 style="margin: 0;">Logs</h2>
-      <p class="label" style="margin-top: 4px;">Server-side request logs</p>
+      <p style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">
+        {entries.length} entries · auto-refresh every 3s
+      </p>
     </div>
     <div class="flex gap-sm items-center">
-      <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
-        <input type="checkbox" bind:checked={autoRefresh} />
-        Auto-refresh
+      <input class="input input-sm" style="width: 200px;" placeholder="Filter…" bind:value={filter} />
+      <Button variant="ghost" size="sm" onclick={load}>↻</Button>
+      <label style="font-size: 12px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        <input type="checkbox" bind:checked={autoRefresh} /> Live
       </label>
-      <Button variant="ghost" size="sm" onclick={load}>
-        ↻ Refresh
-      </Button>
     </div>
   </div>
 
   {#if error}<div class="toast toast-error" style="margin-bottom: var(--space-md);">{error}</div>{/if}
 
-  <div class="flex gap-sm mb-md">
-    <select
-      style="font-family:var(--font-ui);font-size:13px;padding:4px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);"
-      onchange={(e: Event) => { filterLevel = (e.target as HTMLSelectElement).value ? Number((e.target as HTMLSelectElement).value) : null; page = 1 }}
-    >
-      <option value="">All Levels</option>
-      <option value="1">ERROR</option>
-      <option value="2">WARN</option>
-      <option value="3">INFO</option>
-      <option value="4">DEBUG</option>
-    </select>
-    <input class="input input-sm" style="width: 200px;" placeholder="Filter path…" bind:value={filterPath}
-      oninput={() => { page = 1 }} />
-  </div>
-
-  {#if loading}
-    <div class="card" style="padding: var(--space-lg);">
-      {#each Array(8) as _}<div class="skeleton" style="height: 24px; margin-bottom: 6px;"></div>{/each}
-    </div>
-  {:else if entries.length === 0}
-    <div class="card" style="text-align: center; padding: var(--space-xl);">
-      <p style="color: var(--text-secondary);">No log entries found</p>
-    </div>
-  {:else}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 60px;">Level</th>
-            <th>Message</th>
-            <th style="width: 160px;">Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each entries as entry}
-            <tr>
-              <td>
-                <span style="color: {levelColor(entry.level)}; font-weight: 600; font-size: 11px;">
-                  {levelLabel(entry.level)}
-                </span>
-              </td>
-              <td><code style="font-size: 12px;">{entry.message}</code></td>
-              <td style="font-size: 12px; color: var(--text-muted);">{new Date(entry.created).toLocaleString()}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
-
-  <!-- Pagination -->
-  <div class="flex items-center justify-between" style="margin-top: var(--space-md);">
-    <span style="font-size: 13px; color: var(--text-secondary);">Page {page}</span>
-    <div class="flex gap-sm">
-      <Button variant="icon" size="sm" disabled={page <= 1} onclick={() => { page-- }}>←</Button>
-      <Button variant="icon" size="sm" onclick={() => { page++ }}>→</Button>
-    </div>
+  <div class="card" style="font-family: var(--font-mono); font-size: 12px; max-height: calc(100vh - 160px); overflow-y: auto; padding: 0;">
+    {#if loading && entries.length === 0}
+      <div style="padding: var(--space-lg);">{#each Array(10) as _}<div class="skeleton" style="height: 20px; margin-bottom: 4px;"></div>{/each}</div>
+    {:else if entries.length === 0}
+      <div style="text-align: center; padding: var(--space-xl); color: var(--text-muted);">No log entries yet. Make a request to trigger logging.</div>
+    {:else}
+      {#each filtered as e (e.id)}
+        <div style="display: flex; gap: var(--space-sm); padding: 4px 12px; border-bottom: 1px solid var(--border); align-items: baseline;">
+          <span style="color: var(--text-muted); font-size: 10px; width: 80px; flex-shrink: 0;">{e.created ? new Date(e.created).toLocaleTimeString() : ''}</span>
+          <span style="color: {levelColor(e.level)}; font-weight: 600; font-size: 10px; width: 36px; flex-shrink: 0;">{levelLabel(e.level)}</span>
+          <span style="color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{e.message}</span>
+        </div>
+      {/each}
+    {/if}
   </div>
 </div>
