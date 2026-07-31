@@ -25,9 +25,12 @@
       try {
         const data = JSON.parse(e.data)
         const msg = Array.isArray(data) ? { topic: data[2] as string, event: data[3] as string } : data
-        messages = [{ time: new Date().toLocaleTimeString(), topic: msg.topic ?? '', event: msg.event ?? '' }, ...messages.slice(0, 49)]
-        if (msg.event === 'postgres_changes') todoCount++
-      } catch {}
+        const topic = msg.topic ?? ''
+        const event = msg.event ?? ''
+        messages = [{ time: new Date().toLocaleTimeString(), topic, event }, ...messages.slice(0, 49)]
+        console.log('[realtime] msg:', event, topic, JSON.stringify(msg).slice(0, 200))
+        if (event === 'postgres_changes') todoCount++
+      } catch { console.error('[realtime] parse error:', e) }
     }
 
     return () => { ws.close() }
