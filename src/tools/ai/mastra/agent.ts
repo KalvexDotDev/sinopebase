@@ -60,8 +60,9 @@ function getDefaultProvider(): AIProvider {
 
 export class Agent {
   public readonly id: string
-  public readonly name: string
-  public readonly instructions: string
+  public name: string
+  public instructions: string
+  public description: string = ''
   private model: string
   private tools: Tool[]
   private provider: AIProvider

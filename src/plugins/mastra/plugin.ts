@@ -170,22 +170,48 @@ export class MastraPlugin {
     const requireAuth = this.options.requireAuth
     const mastraAuth = auth ? createMastraAuth(auth) : null
 
-    // ---- Agent routes (with request-scoped context) ----
+    // ---- Agent CRUD + chat routes (with request-scoped context) ----
     const agentRoutes = new Elysia({ name: 'sinopebase-mastra-agents' })
+      // List agents
       .get('/api/mastra/agents', async ({ request }) => {
-        // Propagate context when a valid token is present, even if
-        // requireAuth is false
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)
           if (user) {
             return withRequestContext(user, () => ({
-              data: this.agents.map((a) => ({ id: a.id, name: a.name })),
+              data: this.agents.map((a) => ({ id: a.id, name: a.name, description: a.description, instructions: a.instructions, model: this.provider?.displayName?.() ?? 'deepseek-chat' })),
             }))
           }
         }
-        return {
-          data: this.agents.map((a) => ({ id: a.id, name: a.name })),
-        }
+        return { data: this.agents.map((a) => ({ id: a.id, name: a.name, description: a.description, instructions: a.instructions, model: this.provider?.displayName?.() ?? 'deepseek-chat' })) }
+      })
+      // Create agent
+      .post('/api/mastra/agents', async ({ request, body, set }) => {
+        if (requireAuth && !(mastraAuth && await mastraAuth.authorize(request))) { set.status = 401; return { error: 'Unauthorized' } }
+        const { id, name, description, instructions, model } = body as any
+        if (!name) { set.status = 400; return { error: 'name is required' } }
+        const agent = new Agent({ id: id || crypto.randomUUID(), name, description: description || '', instructions: instructions || 'You are a helpful assistant.', provider: this.provider!, tools: [] })
+        this.agents.push(agent)
+        return { data: { id: agent.id, name: agent.name } }
+      })
+      // Update agent
+      .patch('/api/mastra/agents/:id', async ({ request, params, body, set }) => {
+        if (requireAuth && !(mastraAuth && await mastraAuth.authorize(request))) { set.status = 401; return { error: 'Unauthorized' } }
+        const idx = this.agents.findIndex((a) => a.id === params.id)
+        if (idx === -1) { set.status = 404; return { error: 'Agent not found' } }
+        const { name, description, instructions, model } = body as any
+        const existing = this.agents[idx]!
+        if (name) existing.name = name
+        if (description !== undefined) existing.description = description
+        if (instructions !== undefined) existing.instructions = instructions
+        return { data: { id: existing.id, name: existing.name } }
+      })
+      // Delete agent
+      .delete('/api/mastra/agents/:id', async ({ request, params, set }) => {
+        if (requireAuth && !(mastraAuth && await mastraAuth.authorize(request))) { set.status = 401; return { error: 'Unauthorized' } }
+        const idx = this.agents.findIndex((a) => a.id === params.id)
+        if (idx === -1) { set.status = 404; return { error: 'Agent not found' } }
+        this.agents.splice(idx, 1)
+        return { message: 'Agent deleted' }
       })
       .post('/api/mastra/agents/:id/chat', async ({ params, body, set, request }) => {
         // Auth check + context propagation
