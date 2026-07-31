@@ -1350,9 +1350,11 @@ export class Sinopebase {
     }
 
     // ── Cron API — GET /api/crons, POST /api/crons/:id (service_role only) ──
-    const { createCronPlugin } = await import('../apis/cron')
-    const cronJobs: Array<{ id: string; label?: string; schedule?: string; running?: boolean; lastRun?: string }> = []
-    s5.use(createCronPlugin({ listJobs: () => cronJobs, runJob: () => false }, isSuperuser))
+    // ── Cron CRUD API — /api/crons/* (service_role only, PostgreSQL-backed) ──
+    if (this.database instanceof PostgresDatabase) {
+      const { createCronCrudPlugin } = await import('../apis/cron-crud')
+      s5.use(createCronCrudPlugin(this.database.getPool(), isSuperuser))
+    }
 
     // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
