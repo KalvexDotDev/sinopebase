@@ -98,7 +98,8 @@ export function createExecuteRoutes(
       if (resolvedConfig.auth) {
         const token = extractBearerToken(request)
         functionAuth = await validateFunctionAuth(auth, token)
-        if (!functionAuth) {
+        const isServiceRole = token && process.env.SINOPEBASE_SERVICE_ROLE_KEY && token === process.env.SINOPEBASE_SERVICE_ROLE_KEY
+        if (!functionAuth && !isServiceRole) {
           set.status = 401
           return { error: 'Missing or invalid Authorization header', status: 401 }
         }
