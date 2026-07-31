@@ -1,6 +1,8 @@
 <script lang="ts">
   let wsStatus = $state<'connected' | 'disconnected'>('disconnected')
   let messageCount = $state(0)
+  let subscriptions = $state<string[]>([])
+  let todoCount = $state(0)
   let messages = $state<Array<{ time: string; topic: string; event: string }>>([])
 
   // Connect for monitoring
@@ -8,15 +10,22 @@
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const token = localStorage.getItem('sb-service-role-key') || ''
     const ws = new WebSocket(`${protocol}//${window.location.host}/realtime/v1/websocket?apikey=${token}`)
+    let ref = 1
 
-    ws.onopen = () => { wsStatus = 'connected' }
-    ws.onclose = () => { wsStatus = 'disconnected' }
+    ws.onopen = () => {
+      wsStatus = 'connected'
+      // Subscribe to all postgres_changes on public schema
+      const join = { topic: 'realtime:public:todos', event: 'phx_join', payload: { access_token: token, config: { postgres_changes: [{ event: '*', schema: 'public', table: 'todos' }] } }, ref: String(ref++) }
+      ws.send(JSON.stringify(join))
+      subscriptions = ['public:todos (postgres_changes)']
+    }
+    ws.onclose = () => { wsStatus = 'disconnected'; subscriptions = [] }
     ws.onmessage = (e) => {
       messageCount++
       try {
         const data = JSON.parse(e.data)
         const msg = Array.isArray(data) ? { topic: data[2] as string, event: data[3] as string } : data
-        messages = [{ time: new Date().toLocaleTimeString(), topic: msg.topic ?? '', event: msg.event ?? '' }, ...messages.slice(0, 49)]
+        messages = [{ time: new Date().toLocaleTimeString(), topic, event }, ...messages.slice(0, 49)]; if (event === "postgres_changes") todoCount++
       } catch {}
     }
 
@@ -44,12 +53,25 @@
       <div style="font-family: var(--font-mono); font-size: 24px; color: var(--lichen);">{messageCount}</div>
     </div>
     <div class="card" style="text-align: center;">
+      <div class="label" style="margin-bottom: var(--space-sm);">Todo Events</div>
+      <div style="font-family: var(--font-mono); font-size: 24px; color: var(--lichen);">{todoCount}</div>
+    </div>
+    <div class="card" style="text-align: center;">
       <div class="label" style="margin-bottom: var(--space-sm);">Endpoint</div>
       <div style="font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary);">
         /realtime/v1/websocket
       </div>
     </div>
   </div>
+
+  {#if subscriptions.length > 0}
+    <div class="card mb-md">
+      <div class="label mb-sm">Subscriptions</div>
+      {#each subscriptions as sub}
+        <span class="chip" style="margin-right: 4px;">{sub}</span>
+      {/each}
+    </div>
+  {/if}
 
   <div class="card">
     <div class="label mb-sm">Recent Messages</div>
