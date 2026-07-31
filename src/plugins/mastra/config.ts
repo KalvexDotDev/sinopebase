@@ -46,7 +46,7 @@ export interface MastraPluginOptions {
 
 export const DEFAULTS: Required<MastraPluginOptions> = {
   openaiApiKey: '',
-  baseUrl: 'https://api.openai.com/v1',
+  baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
   defaultModel: 'gpt-4o-mini',
   embeddingModel: 'text-embedding-3-small',
   requireAuth: true,
