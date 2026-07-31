@@ -1360,10 +1360,41 @@ export class Sinopebase {
         set.status = 403
         return { code: 403, message: 'Only service_role can list functions.' }
       }
-      // Return registered functions from the DropFunctions registry.
-      // The DropFunctions plugin maintains its own registry; for now, return an
-      // empty list — the admin UI handles this gracefully.
-      return []
+      try {
+        const { readdir, stat } = await import('node:fs/promises')
+        const { join } = await import('node:path')
+        const { existsSync } = await import('node:fs')
+        const functionsDir = join(this.dataDir(), 'functions')
+        if (!existsSync(functionsDir)) {
+          // Check project root functions/ directory
+          const altDir = join(process.cwd(), 'functions')
+          if (existsSync(altDir)) {
+            const entries = await readdir(altDir)
+            const result = []
+            for (const entry of entries) {
+              if (entry.endsWith('.ts') || entry.endsWith('.js')) {
+                const fullPath = join(altDir, entry)
+                const st = await stat(fullPath).catch(() => null)
+                result.push({ name: entry.replace(/\.(ts|js)$/, ''), path: fullPath, size: st?.size ?? 0 })
+              }
+            }
+            return result
+          }
+          return []
+        }
+        const entries = await readdir(functionsDir)
+        const result = []
+        for (const entry of entries) {
+          if (entry.endsWith('.ts') || entry.endsWith('.js')) {
+            const fullPath = join(functionsDir, entry)
+            const st = await stat(fullPath).catch(() => null)
+            result.push({ name: entry.replace(/\.(ts|js)$/, ''), path: fullPath, size: st?.size ?? 0 })
+          }
+        }
+        return result
+      } catch {
+        return []
+      }
     })
 
     // ── Plugins ──
