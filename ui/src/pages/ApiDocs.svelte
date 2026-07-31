@@ -80,7 +80,7 @@
   }
 
   // ── Build grouped data ──
-  const grouped = $derived(() => {
+  const grouped = $derived.by(() => {
     if (!spec?.paths) return []
     const groups = new Map<string, { tag: string; desc: string; paths: Array<{ path: string; methods: string[]; detail: any }> }>()
     for (const [path, item] of Object.entries(spec.paths) as [string, Record<string, any>][]) {
