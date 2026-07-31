@@ -18,7 +18,7 @@
   function lvlColor(l: number) { if (l <= 1) return 'var(--danger)'; if (l <= 2) return '#e0c46e'; return 'var(--lichen)' }
   function sColor(c: number) { if (c >= 500) return 'var(--danger)'; if (c >= 400) return '#e0c46e'; return 'var(--lichen)' }
   function mColor(m: string) { if (m === 'GET') return 'var(--lichen)'; if (m === 'POST') return '#e0c46e'; if (m === 'DELETE') return 'var(--danger)'; if (m === 'PATCH' || m === 'PUT') return '#9dc4e0'; return 'var(--fog)' }
-  function badge(p: string) { const s = p.split('/').filter(Boolean); return s[0] === 'api' ? s.slice(0,3).join('/') : s[0] === 'rest' ? `rest/${s[1]||''}` : s[0] === 'auth' ? `auth` : s[0] === 'storage' ? `storage` : s[0] || 'root' }
+  function badge(p: string) { if (!p) return '—'; const s = p.split('/').filter(Boolean); return s[0] === 'api' ? s.slice(0,3).join('/') : s[0] === 'rest' ? `rest/${s[1]||''}` : s[0] === 'auth' ? `auth` : s[0] === 'storage' ? `storage` : s[0] || 'root' }
 
   $effect(() => { load() })
   $effect(() => { if (paused) return; const i = setInterval(load, 2000); return () => clearInterval(i) })
