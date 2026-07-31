@@ -1354,50 +1354,7 @@ export class Sinopebase {
     const cronJobs: Array<{ id: string; label?: string; schedule?: string; running?: boolean; lastRun?: string }> = []
     s5.use(createCronPlugin({ listJobs: () => cronJobs, runJob: () => false }, isSuperuser))
 
-    // ── Functions listing — GET /api/functions/v1 ──
-    s5.get('/api/functions/v1', async ({ request, set }) => {
-      if (!isSuperuser(request)) {
-        set.status = 403
-        return { code: 403, message: 'Only service_role can list functions.' }
-      }
-      try {
-        const { readdir, stat } = await import('node:fs/promises')
-        const { join } = await import('node:path')
-        const { existsSync } = await import('node:fs')
-        const functionsDir = join(this.dataDir(), 'functions')
-        if (!existsSync(functionsDir)) {
-          // Check project root functions/ directory
-          const altDir = join(process.cwd(), 'functions')
-          if (existsSync(altDir)) {
-            const entries = await readdir(altDir)
-            const result = []
-            for (const entry of entries) {
-              if (entry.endsWith('.ts') || entry.endsWith('.js')) {
-                const fullPath = join(altDir, entry)
-                const st = await stat(fullPath).catch(() => null)
-                result.push({ name: entry.replace(/\.(ts|js)$/, ''), path: fullPath, size: st?.size ?? 0 })
-              }
-            }
-            return result
-          }
-          return []
-        }
-        const entries = await readdir(functionsDir)
-        const result = []
-        for (const entry of entries) {
-          if (entry.endsWith('.ts') || entry.endsWith('.js')) {
-            const fullPath = join(functionsDir, entry)
-            const st = await stat(fullPath).catch(() => null)
-            result.push({ name: entry.replace(/\.(ts|js)$/, ''), path: fullPath, size: st?.size ?? 0 })
-          }
-        }
-        return result
-      } catch {
-        return []
-      }
-    })
-
-    // ── Plugins ──
+    // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
     const mastraPlugin = new MastraPlugin({
       // H15: use config over process.env; never leak into config snapshots

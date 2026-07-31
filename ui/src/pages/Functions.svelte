@@ -19,12 +19,28 @@
     loading = false
   }
 
+  async function load() {
+    try {
+      // The DropFunctions manage route requires auth
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const res = await fetch(`${origin}/api/functions/v1`, { headers })
+      if (res.ok) {
+        const data = await res.json()
+        functions = Array.isArray(data) ? data : data.data || []
+      }
+    } catch { /* empty */ }
+    loading = false
+  }
+
   async function testInvoke(fnName: string) {
     invokeName = fnName; invokeResult = 'Invoking…'
     try {
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
       const res = await fetch(`${origin}/api/functions/v1/${fnName}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({ name: 'Tester' }),
       })
       invokeResult = await res.text()
