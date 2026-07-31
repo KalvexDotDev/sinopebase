@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getServiceRoleKey } from '../lib/api'
+  import Button from '../components/Button.svelte'
 
   let buckets = $state<Array<{ id: string; name: string; public: boolean }>>([])
   let files = $state<Array<{ name: string; size: number; last_modified: string }>>([])
@@ -96,10 +97,10 @@
 <div>
   <div class="flex items-center justify-between mb-lg">
     <h2 style="margin: 0;">Storage</h2>
-    <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;"
+    <Button variant="primary" size="sm"
       onclick={() => { showCreate = !showCreate; newBucketName = ''; newBucketPublic = false }}>
       + New Bucket
-    </button>
+    </Button>
   </div>
 
   {#if error}<div class="toast toast-error" style="margin-bottom: var(--space-md);">{error}</div>{/if}
@@ -112,8 +113,8 @@
         <label style="font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px;">
           <input type="checkbox" bind:checked={newBucketPublic} /> Public
         </label>
-        <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={createBucket}>Create</button>
-        <button class="btn-ghost" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={() => { showCreate = false }}>Cancel</button>
+        <Button variant="primary" size="sm" onclick={createBucket}>Create</Button>
+        <Button variant="ghost" size="sm" onclick={() => { showCreate = false }}>Cancel</Button>
       </div>
     </div>
   {/if}
@@ -167,8 +168,8 @@
                     <td>{f.size > 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`}</td>
                     <td style="color: var(--text-muted);">{f.last_modified ? new Date(f.last_modified).toLocaleString() : '—'}</td>
                     <td>
-                      <button class="btn-icon" onclick={() => downloadFile(f.name)} title="Download">↓</button>
-                      <button class="btn-icon" style="font-size: 10px;" onclick={() => deleteFile(f.name)} title="Delete">✕</button>
+                      <Button variant="icon" size="sm" onclick={() => downloadFile(f.name)} title="Download">↓</Button>
+                      <Button variant="icon" size="sm" onclick={() => deleteFile(f.name)} title="Delete">✕</Button>
                     </td>
                   </tr>
                 {/each}

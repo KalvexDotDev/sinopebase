@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getSettings, updateSettings, getServiceRoleKey } from '../lib/api'
+  import Button from '../components/Button.svelte'
 
   let settings = $state<Record<string, unknown>>({})
   let loading = $state(true)
@@ -39,10 +40,10 @@
 <div>
   <div class="flex items-center justify-between mb-lg">
     <h2 style="margin: 0;">Settings</h2>
-    <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" disabled={saving}
+    <Button variant="primary" size="sm" disabled={saving}
       onclick={save}>
       {saving ? 'Saving…' : 'Save Changes'}
-    </button>
+    </Button>
   </div>
 
   {#if error}<div class="toast toast-error" style="margin-bottom: var(--space-md);">{error}</div>{/if}

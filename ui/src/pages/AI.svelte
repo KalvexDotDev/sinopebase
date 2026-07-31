@@ -202,12 +202,7 @@
     <div><label class="label" style="margin-bottom: 4px;">Instructions</label>
       <textarea class="input" style="min-height: 100px; font-size: 13px;" bind:value={editForm.instructions} placeholder="System prompt / instructions"></textarea></div>
     <div><label class="label" style="margin-bottom: 4px;">Model</label>
-      <select bind:value={editForm.model} style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-none);">
-        <option value="deepseek-chat">DeepSeek Chat</option>
-        <option value="gpt-4o">GPT-4o</option>
-        <option value="gpt-4o-mini">GPT-4o Mini</option>
-        <option value="claude-sonnet-5">Claude Sonnet 5</option>
-      </select></div>
+      <input class="input" bind:value={editForm.model} placeholder="deepseek-chat" /></div>
     {#if editError}<div style="color: var(--danger); font-size: 13px;">{editError}</div>{/if}
     <div class="flex gap-sm" style="margin-top: var(--space-md);">
       <Button variant="primary" disabled={editSubmitting} onclick={saveEdit}>{editSubmitting ? 'Saving…' : 'Save'}</Button>
@@ -227,12 +222,7 @@
     <div><label class="label" style="margin-bottom: 4px;">Instructions</label>
       <textarea class="input" style="min-height: 100px; font-size: 13px;" bind:value={editForm.instructions} placeholder="System prompt"></textarea></div>
     <div><label class="label" style="margin-bottom: 4px;">Model</label>
-      <select bind:value={editForm.model} style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-none);">
-        <option value="deepseek-chat">DeepSeek Chat</option>
-        <option value="gpt-4o">GPT-4o</option>
-        <option value="gpt-4o-mini">GPT-4o Mini</option>
-        <option value="claude-sonnet-5">Claude Sonnet 5</option>
-      </select></div>
+      <input class="input" bind:value={editForm.model} placeholder="deepseek-chat" /></div>
     {#if editError}<div style="color: var(--danger); font-size: 13px;">{editError}</div>{/if}
     <div class="flex gap-sm" style="margin-top: var(--space-md);">
       <Button variant="primary" disabled={editSubmitting} onclick={createAgent}>{editSubmitting ? 'Creating…' : 'Create'}</Button>

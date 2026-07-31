@@ -47,7 +47,7 @@ export interface MastraPluginOptions {
 export const DEFAULTS: Required<MastraPluginOptions> = {
   openaiApiKey: '',
   baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-  defaultModel: 'gpt-4o-mini',
+  defaultModel: 'deepseek-chat',
   embeddingModel: 'text-embedding-3-small',
   requireAuth: true,
   production: false,

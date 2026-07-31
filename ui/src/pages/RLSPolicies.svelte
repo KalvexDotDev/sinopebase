@@ -1,5 +1,6 @@
 <script lang="ts">
   import { listTables, getServiceRoleKey } from '../lib/api'
+  import Button from '../components/Button.svelte'
 
   let tables = $state<Array<{ schema: string; name: string; hasRLS: boolean }>>([])
   let loading = $state(true)
@@ -62,11 +63,11 @@
                 {#if t.hasRLS}
                   <span style="font-size: 12px; color: var(--text-muted);">Create policies in migration</span>
                 {:else}
-                  <button class="btn-ghost" style="height: 28px; padding: 2px 12px; font-size: 11px;"
+                  <Button variant="ghost" size="sm"
                     disabled={enabling === t.name}
                     onclick={() => enableRLS(t.name)}>
                     {enabling === t.name ? 'Enabling…' : 'Enable RLS'}
-                  </button>
+                  </Button>
                 {/if}
               </td>
             </tr>

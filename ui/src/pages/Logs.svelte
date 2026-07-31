@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getLogs } from '../lib/api'
+  import Button from '../components/Button.svelte'
 
   let entries = $state<Array<{ id: string; level: number; message: string; data: Record<string, unknown>; created: string }>>([])
   let loading = $state(true)
@@ -54,9 +55,9 @@
         <input type="checkbox" bind:checked={autoRefresh} />
         Auto-refresh
       </label>
-      <button class="btn-ghost" style="height: 32px; padding: 4px 12px; font-size: 12px;" onclick={load}>
+      <Button variant="ghost" size="sm" onclick={load}>
         ↻ Refresh
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -116,8 +117,8 @@
   <div class="flex items-center justify-between" style="margin-top: var(--space-md);">
     <span style="font-size: 13px; color: var(--text-secondary);">Page {page}</span>
     <div class="flex gap-sm">
-      <button class="btn-icon" disabled={page <= 1} onclick={() => { page-- }}>←</button>
-      <button class="btn-icon" onclick={() => { page++ }}>→</button>
+      <Button variant="icon" size="sm" disabled={page <= 1} onclick={() => { page-- }}>←</Button>
+      <Button variant="icon" size="sm" onclick={() => { page++ }}>→</Button>
     </div>
   </div>
 </div>

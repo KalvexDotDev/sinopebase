@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getServiceRoleKey } from '../lib/api'
+  import Button from '../components/Button.svelte'
 
   let users = $state<Array<Record<string, unknown>>>([])
   let loading = $state(true)
@@ -62,9 +63,9 @@
     </div>
     <div class="flex gap-sm">
       <input class="input input-sm" style="width: 200px;" placeholder="Search by email…" bind:value={search} />
-      <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={() => { showCreate = !showCreate; newEmail = ''; newPassword = '' }}>
+      <Button variant="primary" size="sm" onclick={() => { showCreate = !showCreate; newEmail = ''; newPassword = '' }}>
         + New User
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -82,8 +83,8 @@
           <span style="font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 2px;">Password</span>
           <input class="input input-sm" type="password" bind:value={newPassword} placeholder="min 8 chars" />
         </div>
-        <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={createUser}>Create</button>
-        <button class="btn-ghost" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={() => { showCreate = false }}>Cancel</button>
+        <Button variant="primary" size="sm" onclick={createUser}>Create</Button>
+        <Button variant="ghost" size="sm" onclick={() => { showCreate = false }}>Cancel</Button>
       </div>
     </div>
   {/if}
@@ -115,7 +116,7 @@
               <td><span class="chip">{user.role || 'user'}</span></td>
               <td>{user.emailVerified ? '✓' : '—'}</td>
               <td style="font-size: 12px; color: var(--text-muted);">{user.createdAt ? new Date(user.createdAt as string).toLocaleDateString() : '—'}</td>
-              <td><button class="btn-icon" onclick={() => deleteUser(user.id as string, user.email as string)}>✕</button></td>
+              <td><Button variant="icon" size="sm" onclick={() => deleteUser(user.id as string, user.email as string)}>✕</Button></td>
             </tr>
           {/each}
         </tbody>

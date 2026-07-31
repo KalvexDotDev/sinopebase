@@ -1,6 +1,8 @@
 <script lang="ts">
   import { listTables } from '../lib/api'
   import { getServiceRoleKey } from '../lib/api'
+  import Modal from '../components/Modal.svelte'
+  import Button from '../components/Button.svelte'
 
   let tables = $state<Array<{ schema: string; name: string; columns: Array<{ name: string; type: string; nullable: boolean; isPrimaryKey: boolean }>; hasRLS: boolean }>>([])
   let selectedTable = $state('')
@@ -174,7 +176,7 @@
   <nav style="width: 220px; flex-shrink: 0; overflow-y: auto; max-height: 100%;" class="card p-lg">
     <div class="flex items-center justify-between mb-sm">
       <span class="label">Tables</span>
-      <button class="btn-icon" style="width: 24px; height: 24px; font-size: 14px;" onclick={openCreateTable} title="Create table">+</button>
+      <Button variant="icon" size="sm" onclick={openCreateTable} title="Create table">+</Button>
     </div>
     <input class="input" style="margin-bottom: var(--space-md);" placeholder="Search tables…" bind:value={tableSearch} />
     {#if filteredTables.length === 0}
@@ -217,8 +219,8 @@
             style="font-size: 12px; padding: 4px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none);">
             <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option><option value={500}>500</option>
           </select>
-          <button class="btn-ghost" style="height: 32px; padding: 4px 12px; font-size: 12px;" onclick={openAdd}>+ Add Row</button>
-          <button class="btn-ghost" style="height: 32px; padding: 4px 12px; font-size: 12px;" onclick={exportCSV}>Export CSV</button>
+          <Button variant="ghost" size="sm" onclick={openAdd}>+ Add Row</Button>
+          <Button variant="ghost" size="sm" onclick={exportCSV}>Export CSV</Button>
         </div>
       </div>
 
@@ -229,7 +231,7 @@
       {:else if rows.length === 0}
         <div class="card" style="text-align: center; padding: var(--space-xl);">
           <p style="color: var(--text-secondary);">No rows</p>
-          <button class="btn-primary" style="margin-top: var(--space-md); height: 32px; padding: 4px 16px; font-size: 13px;" onclick={openAdd}>Add your first row</button>
+          <Button variant="primary" size="sm" onclick={openAdd}>Add your first row</Button>
         </div>
       {:else}
         <div style="overflow-x: auto; border: 1px solid var(--border);">
@@ -248,8 +250,8 @@
               {#each rows as row, i (String(row[pkCol] ?? i))}
                 <tr style="border-bottom: 1px solid var(--border);">
                   <td style="position: sticky; left: 0; background: var(--bg); z-index: 1; padding: 2px 6px; white-space: nowrap;">
-                    <button class="btn-icon" style="width: 26px; height: 26px; font-size: 10px;" title="Edit" onclick={() => startEdit(i, columns[0]!.name)}>E</button>
-                    <button class="btn-icon" style="width: 26px; height: 26px; font-size: 10px;" title="Delete" onclick={() => { deleteId = String(row[pkCol] ?? ''); deleteLabel = String(row[columns.find((c) => c.isPrimaryKey)?.name ?? columns[0]!.name] ?? deleteId) }}>X</button>
+                    <Button variant="icon" size="sm" onclick={() => startEdit(i, columns[0]!.name)} title="Edit">E</Button>
+                    <Button variant="icon" size="sm" onclick={() => { deleteId = String(row[pkCol] ?? ''); deleteLabel = String(row[columns.find((c) => c.isPrimaryKey)?.name ?? columns[0]!.name] ?? deleteId) }} title="Delete">X</Button>
                   </td>
                   {#each columns as col}
                     <td ondblclick={() => startEdit(i, col.name)}
@@ -272,9 +274,9 @@
         <div class="flex items-center justify-between" style="margin-top: var(--space-md);">
           <span style="font-size: 13px; color: var(--text-secondary);">{(page - 1) * perPage + 1}–{Math.min(page * perPage, totalCount)} of {totalCount}</span>
           <div class="flex items-center gap-sm">
-            <button class="btn-icon" disabled={page <= 1} onclick={() => { page-- }}>←</button>
+            <Button variant="icon" size="sm" disabled={page <= 1} onclick={() => { page-- }}>←</Button>
             <span style="font-size: 13px; font-family: var(--font-mono);">{page}/{totalPages}</span>
-            <button class="btn-icon" disabled={page >= totalPages} onclick={() => { page++ }}>→</button>
+            <Button variant="icon" size="sm" disabled={page >= totalPages} onclick={() => { page++ }}>→</Button>
           </div>
         </div>
       {/if}
@@ -282,118 +284,90 @@
   </div>
 </div>
 
-{#if showAdd}
-  <div style="position: fixed; inset: 0; z-index: 100; display: flex;">
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div style="flex: 1; background: rgba(0,0,0,0.5);" onclick={closeAdd}></div>
-    <div style="width: 420px; max-width: 90vw; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto;">
-      <div style="padding: var(--space-lg); border-bottom: 1px solid var(--border);">
-        <h3 style="margin: 0;">Add Row</h3>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">{selectedTable}</p>
+<Modal title="Add Row" open={showAdd} variant="slide" onclose={closeAdd}>
+  <p style="font-size: 13px; color: var(--text-secondary);">{selectedTable}</p>
+  <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;" onsubmit={(e) => { e.preventDefault(); doAdd() }}>
+    {#each columns.filter((c) => !c.isPrimaryKey || !['id','uuid'].includes(c.name.toLowerCase())) as col (col.name)}
+      <div>
+        <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">{col.name}
+          <span style="color: var(--text-muted); font-weight: 400; margin-left: 6px; font-size: 11px;">{col.type}{col.nullable ? '' : ' *'}</span>
+        </label>
+        {#if col.type === 'boolean' || col.type === 'bool'}
+          <select bind:value={addForm[col.name]} style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 13px;">
+            <option value="">—</option><option value="true">true</option><option value="false">false</option>
+          </select>
+        {:else if col.type === 'jsonb' || col.type === 'json'}
+          <textarea class="input" style="min-height: 80px; font-family: var(--font-mono); font-size: 12px;" bind:value={addForm[col.name]} placeholder="JSON value"></textarea>
+        {:else}
+          <input class="input" bind:value={addForm[col.name]} placeholder={col.nullable ? 'null' : 'required'} />
+        {/if}
       </div>
-      <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;" onsubmit={(e) => { e.preventDefault(); doAdd() }}>
-        {#each columns.filter((c) => !c.isPrimaryKey || !['id','uuid'].includes(c.name.toLowerCase())) as col (col.name)}
-          <div>
-            <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">{col.name}
-              <span style="color: var(--text-muted); font-weight: 400; margin-left: 6px; font-size: 11px;">{col.type}{col.nullable ? '' : ' *'}</span>
-            </label>
-            {#if col.type === 'boolean' || col.type === 'bool'}
-              <select bind:value={addForm[col.name]} style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 13px;">
-                <option value="">—</option><option value="true">true</option><option value="false">false</option>
-              </select>
-            {:else if col.type === 'jsonb' || col.type === 'json'}
-              <textarea class="input" style="min-height: 80px; font-family: var(--font-mono); font-size: 12px;" bind:value={addForm[col.name]} placeholder="JSON value"></textarea>
-            {:else}
-              <input class="input" bind:value={addForm[col.name]} placeholder={col.nullable ? 'null' : 'required'} />
-            {/if}
-          </div>
-        {/each}
-        {#if addError}<div style="color: var(--danger); font-size: 13px;">{addError}</div>{/if}
-        <div class="flex gap-sm" style="margin-top: var(--space-md);">
-          <button type="submit" class="btn-primary" style="flex: 1; height: 36px; font-size: 13px;" disabled={addSubmitting}>{addSubmitting ? 'Adding…' : 'Add Row'}</button>
-          <button type="button" class="btn-ghost" style="height: 36px; font-size: 13px;" onclick={closeAdd}>Cancel</button>
-        </div>
-      </form>
+    {/each}
+    {#if addError}<div style="color: var(--danger); font-size: 13px;">{addError}</div>{/if}
+    <div class="flex gap-sm" style="margin-top: var(--space-md);">
+      <Button variant="primary" size="md" disabled={addSubmitting}>{addSubmitting ? 'Adding…' : 'Add Row'}</Button>
+      <Button variant="ghost" size="md" onclick={closeAdd}>Cancel</Button>
     </div>
-  </div>
-{/if}
+  </form>
+</Modal>
 
-{#if deleteId}
-  <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100;">
-    <div class="card" style="max-width: 380px; width: 90%; padding: var(--space-lg);">
-      <h3 style="margin-bottom: var(--space-sm);">Delete Row</h3>
-      <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: var(--space-lg);">Delete <code>{deleteLabel}</code> from <code>{selectedTable}</code>? This cannot be undone.</p>
-      <div class="flex gap-sm" style="justify-content: flex-end;">
-        <button class="btn-ghost" style="height: 32px; font-size: 13px;" onclick={() => { deleteId = ''; deleteLabel = '' }}>Cancel</button>
-        <button class="btn-danger" style="height: 32px; font-size: 13px;" onclick={doDelete}>Delete</button>
-      </div>
-    </div>
+<Modal title="Delete Row" open={deleteId !== ''} variant="center" onclose={() => { deleteId = ''; deleteLabel = '' }}>
+  <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: var(--space-lg);">Delete <code>{deleteLabel}</code> from <code>{selectedTable}</code>? This cannot be undone.</p>
+  <div class="flex gap-sm" style="justify-content: flex-end;">
+    <Button variant="ghost" size="sm" onclick={() => { deleteId = ''; deleteLabel = '' }}>Cancel</Button>
+    <Button variant="danger" size="sm" onclick={doDelete}>Delete</Button>
   </div>
-{/if}
+</Modal>
 
-<!-- Create table wizard -->
-{#if showCreateTable}
-  <div style="position: fixed; inset: 0; z-index: 100; display: flex;">
-    <div style="flex: 1; background: rgba(0,0,0,0.5);" onclick={() => { showCreateTable = false }}></div>
-    <div style="width: 480px; max-width: 90vw; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto;">
-      <div style="padding: var(--space-lg); border-bottom: 1px solid var(--border);">
-        <h3 style="margin: 0;">Create Table</h3>
-      </div>
-      <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;"
-        onsubmit={(e) => { e.preventDefault(); doCreateTable() }}>
-        <div>
-          <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">Table name</label>
-          <input class="input" bind:value={newTableName} placeholder="my_table" />
-        </div>
-        <div class="label">Columns</div>
-        {#each newColumns as col, i (i)}
-          <div style="display: flex; gap: var(--space-xs); align-items: flex-end;">
-            <div style="flex: 1;"><input class="input input-sm" bind:value={col.name} placeholder="column_name" /></div>
-            <div style="width: 140px;">
-              <select bind:value={col.type} style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 12px;">
-                {#each PG_TYPES as t}<option value={t}>{t}</option>{/each}
-              </select>
-            </div>
-            <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
-              <input type="checkbox" bind:checked={col.nullable} /> Null</label>
-            <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
-              <input type="checkbox" bind:checked={col.pk} /> PK</label>
-            <button type="button" class="btn-icon" style="width: 26px; height: 26px; font-size: 10px;"
-              onclick={() => removeColumn(i)} disabled={newColumns.length <= 1}>✕</button>
-          </div>
-        {/each}
-        <button type="button" class="btn-ghost" style="height: 28px; padding: 2px 12px; font-size: 11px; align-self: flex-start;"
-          onclick={addColumn}>+ Add Column</button>
-        {#if createError}<div style="color: var(--danger); font-size: 13px;">{createError}</div>{/if}
-        {#if createOk}<div style="color: var(--lichen); font-size: 13px;">{createOk}</div>{/if}
-        <div class="flex gap-sm" style="margin-top: var(--space-md);">
-          <button type="submit" class="btn-primary" style="flex: 1; height: 36px; font-size: 13px;" disabled={createSubmitting}>
-            {createSubmitting ? 'Creating…' : 'Create Table'}
-          </button>
-          <button type="button" class="btn-ghost" style="height: 36px; font-size: 13px;" onclick={() => { showCreateTable = false }}>Cancel</button>
-        </div>
-      </form>
+<Modal title="Create Table" open={showCreateTable} variant="slide" onclose={() => { showCreateTable = false }}>
+  <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;"
+    onsubmit={(e) => { e.preventDefault(); doCreateTable() }}>
+    <div>
+      <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">Table name</label>
+      <input class="input" bind:value={newTableName} placeholder="my_table" />
     </div>
-  </div>
-{/if}
+    <div class="label">Columns</div>
+    {#each newColumns as col, i (i)}
+      <div style="display: flex; gap: var(--space-xs); align-items: flex-end;">
+        <div style="flex: 1;"><input class="input input-sm" bind:value={col.name} placeholder="column_name" /></div>
+        <div style="width: 140px;">
+          <select bind:value={col.type} style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 12px;">
+            {#each PG_TYPES as t}<option value={t}>{t}</option>{/each}
+          </select>
+        </div>
+        <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
+          <input type="checkbox" bind:checked={col.nullable} /> Null</label>
+        <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
+          <input type="checkbox" bind:checked={col.pk} /> PK</label>
+        <Button variant="icon" size="sm"
+          onclick={() => removeColumn(i)} disabled={newColumns.length <= 1}>✕</Button>
+      </div>
+    {/each}
+    <Button variant="ghost" size="sm"
+      onclick={addColumn}>+ Add Column</Button>
+    {#if createError}<div style="color: var(--danger); font-size: 13px;">{createError}</div>{/if}
+    {#if createOk}<div style="color: var(--lichen); font-size: 13px;">{createOk}</div>{/if}
+    <div class="flex gap-sm" style="margin-top: var(--space-md);">
+      <Button variant="primary" size="md" disabled={createSubmitting}>
+        {createSubmitting ? 'Creating…' : 'Create Table'}
+      </Button>
+      <Button variant="ghost" size="md" onclick={() => { showCreateTable = false }}>Cancel</Button>
+    </div>
+  </form>
+</Modal>
 
-{#if showDropTable}
-  <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100;">
-    <div class="card" style="max-width: 400px; width: 90%; padding: var(--space-lg);">
-      <h3 style="margin-bottom: var(--space-sm);">Drop Table</h3>
-      <p style="color: var(--danger); font-size: 14px; margin-bottom: var(--space-md);">
-        This permanently deletes <code>{dropTableName}</code> and all its data.
-      </p>
-      <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: var(--space-sm);">
-        Type <code>{dropTableName}</code> to confirm:
-      </p>
-      <input class="input" style="margin-bottom: var(--space-lg);" bind:value={dropTableConfirm} placeholder={dropTableName} />
-      <div class="flex gap-sm" style="justify-content: flex-end;">
-        <button class="btn-ghost" style="height: 32px; font-size: 13px;" onclick={() => { showDropTable = false; dropTableConfirm = '' }}>Cancel</button>
-        <button class="btn-danger" style="height: 32px; font-size: 13px;"
-          disabled={dropTableConfirm !== dropTableName}
-          onclick={doDropTable}>Drop "{dropTableName}"</button>
-      </div>
-    </div>
+<Modal title="Drop Table" open={showDropTable} variant="center" onclose={() => { showDropTable = false; dropTableConfirm = '' }}>
+  <p style="color: var(--danger); font-size: 14px; margin-bottom: var(--space-md);">
+    This permanently deletes <code>{dropTableName}</code> and all its data.
+  </p>
+  <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: var(--space-sm);">
+    Type <code>{dropTableName}</code> to confirm:
+  </p>
+  <input class="input" style="margin-bottom: var(--space-lg);" bind:value={dropTableConfirm} placeholder={dropTableName} />
+  <div class="flex gap-sm" style="justify-content: flex-end;">
+    <Button variant="ghost" size="sm" onclick={() => { showDropTable = false; dropTableConfirm = '' }}>Cancel</Button>
+    <Button variant="danger" size="sm"
+      disabled={dropTableConfirm !== dropTableName}
+      onclick={doDropTable}>Drop "{dropTableName}"</Button>
   </div>
-{/if}
+</Modal>

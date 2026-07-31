@@ -1,5 +1,6 @@
 <script lang="ts">
   import { listBackups, createBackup, restoreBackup } from '../lib/api'
+  import Button from '../components/Button.svelte'
 
   let backups = $state<Array<{ name: string; size: number; modified: string }>>([])
   let loading = $state(true)
@@ -45,10 +46,10 @@
 <div>
   <div class="flex items-center justify-between mb-lg">
     <h2 style="margin: 0;">Backups</h2>
-    <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;"
+    <Button variant="primary" size="sm"
       onclick={() => { showCreate = !showCreate; backupName = '' }}>
       + New Backup
-    </button>
+    </Button>
   </div>
 
   {#if error}<div class="toast toast-error" style="margin-bottom: var(--space-md);">{error}</div>{/if}
@@ -59,8 +60,8 @@
       <div class="label mb-sm">Create Backup</div>
       <div class="flex gap-sm items-center">
         <input class="input input-sm" style="flex: 1;" placeholder="backup-name" bind:value={backupName} />
-        <button class="btn-primary" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={doCreate}>Create</button>
-        <button class="btn-ghost" style="height: 32px; padding: 4px 16px; font-size: 13px;" onclick={() => { showCreate = false }}>Cancel</button>
+        <Button variant="primary" size="sm" onclick={doCreate}>Create</Button>
+        <Button variant="ghost" size="sm" onclick={() => { showCreate = false }}>Cancel</Button>
       </div>
     </div>
   {/if}
@@ -86,11 +87,11 @@
               <td>{formatSize(b.size)}</td>
               <td style="color: var(--text-muted);">{new Date(b.modified).toLocaleString()}</td>
               <td>
-                <button class="btn-ghost" style="height: 28px; padding: 2px 12px; font-size: 11px;"
+                <Button variant="ghost" size="sm"
                   disabled={restoring === b.name}
                   onclick={() => { if (confirm(`Restore from "${b.name}"? This will overwrite current data.`)) doRestore(b.name) }}>
                   {restoring === b.name ? 'Restoring…' : 'Restore'}
-                </button>
+                </Button>
               </td>
             </tr>
           {/each}

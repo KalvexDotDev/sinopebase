@@ -71,7 +71,7 @@ export class Agent {
     this.id = config.id
     this.name = config.name
     this.instructions = config.instructions
-    this.model = config.model || 'gpt-4o-mini'
+    this.model = config.model || 'deepseek-chat'
     this.tools = config.tools || []
     this.provider = config.provider || getDefaultProvider()
   }
