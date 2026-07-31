@@ -49,7 +49,7 @@
       <p style="color: var(--text-secondary); font-size: 15px; margin-bottom: var(--space-sm);">No edge functions deployed.</p>
       <p style="color: var(--text-muted); font-size: 13px;">
         Create <code>.ts</code> files in <code>functions/</code> to get started.
-        Each file exports a default <code>{{ fetch(req: Request): Response }}</code> handler.
+        Each file exports a default <code>{`{ fetch(req: Request): Response }`}</code> handler.
       </p>
     </div>
   {:else}
