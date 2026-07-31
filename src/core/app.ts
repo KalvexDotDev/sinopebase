@@ -614,6 +614,7 @@ export class Sinopebase {
   private pendingServer: Elysia | null = null
   private _redirectServer: ReturnType<typeof Bun.serve> | null = null
   private _pgListener: import('../apis/realtime-pg-listener').PgRealtimeListener | null = null
+  private _logPruneInterval: ReturnType<typeof setInterval> | null = null
   /** Unique process identifier for PG LISTEN/NOTIFY self-skip. */
   private processId: string = ''
   private database: IDatabase | null = null
@@ -1063,6 +1064,18 @@ export class Sinopebase {
         requestMeta.set(request, { startTime: performance.now(), requestId })
       })
 
+      // ── Log retention — prune old entries on startup and hourly ──
+      const pruneLogs = async () => {
+        if (this.database instanceof PostgresDatabase) {
+          const pool = this.database.getPool()
+          const days = 30
+          pool.query(`DELETE FROM _logs WHERE created < now() - make_interval(days => $1)`, [days]).catch(() => {})
+        }
+      }
+      await pruneLogs()
+      const logPruneInterval = setInterval(pruneLogs, 3_600_000) // hourly
+      this._logPruneInterval = logPruneInterval
+
       // ── Response logging — global (H2) ──
       .onAfterResponse(({ request, set }) => {
         const meta = requestMeta.get(request)
@@ -1080,15 +1093,13 @@ export class Sinopebase {
           } catch {
             // best-effort — never crash on logging
           }
-          // Persist to _logs table if we have a database
+          // Persist to _logs table if we have a database (fire-and-forget)
           if (this.database instanceof PostgresDatabase) {
-            try {
-              const pool = this.database.getPool()
-              await pool.query(
-                `INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`,
-                [0, `${request.method} ${pathname}`, JSON.stringify({ status: set.status ?? 200, duration_ms: duration, request_id: meta.requestId })],
-              )
-            } catch { /* best-effort */ }
+            const pool = this.database.getPool()
+            pool.query(
+              `INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`,
+              [0, `${request.method} ${pathname}`, JSON.stringify({ status: set.status ?? 200, duration_ms: duration, request_id: meta.requestId })],
+            ).catch(() => { /* best-effort */ })
           }
           requestMeta.delete(request)
         }
@@ -1577,6 +1588,11 @@ export class Sinopebase {
     if (this._pgListener) {
       try { await this._pgListener.stop() } catch { /* ignore */ }
       this._pgListener = null
+    }
+
+    if (this._logPruneInterval) {
+      clearInterval(this._logPruneInterval)
+      this._logPruneInterval = null
     }
 
     // Close the database connection pool before clearing state.
