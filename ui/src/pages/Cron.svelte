@@ -7,7 +7,7 @@
   let loading = $state(true)
   let showCreate = $state(false)
   let editId = $state('')
-  let form = $state({ id: '', label: '', schedule: '' })
+  let form = $state({ id: '', label: '', schedule: '', handler: '' })
   let submitting = $state(false)
   let formError = $state('')
 
@@ -39,14 +39,21 @@
     submitting = false
   }
 
+  async function runJob(id: string) {
+    const res = await fetch(`${origin}/api/crons/${id}/run`, { method: 'POST', headers: h() })
+    const j = await res.json().catch(() => ({}))
+    alert(j.message || j.output || 'Done')
+    load()
+  }
+
   async function doDelete(id: string) {
     if (!confirm(`Delete "${id}"?`)) return
     await fetch(`${origin}/api/crons/${id}`, { method: 'DELETE', headers: h() })
     load()
   }
 
-  function openCreate() { showCreate = true; form = { id: '', label: '', schedule: '' }; formError = '' }
-  function openEdit(j: any) { editId = j.id; form = { id: j.id, label: j.label || '', schedule: j.schedule || '' }; formError = '' }
+  function openCreate() { showCreate = true; form = { id: '', label: '', schedule: '', handler: '' }; formError = '' }
+  function openEdit(j: any) { editId = j.id; form = { id: j.id, label: j.label || '', schedule: j.schedule || '', handler: j.handler || '' }; formError = '' }
 
   $effect(() => { load() })
 </script>
@@ -61,19 +68,25 @@
     <div class="card" style="padding: var(--space-lg);">{#each Array(3) as _}<div class="skeleton" style="height: 36px; margin-bottom: 6px;"></div>{/each}</div>
   {:else if jobs.length === 0}
     <div class="card" style="text-align: center; padding: var(--space-xl);">
-      <p style="color: var(--text-secondary);">No cron jobs.</p>
+      <p style="color: var(--text-secondary);">No cron jobs registered.</p>
+      <p style="color: var(--text-muted); font-size: 12px; margin-bottom: var(--space-md);">
+        Cron jobs define schedules (e.g., <code>0 3 * * *</code>). The actual work is performed by
+        handlers registered via <code>app.cron().add('id', 'schedule', handler)</code> in plugins or config.
+      </p>
       <Button variant="primary" size="sm" onclick={openCreate}>Create Cron Job</Button>
     </div>
   {:else}
     <div class="table-wrap"><table>
-      <thead><tr><th>ID</th><th>Label</th><th>Schedule</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Label</th><th>Schedule</th><th>Handler</th><th></th></tr></thead>
       <tbody>
         {#each jobs as job (job.id)}
           <tr>
             <td><code>{job.id}</code></td>
             <td>{job.label || '—'}</td>
             <td><code style="font-size: 12px;">{job.schedule || '—'}</code></td>
+            <td><code style="font-size: 11px;">{job.handler || '—'}</code></td>
             <td>
+              <Button variant="ghost" size="sm" onclick={() => runJob(job.id)}>Run</Button>
               <Button variant="ghost" size="sm" onclick={() => openEdit(job)}>Edit</Button>
               <Button variant="icon" size="sm" onclick={() => doDelete(job.id)}>✕</Button>
             </td>
@@ -88,7 +101,8 @@
   <form style="padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md);" onsubmit={(e) => { e.preventDefault(); doCreate() }}>
     <div><label class="label" style="margin-bottom: 4px;">ID</label><input class="input" bind:value={form.id} placeholder="cleanup" /></div>
     <div><label class="label" style="margin-bottom: 4px;">Label</label><input class="input" bind:value={form.label} placeholder="Cleanup temp files" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Schedule (cron)</label><input class="input" bind:value={form.schedule} placeholder="0 3 * * *" /></div>
+    <div><label class="label" style="margin-bottom: 4px;">Schedule</label><input class="input" bind:value={form.schedule} placeholder="0 3 * * *" /></div>
+    <div><label class="label" style="margin-bottom: 4px;">Handler</label><input class="input" bind:value={form.handler} placeholder="fn:hello or https://..." /></div>
     {#if formError}<div style="color: var(--danger); font-size: 13px;">{formError}</div>{/if}
     <div class="flex gap-sm"><Button variant="primary" disabled={submitting} onclick={doCreate}>{submitting ? '…' : 'Create'}</Button><Button variant="ghost" onclick={() => { showCreate = false }}>Cancel</Button></div>
   </form>
@@ -98,6 +112,7 @@
   <form style="padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md);" onsubmit={(e) => { e.preventDefault(); doSave(editId) }}>
     <div><label class="label" style="margin-bottom: 4px;">Label</label><input class="input" bind:value={form.label} /></div>
     <div><label class="label" style="margin-bottom: 4px;">Schedule</label><input class="input" bind:value={form.schedule} /></div>
+    <div><label class="label" style="margin-bottom: 4px;">Handler</label><input class="input" bind:value={form.handler} placeholder="fn:hello or https://..." /></div>
     {#if formError}<div style="color: var(--danger); font-size: 13px;">{formError}</div>{/if}
     <div class="flex gap-sm"><Button variant="primary" disabled={submitting} onclick={() => doSave(editId)}>{submitting ? '…' : 'Save'}</Button><Button variant="ghost" onclick={() => { editId = '' }}>Cancel</Button></div>
   </form>
