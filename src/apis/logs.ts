@@ -61,7 +61,7 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) 
         Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30),
       )
 
-      const rows = await selectRows(db, '_logs')
+      const rows = await selectRows(db, '_logs', { sort: '-created' })
 
       const logs = rows.map((r) => ({
         id: String(r.id ?? ''),
