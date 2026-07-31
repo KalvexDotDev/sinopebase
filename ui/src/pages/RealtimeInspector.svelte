@@ -14,9 +14,18 @@
 
     ws.onopen = () => {
       wsStatus = 'connected'
-      // Subscribe to all postgres_changes on public schema
-      const join = { topic: 'realtime:public:todos', event: 'phx_join', payload: { access_token: token, config: { postgres_changes: [{ event: '*', schema: 'public', table: 'todos' }] } }, ref: String(ref++) }
-      ws.send(JSON.stringify(join))
+      // Use v2 format (JSON array) matching the working test pattern
+      const topic = 'realtime:public:todos'
+      ws.send(JSON.stringify([
+        '1', '1', topic, 'phx_join', {
+          access_token: token,
+          config: {
+            broadcast: { ack: false, self: false },
+            presence: { enabled: false },
+            postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'todos' }],
+          },
+        },
+      ]))
       subscriptions = ['public:todos (postgres_changes)']
     }
     ws.onclose = () => { wsStatus = 'disconnected'; subscriptions = [] }
