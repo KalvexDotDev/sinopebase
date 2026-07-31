@@ -1064,18 +1064,6 @@ export class Sinopebase {
         requestMeta.set(request, { startTime: performance.now(), requestId })
       })
 
-      // ── Log retention — prune old entries on startup and hourly ──
-      const pruneLogs = async () => {
-        if (this.database instanceof PostgresDatabase) {
-          const pool = this.database.getPool()
-          const days = 30
-          pool.query(`DELETE FROM _logs WHERE created < now() - make_interval(days => $1)`, [days]).catch(() => {})
-        }
-      }
-      await pruneLogs()
-      const logPruneInterval = setInterval(pruneLogs, 3_600_000) // hourly
-      this._logPruneInterval = logPruneInterval
-
       // ── Response logging — global (H2) ──
       .onAfterResponse(({ request, set }) => {
         const meta = requestMeta.get(request)
@@ -1398,6 +1386,15 @@ export class Sinopebase {
     await dropFunctions.register(s6, this.auth ?? undefined)
     const { MetricsPlugin } = await import('../plugins/metrics/plugin')
     const s7 = await new MetricsPlugin().register(s6)
+
+    // ── Log retention — prune old entries on startup and hourly ──
+    const pruneLogs = async () => {
+      if (this.database instanceof PostgresDatabase) {
+        this.database.getPool().query(`DELETE FROM _logs WHERE created < now() - make_interval(days => 30)`).catch(() => {})
+      }
+    }
+    await pruneLogs()
+    this._logPruneInterval = setInterval(pruneLogs, 3_600_000)
 
     // ── External plugins (registered via app.use before start) ──
     // ponytail: pendingPlugins mutate in-place (return void), so don't reassign
