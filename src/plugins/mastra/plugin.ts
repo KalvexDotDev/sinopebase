@@ -155,17 +155,28 @@ export class MastraPlugin {
       mcpOptions,
     )
 
-    // Create a default agent
-    this.agents = [
-      new Agent({
-        id: 'default',
-        name: 'Sinopebase Assistant',
-        instructions:
-          'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.',
-        provider: this.provider,
-        tools: mcpTools,
-      }),
-    ]
+    // Load agents from DB if available, otherwise create defaults in memory
+    if (db instanceof PostgresDatabase) {
+      try {
+        const { ensureMastraTables, loadAgents } = await import('./agent-store')
+        const pool = db.getPool()
+        await ensureMastraTables(pool)
+        const saved = await loadAgents(pool)
+        if (saved.length > 0) {
+          this.agents = saved.map((a) => new Agent({ id: a.id, name: a.name, description: a.description, instructions: a.instructions, provider: this.provider!, model: a.model, tools: mcpTools }))
+        } else {
+          // First run — create default agent and persist
+          this.agents = [new Agent({ id: 'default', name: 'Sinopebase Assistant', instructions: 'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.', provider: this.provider!, tools: mcpTools })]
+          const { createAgent } = await import('./agent-store')
+          for (const a of this.agents) {
+            await createAgent(pool, { id: a.id, name: a.name, description: a.description, instructions: a.instructions, model: 'deepseek-chat' }).catch(() => {})
+          }
+        }
+      } catch { /* fall through to in-memory */ }
+    }
+    if (this.agents.length === 0) {
+      this.agents = [new Agent({ id: 'default', name: 'Sinopebase Assistant', instructions: 'You are a helpful assistant.', provider: this.provider!, tools: mcpTools })]
+    }
 
     const requireAuth = this.options.requireAuth
     const mastraAuth = auth ? createMastraAuth(auth) : null
@@ -202,6 +213,11 @@ export class MastraPlugin {
         if (!name) { set.status = 400; return { error: 'name is required' } }
         const agent = new Agent({ id: id || crypto.randomUUID(), name, description: description || '', instructions: instructions || 'You are a helpful assistant.', provider: this.provider!, tools: [] })
         this.agents.push(agent)
+        // Persist to DB
+        if (db instanceof PostgresDatabase) {
+          const { createAgent } = await import('./agent-store')
+          await createAgent(db.getPool(), { id: agent.id, name: agent.name, description: agent.description, instructions: agent.instructions, model: model || 'deepseek-chat' }).catch(() => {})
+        }
         return { data: { id: agent.id, name: agent.name } }
       })
       // Update agent
@@ -214,6 +230,11 @@ export class MastraPlugin {
         if (name) existing.name = name
         if (description !== undefined) existing.description = description
         if (instructions !== undefined) existing.instructions = instructions
+        // Persist to DB
+        if (db instanceof PostgresDatabase) {
+          const { updateAgent } = await import('./agent-store')
+          await updateAgent(db.getPool(), params.id, { name, description, instructions, model }).catch(() => {})
+        }
         return { data: { id: existing.id, name: existing.name } }
       })
       // Delete agent
@@ -222,6 +243,11 @@ export class MastraPlugin {
         const idx = this.agents.findIndex((a) => a.id === params.id)
         if (idx === -1) { set.status = 404; return { error: 'Agent not found' } }
         this.agents.splice(idx, 1)
+        // Persist to DB
+        if (db instanceof PostgresDatabase) {
+          const { deleteAgent } = await import('./agent-store')
+          await deleteAgent(db.getPool(), params.id).catch(() => {})
+        }
         return { message: 'Agent deleted' }
       })
       .post('/api/mastra/agents/:id/chat', async ({ params, body, set, request }) => {
