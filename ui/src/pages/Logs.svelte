@@ -54,12 +54,12 @@
           {@const d = info(e.data)}
           <div style="display: flex; gap: 8px; padding: 2px 12px; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,0.025);">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: {lvlColor(e.level)}; flex-shrink: 0; margin-top: 5px;"></span>
+            <span style="color: var(--shadow); font-size: 10px; min-width: 75px; flex-shrink: 0;">{new Date(e.created).toLocaleTimeString()}</span>
             {#if d}
-              <span style="color: {mColor(d.method)}; font-weight: 600; min-width: 42px; flex-shrink: 0;">{d.method}</span>
-              <span style="color: var(--text-secondary); font-size: 9px; padding: 0 6px; background: rgba(154,160,166,0.12); flex-shrink: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{badge(d.path)}</span>
+              <span style="color: {mColor(d.method)}; font-weight: 600; min-width: 38px; flex-shrink: 0;">{d.method}</span>
               <span style="color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{d.path}</span>
-              <span style="color: {sColor(d.status)}; min-width: 30px; text-align: right;">{d.status}</span>
-              <span style="color: var(--shadow); min-width: 42px; text-align: right;">{d.duration_ms}ms</span>
+              <span style="color: {sColor(d.status)}; min-width: 32px; text-align: right;">{d.status}</span>
+              <span style="color: var(--shadow); min-width: 44px; text-align: right;">{d.duration_ms}ms</span>
             {:else}
               <span style="color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{e.message}</span>
             {/if}
