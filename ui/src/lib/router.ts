@@ -26,6 +26,7 @@ export const ROUTES: Route[] = [
   { path: '#/metrics', label: 'Metrics', icon: '◷' },
   { path: '#/ai', label: 'AI', icon: '◈' },
   { path: '#/functions', label: 'Edge Functions', icon: '⚡' },
+  { path: '#/cron', label: 'Cron Jobs', icon: '⏱' },
   { path: '#/settings', label: 'Settings', icon: '⚙' },
   { path: '#/logs', label: 'Logs', icon: '◷' },
 ]

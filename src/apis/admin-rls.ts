@@ -30,7 +30,18 @@ export function createAdminRlsPlugin(
     try {
       await pool.query(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)
       await pool.query(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
-      return { message: `RLS enabled on ${table}.` }
+      // Create a default permissive policy so existing access isn't silently broken.
+      // Admins can refine this policy later via migrations.
+      const policyName = `${table}_default_access`
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = '${policyName}' AND tablename = '${table}') THEN
+            CREATE POLICY "${policyName}" ON "${table}" FOR ALL USING (true) WITH CHECK (true);
+          END IF;
+        END
+        $$`)
+      return { message: `RLS enabled on ${table}. Default policy created. Refine via migrations.` }
     } catch (err) {
       set.status = 500
       return { code: 500, message: `Failed: ${err instanceof Error ? err.message : String(err)}` }

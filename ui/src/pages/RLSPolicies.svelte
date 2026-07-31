@@ -61,7 +61,7 @@
               <td>{#if t.hasRLS}<span class="chip">Enabled</span>{:else}<span class="chip chip-muted">Disabled</span>{/if}</td>
               <td>
                 {#if t.hasRLS}
-                  <span style="font-size: 12px; color: var(--text-muted);">Create policies in migration</span>
+                  <span style="font-size: 12px; color: var(--text-muted);">RLS enabled — refine policies in migration</span>
                 {:else}
                   <Button variant="ghost" size="sm"
                     disabled={enabling === t.name}

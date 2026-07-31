@@ -12,6 +12,7 @@
   import MetricsPage from './pages/Metrics.svelte'
   import AI from './pages/AI.svelte'
   import Functions from './pages/Functions.svelte'
+  import Cron from './pages/Cron.svelte'
   import Settings from './pages/Settings.svelte'
   import Logs from './pages/Logs.svelte'
   import { getCurrentRoute, navigate } from './lib/router'
@@ -64,6 +65,8 @@
       <AI />
     {:else if currentRoute === '#/functions'}
       <Functions />
+    {:else if currentRoute === '#/cron'}
+      <Cron />
     {:else if currentRoute === '#/settings'}
       <Settings />
     {:else if currentRoute === '#/logs'}
