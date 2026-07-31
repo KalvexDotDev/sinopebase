@@ -1410,6 +1410,11 @@ export class Sinopebase {
       this.database ?? undefined,
       this.fileStore ?? undefined,
     )
+
+    // ── DropFunctions — Edge Functions plugin ──
+    const { DropFunctionsPlugin } = await import('../plugins/drop-functions/plugin')
+    const dropFunctions = new DropFunctionsPlugin({ functionsDir: './functions' })
+    await dropFunctions.register(s6, this.auth ?? undefined)
     const { MetricsPlugin } = await import('../plugins/metrics/plugin')
     const s7 = await new MetricsPlugin().register(s6)
 
