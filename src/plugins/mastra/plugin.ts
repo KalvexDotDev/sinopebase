@@ -264,7 +264,8 @@ export class MastraPlugin {
             return { error: 'messages array required', status: 400 }
           }
           try {
-            return await agent.generate(messages)
+            const result = await agent.generate(messages)
+            return { message: { content: result.text }, usage: result.usage, toolCalls: result.toolCalls }
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err)
             set.status = 500
