@@ -46,7 +46,13 @@
               <td><code>{job.id}</code></td>
               <td>{job.label || '—'}</td>
               <td><code style="font-size: 12px;">{job.schedule || '—'}</code></td>
-              <td>{job.running ? <span class="chip" style="font-size: 10px;">● Running</span> : <span class="chip chip-muted" style="font-size: 10px;">Idle</span>}</td>
+              <td>
+                {#if job.running}
+                  <span class="chip" style="font-size: 10px;">● Running</span>
+                {:else}
+                  <span class="chip chip-muted" style="font-size: 10px;">Idle</span>
+                {/if}
+              </td>
               <td>
                 <Button variant="ghost" size="sm" disabled={running === job.id}
                   onclick={() => run(job.id)}>
