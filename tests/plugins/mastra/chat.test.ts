@@ -24,6 +24,7 @@ describe('Mastra AI Plugin', () => {
     const portReservation = await reserveLoopbackPort()
     app = new Sinopebase({
       port: portReservation.port,
+      mode: 'development',
       postgresUrl: requirePostgres(),
     })
     await portReservation.release()
