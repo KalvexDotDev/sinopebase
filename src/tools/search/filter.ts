@@ -1035,7 +1035,7 @@ export function parseOrFilters(
 
     // Check for and(...) wrapper — creates an AND group
     const andMatch = trimmed.match(/^and\((.*)\)$/i)
-    if (andMatch && andMatch[1]) {
+    if (andMatch?.[1]) {
       const andGroup: Array<{ column: string; operator: string; value: string }> = []
       const andParts = andMatch[1]
         .split(',')
