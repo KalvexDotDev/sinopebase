@@ -187,7 +187,14 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
         [table],
       )
 
-      let colDefs = (cols.rows as Array<{ column_name: string; data_type: string; is_nullable: string; column_default: string | null }>)
+      let colDefs = (
+        cols.rows as Array<{
+          column_name: string
+          data_type: string
+          is_nullable: string
+          column_default: string | null
+        }>
+      )
         .map((c) => {
           let def = `  "${c.column_name}" ${c.data_type}`
           if (c.is_nullable === 'NO') def += ' NOT NULL'
@@ -208,7 +215,9 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
       )
 
       if (pks.rows.length > 0) {
-        const pkCols = (pks.rows as Array<{ column_name: string }>).map((r) => `"${r.column_name}"`).join(', ')
+        const pkCols = (pks.rows as Array<{ column_name: string }>)
+          .map((r) => `"${r.column_name}"`)
+          .join(', ')
         colDefs += `,\n  PRIMARY KEY (${pkCols})`
       }
 

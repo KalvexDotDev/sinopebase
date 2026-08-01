@@ -50,7 +50,9 @@ export async function createAgent(
     'INSERT INTO _mastra_agents (id, name, description, instructions, model) VALUES ($1,$2,$3,$4,$5)',
     [a.id, a.name, a.description, a.instructions, a.model],
   )
-  const { rows } = await pool.query<MastraAgentRow>('SELECT * FROM _mastra_agents WHERE id = $1', [a.id])
+  const { rows } = await pool.query<MastraAgentRow>('SELECT * FROM _mastra_agents WHERE id = $1', [
+    a.id,
+  ])
   const r = rows[0] as MastraAgentRow
   return {
     id: r.id,
