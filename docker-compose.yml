@@ -2,10 +2,9 @@
 # Start with: docker compose up -d
 # Stop with:  docker compose down
 #
-# These containers emulate production:
-#   postgres  → Railway PostgreSQL (Sinope-PG-Prod)
-#   rustfs    → Railway Buckets (S3-compatible)
-#   pgbouncer → Railway handles pooling natively
+# This compose file starts everything: PostgreSQL, RustFS (S3), PgBouncer,
+# and Sinopebase itself. The app service builds from the local Dockerfile
+# or runs `bun run dev` for hot-reload development.
 #
 # To connect to Railway services instead, set these env vars:
 #   POSTGRES_URL, S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET
@@ -64,6 +63,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Sinopebase — the app itself
+  sinopebase:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sinopebase-app
+    ports:
+      - '8090:8090'
+    environment:
+      POSTGRES_URL: postgresql://sinopebase:sinopebase@postgres:5432/sinopebase
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      JWT_SECRET: ${JWT_SECRET:-sinopebase-dev-jwt-secret-min-32-chars!!}
+      SINOPEBASE_SERVICE_ROLE_KEY: ${SINOPEBASE_SERVICE_ROLE_KEY:-test-service-role-key-min-32-chars!!}
+      SINOPEBASE_ANON_KEY: ${SINOPEBASE_ANON_KEY:-test-anon-key-min-32-characters!!!}
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:

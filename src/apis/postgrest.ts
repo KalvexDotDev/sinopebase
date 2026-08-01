@@ -27,6 +27,9 @@ interface PreferOptions {
   count?: 'exact' | 'planned' | 'estimated'
   returnRepresentation?: boolean
   resolution?: string
+  /** When count is 'planned' or 'estimated', include Content-Range header with estimate.
+   *  PostgREST uses planned=exact, estimated=fast approximate. We treat both as header-only. */
+  countHeader?: boolean
 }
 
 interface RangeInfo {
@@ -155,8 +158,8 @@ export function mountPostgrestRoutes(
       },
     )
 
-    // Content-Range header for count requests
-    if (prefer.count === 'exact') {
+    // Content-Range header for count requests (exact, planned, estimated)
+    if (prefer.count === 'exact' || prefer.countHeader) {
       set.headers['content-range'] = `*/${total}`
     }
 
@@ -255,8 +258,9 @@ export function mountPostgrestRoutes(
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
-    // Parse filters
+    // Parse filters — include or filters for mutations (v0.6 compat)
     const filters = parseFilters(query as Record<string, string>)
+    const orFilters = parseOrQueryParams(query as Record<string, string>)
 
     // Body is the data to update
     const data = (
@@ -269,9 +273,9 @@ export function mountPostgrestRoutes(
       resolveContext,
       async (requestDb) => {
         const previous = changes
-          ? (await selectRows(requestDb, table, { filters, orFilters: [] })).rows
+          ? (await selectRows(requestDb, table, { filters, orFilters })).rows
           : []
-        const updated = await requestDb.update(table, filters, data)
+        const updated = await requestDb.update(table, filters, data, orFilters)
         return { updated, previous }
       },
     )
@@ -305,8 +309,9 @@ export function mountPostgrestRoutes(
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
 
-    // Parse filters
+    // Parse filters — include or filters for mutations (v0.6 compat)
     const filters = parseFilters(query as Record<string, string>)
+    const orFilters = parseOrQueryParams(query as Record<string, string>)
 
     const { deleted, prepared } = await withRequestDatabase(
       db,
@@ -314,7 +319,7 @@ export function mountPostgrestRoutes(
       resolveContext,
       async (requestDb) => {
         const previous = changes
-          ? (await selectRows(requestDb, table, { filters, orFilters: [] })).rows
+          ? (await selectRows(requestDb, table, { filters, orFilters })).rows
           : []
         const prepared: PreparedRealtimeChange[] = []
         if (changes) {
@@ -324,7 +329,7 @@ export function mountPostgrestRoutes(
             )
           }
         }
-        const deleted = await requestDb.delete(table, filters)
+        const deleted = await requestDb.delete(table, filters, orFilters)
         return { deleted, prepared }
       },
     )
@@ -723,6 +728,9 @@ function parsePreferHeader(headerValue: string): PreferOptions {
       case 'count':
         if (value === 'exact' || value === 'planned' || value === 'estimated') {
           options.count = value
+          if (value === 'planned' || value === 'estimated') {
+            options.countHeader = true
+          }
         }
         break
       case 'return':

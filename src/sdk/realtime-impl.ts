@@ -147,6 +147,32 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
             )
           }
         },
+
+        track(key: string, data?: Record<string, unknown>): void {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(
+              JSON.stringify({
+                topic,
+                event: 'track',
+                payload: { key, data: data ?? {} },
+                ref: Math.random().toString(36).slice(2),
+              }),
+            )
+          }
+        },
+
+        untrack(key?: string): void {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(
+              JSON.stringify({
+                topic,
+                event: 'untrack',
+                payload: key ? { key } : {},
+                ref: Math.random().toString(36).slice(2),
+              }),
+            )
+          }
+        },
       }
     },
 

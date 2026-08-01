@@ -18,7 +18,14 @@ This starts:
 - RustFS (S3-compatible) on `localhost:9000`
 - PgBouncer on `localhost:6432` (optional)
 
-## 2. Install & Run
+## 2. Configure Environment
+
+```bash
+cp .env.example .env
+# Edit .env with your keys — generate secrets with: openssl rand -hex 32
+```
+
+## 3. Install & Run
 
 ```bash
 bun install

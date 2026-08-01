@@ -112,6 +112,21 @@ interface ClientState<TContext> {
   topics: Map<string, PostgresChangesBinding[]>
   /** Last successfully validated token, used for heartbeat re-validation when the heartbeat omits an access_token. */
   lastToken?: string
+  /** Presence keys this client has tracked (per topic). Used for cleanup on disconnect. */
+  presenceKeys: Map<string, string> // topic → presence key
+}
+
+/**
+ * A single presence entry in a channel.
+ * Keyed by `topic + '/' + key` for fast lookup.
+ */
+interface PresenceEntry {
+  key: string
+  data: Record<string, unknown>
+  /** Stable client connection key (ws.id or synthetic). */
+  clientKey: string
+  /** Unix-ms timestamp of last heartbeat / track / join. */
+  lastHeartbeat: number
 }
 
 interface PendingDelivery {
@@ -122,6 +137,15 @@ interface PendingDelivery {
   /** If set, only these columns are included in record/old_record of the delivered payload. */
   columns?: string[]
 }
+
+/**
+ * Presence heartbeat timeout in milliseconds (60s). Stale presences are
+ * auto-removed and a presence_diff is broadcast.
+ */
+const PRESENCE_TIMEOUT = 60_000
+
+/** Maximum presence entries per client per topic (oldest evicted on overflow). */
+const MAX_PRESENCE_ENTRIES_PER_CLIENT = 5
 
 export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher {
   /** Client state keyed by Elysia's stable `ws.id` per connection. */
@@ -152,6 +176,16 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   private readonly messageQueue = new Map<string, Promise<void>>()
   private readonly options: RealtimeHubOptions<TContext>
 
+  /**
+   * Presence state — per-topic map of presence entries.
+   * Key: `topic` → array of PresenceEntry.
+   * Each entry is also keyed by `topic + '/' + key` for O(1) lookup.
+   */
+  private readonly presenceByTopic = new Map<string, PresenceEntry[]>()
+
+  /** Interval handle for the presence heartbeat sweeper. */
+  private _presenceSweepInterval: ReturnType<typeof setInterval> | null = null
+
   constructor(options: RealtimeHubOptions<TContext> = {}) {
     if (
       typeof process !== 'undefined' &&
@@ -166,6 +200,45 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
     this.topicWhitelist = options.topicWhitelist ?? []
     this.disableClientBroadcast = options.disableClientBroadcast ?? false
     this.maxMessagesPerMinute = options.maxMessagesPerMinute ?? 300
+    this.startPresenceSweeper()
+  }
+
+  /** Release background resources. Call when the hub is no longer needed. */
+  dispose(): void {
+    this.stopPresenceSweeper()
+  }
+
+  /** Start the periodic presence heartbeat sweeper. */
+  private startPresenceSweeper(): void {
+    if (this._presenceSweepInterval) return
+    this._presenceSweepInterval = setInterval(() => this.sweepStalePresences(), 15_000) // every 15s
+  }
+
+  /** Stop the presence sweeper (for cleanup). */
+  private stopPresenceSweeper(): void {
+    if (this._presenceSweepInterval) {
+      clearInterval(this._presenceSweepInterval)
+      this._presenceSweepInterval = null
+    }
+  }
+
+  /** Remove stale presence entries and broadcast diffs. */
+  private sweepStalePresences(): void {
+    const now = Date.now()
+    for (const [topic, entries] of this.presenceByTopic) {
+      const stale = entries.filter((e) => now - e.lastHeartbeat > PRESENCE_TIMEOUT)
+      if (stale.length === 0) continue
+
+      // Remove stale entries
+      const remaining = entries.filter((e) => now - e.lastHeartbeat <= PRESENCE_TIMEOUT)
+      this.presenceByTopic.set(topic, remaining)
+
+      // Broadcast presence_diff with leaves
+      this.broadcastPresenceDiff(topic, {
+        joins: [],
+        leaves: stale.map((e) => ({ key: e.key, data: e.data })),
+      })
+    }
   }
 
   /** Resolve the stable connection key. Elysia assigns `ws.id` once per connection;
@@ -261,6 +334,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           protocol: msg.protocol,
           context: undefined,
           topics: new Map(),
+          presenceKeys: new Map(),
         },
       }
       this.clients.set(key, entry)
@@ -316,20 +390,60 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         }))
         entry.state.topics.set(msg.topic, bindings)
         ws.subscribe(msg.topic)
+
+        // ── Presence: return current presence_state on join ──
+        // Supports both shapes: supabase-js { config: { presence: { key } } }
+        // and SDK/test { presence: { key }, data: {...} }
+        const configPresence = isRecord(msg.payload?.config)
+          ? (msg.payload.config as Record<string, unknown>).presence
+          : undefined
+        const topPresence = msg.payload?.presence
+        const presenceKey =
+          (isRecord(configPresence) && typeof configPresence.key === 'string' && configPresence.key) ||
+          (isRecord(topPresence) && typeof topPresence.key === 'string' && topPresence.key) ||
+          undefined
+        const presenceData = isRecord(msg.payload?.data) ? msg.payload.data : {}
+
+        const presenceResponse: Record<string, unknown> = { postgres_changes: bindings }
+        if (presenceKey) {
+          presenceResponse.presence_state = this.getPresenceState(msg.topic)
+          this.trackPresence(msg.topic, presenceKey, presenceData, key, ws)
+          entry.state.presenceKeys.set(msg.topic, presenceKey)
+        }
+
         sendPhoenix(ws, msg, 'phx_reply', {
           status: 'ok',
-          response: { postgres_changes: bindings },
+          response: presenceResponse,
         })
         break
       }
 
       case 'phx_leave':
+        // Clean up presence entries for this topic
+        const presenceKey = entry.state.presenceKeys.get(msg.topic)
+        if (presenceKey) {
+          this.untrackPresence(msg.topic, presenceKey, ws)
+          entry.state.presenceKeys.delete(msg.topic)
+        }
         entry.state.topics.delete(msg.topic)
         ws.unsubscribe(msg.topic)
         sendPhoenix(ws, msg, 'phx_reply', { status: 'ok', response: {} })
         break
 
       case 'phx_heartbeat':
+        // Heartbeat: refresh presence timestamps for this client's tracked keys.
+        const clientKey = key
+        for (const [topic] of entry.state.presenceKeys) {
+          const entries = this.presenceByTopic.get(topic)
+          if (entries) {
+            for (const e of entries) {
+              if (e.clientKey === clientKey) {
+                e.lastHeartbeat = Date.now()
+              }
+            }
+          }
+        }
+
         // Heartbeat: refresh token validation for long-lived connections.
         // If the token has expired, the client is evicted and the WebSocket
         // is closed.
@@ -442,14 +556,184 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         if (self) ws.send(response)
         break
       }
+
+      // ── Presence: track ──
+      case 'track': {
+        // Require joined state and auth parity with broadcast
+        if (!entry.state.topics.has(msg.topic)) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'you must join the channel before tracking presence' },
+          })
+          return
+        }
+        if (this.options.authorize && entry.state.context === undefined) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'presence tracking requires authentication' },
+          })
+          return
+        }
+        const presenceKey = typeof msg.payload?.key === 'string' ? msg.payload.key : ''
+        const presenceData = isRecord(msg.payload?.data) ? msg.payload.data : {}
+        if (!presenceKey) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'presence key required' },
+          })
+          return
+        }
+        // ── Presence payload size limit (DoS prevention) ──
+        if (JSON.stringify(presenceData).length > this.maxBroadcastPayloadSize) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'presence payload exceeds size limit' },
+          })
+          return
+        }
+        this.trackPresence(msg.topic, presenceKey, presenceData, key, ws)
+        entry.state.presenceKeys.set(msg.topic, presenceKey)
+        sendPhoenix(ws, msg, 'phx_reply', { status: 'ok', response: {} })
+        break
+      }
+
+      // ── Presence: untrack ──
+      case 'untrack': {
+        if (!entry.state.topics.has(msg.topic)) {
+          sendPhoenix(ws, msg, 'phx_reply', {
+            status: 'error',
+            response: { reason: 'you must join the channel before untracking presence' },
+          })
+          return
+        }
+        const untrackKey = typeof msg.payload?.key === 'string' ? msg.payload.key : entry.state.presenceKeys.get(msg.topic)
+        if (untrackKey) {
+          this.untrackPresence(msg.topic, untrackKey, ws)
+          entry.state.presenceKeys.delete(msg.topic)
+        }
+        sendPhoenix(ws, msg, 'phx_reply', { status: 'ok', response: {} })
+        break
+      }
     }
   }
 
   removeClient(ws: WSClient): void {
     const key = this.connKey(ws)
+    const entry = this.clients.get(key)
+    // Clean up presence entries for this client
+    if (entry) {
+      for (const [topic, presenceKey] of entry.state.presenceKeys) {
+        this.untrackPresence(topic, presenceKey, ws)
+      }
+    }
     this.clients.delete(key)
     this.messageQueue.delete(key)
     this.messageCounters.delete(key)
+  }
+
+  // -------------------------------------------------------------------------
+  // Presence state management
+  // -------------------------------------------------------------------------
+
+  /** Get current presence state for a topic (Phoenix Presence format). */
+  private getPresenceState(topic: string): Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> {
+    const entries = this.presenceByTopic.get(topic) ?? []
+    const state: Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> = {}
+    for (const entry of entries) {
+      if (!state[entry.key]) {
+        state[entry.key] = { metas: [] }
+      }
+      (state[entry.key] as { metas: Array<{ key: string; data: Record<string, unknown> }> }).metas.push({
+        key: entry.key,
+        data: entry.data,
+      })
+    }
+    return state
+  }
+
+  /** Track a presence entry and broadcast presence_diff. */
+  private trackPresence(
+    topic: string,
+    presenceKey: string,
+    data: Record<string, unknown>,
+    clientKey: string,
+    _ws: WSClient,
+  ): void {
+    const entries = this.presenceByTopic.get(topic) ?? []
+    // Remove any existing entry with same clientKey+key on same topic
+    let filtered = entries.filter((e) => !(e.key === presenceKey && e.clientKey === clientKey))
+    // Cap per-client entries per topic: evict oldest (front) when exceeded
+    const clientEntries = filtered.filter((e) => e.clientKey === clientKey)
+    if (clientEntries.length >= MAX_PRESENCE_ENTRIES_PER_CLIENT) {
+      const oldest = clientEntries[0]
+      if (oldest) filtered = filtered.filter((e) => e !== oldest)
+    }
+    const entry: PresenceEntry = {
+      key: presenceKey,
+      data,
+      clientKey,
+      lastHeartbeat: Date.now(),
+    }
+    filtered.push(entry)
+    this.presenceByTopic.set(topic, filtered)
+
+    // Broadcast presence_diff with joins
+    this.broadcastPresenceDiff(topic, { joins: [{ key: presenceKey, data }], leaves: [] })
+  }
+
+  /** Untrack a presence entry and broadcast presence_diff. */
+  private untrackPresence(topic: string, presenceKey: string, ws: WSClient): void {
+    const clientKey = this.connKey(ws)
+    const entries = this.presenceByTopic.get(topic) ?? []
+    const removed = entries.filter((e) => e.key === presenceKey && e.clientKey === clientKey)
+    const remaining = entries.filter((e) => !(e.key === presenceKey && e.clientKey === clientKey))
+    this.presenceByTopic.set(topic, remaining)
+
+    if (removed.length > 0) {
+      this.broadcastPresenceDiff(topic, {
+        joins: [],
+        leaves: removed.map((e) => ({ key: e.key, data: e.data })),
+      })
+    }
+  }
+
+  /** Broadcast a presence_diff event to all subscribers of a topic. */
+  private broadcastPresenceDiff(
+    topic: string,
+    diff: { joins: Array<{ key: string; data: Record<string, unknown> }>; leaves: Array<{ key: string; data: Record<string, unknown> }> },
+  ): void {
+    if (diff.joins.length === 0 && diff.leaves.length === 0) return
+
+    for (const [, { ws, state }] of this.clients) {
+      if (!state.topics.has(topic)) continue
+      try {
+        ws.send(
+          encodePhoenix(state.protocol, null, null, topic, 'presence_diff', {
+            joins: this.presenceDiffPayload(diff.joins),
+            leaves: this.presenceDiffPayload(diff.leaves),
+          }),
+        )
+      } catch {
+        // best-effort delivery
+      }
+    }
+  }
+
+  /** Convert presence entries to Phoenix presence_diff payload format. */
+  private presenceDiffPayload(
+    entries: Array<{ key: string; data: Record<string, unknown> }>,
+  ): Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> {
+    const result: Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> = {}
+    for (const entry of entries) {
+      if (!result[entry.key]) {
+        result[entry.key] = { metas: [] }
+      }
+      (result[entry.key] as { metas: Array<{ key: string; data: Record<string, unknown> }> }).metas.push({
+        key: entry.key,
+        data: entry.data,
+      })
+    }
+    return result
   }
 
   async preparePostgresChange(change: PostgresChange): Promise<PreparedRealtimeChange> {

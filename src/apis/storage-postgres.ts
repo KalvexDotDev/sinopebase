@@ -106,6 +106,17 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
       .execute(writer)
       .catch(() => undefined)
 
+    // Ensure auth.role() exists alongside auth.uid() for RLS policies.
+    // Mirrors Supabase's auth.role() — returns the current request role.
+    await sql`
+      CREATE OR REPLACE FUNCTION auth.role() RETURNS text
+      LANGUAGE sql STABLE
+      AS $$ SELECT NULLIF(current_setting('request.jwt.claim.role', true), '')::text $$
+    `.execute(writer)
+    await sql`GRANT EXECUTE ON FUNCTION auth.role() TO anon, authenticated, service_role`
+      .execute(writer)
+      .catch(() => undefined)
+
     // Enable RLS on both tables.
     await sql`ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY`
       .execute(writer)

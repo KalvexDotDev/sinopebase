@@ -51,19 +51,19 @@ await app.start()
 
 ### Built-in Providers
 
-better-auth's `genericOAuth` plugin ships with 10 providers. No extra packages needed.
+Better-auth provides built-in social providers for major platforms. Configure them via the `socialProviders` option (no plugin needed):
 
-| Provider | `providerId` | Notes |
-|----------|-------------|-------|
-| Google | `google` | — |
-| GitHub | `github` | — |
-| Microsoft Entra ID | `microsoft-entra-id` | Requires `tenantId` |
-| Keycloak | `keycloak` | Requires `issuer` URL |
-| Okta | `okta` | Requires `issuer` URL |
-| Auth0 | `auth0` | Requires `issuer` URL |
-| Slack | `slack` | — |
-| Discord | *(use generic OIDC)* | — |
-| Apple | *(use generic OIDC)* | — |
+| Provider | `providerId` | Type |
+|----------|-------------|------|
+| Google | `google` | Built-in social |
+| GitHub | `github` | Built-in social |
+| Discord | `discord` | Built-in social |
+| Apple | `apple` | Built-in social |
+| Microsoft | `microsoft` | Built-in social |
+| Spotify | `spotify` | Built-in social |
+| GitLab | `gitlab` | Built-in social |
+
+For enterprise SSO (Keycloak, Okta, Auth0, Entra ID), use the `genericOAuth` plugin which maps `issuer` → `discoveryUrl` (the OIDC `.well-known/openid-configuration` endpoint).
 
 ### Microsoft Entra ID (Azure AD)
 

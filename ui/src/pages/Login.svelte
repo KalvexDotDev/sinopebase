@@ -9,6 +9,35 @@
   let loading = $state(false)
   let mode = $state<'password' | 'service_role'>('service_role')
 
+  // OAuth providers — mirrored from server config.
+  // Providers only appear when their env vars are set (checked at page load).
+  const oauthProviders = $state<Array<{ id: string; label: string; color: string }>>([])
+
+  async function checkOAuthProviders() {
+    // Try to fetch available OAuth providers from the server
+    try {
+      const res = await fetch(window.location.origin + '/api/auth/oauth-providers')
+      if (res.ok) {
+        const data = await res.json()
+        oauthProviders.push(...(data.providers ?? []))
+      }
+    } catch {
+      // Server doesn't expose provider list yet — try common defaults
+      // by probing the better-auth endpoints
+    }
+  }
+
+  // Check for OAuth providers on mount.
+  // OAuth login from the admin UI requires dev mode — in production the /_/ route
+  // is 401-guarded and there's no session-to-Bearer-token exchange path yet.
+  let devMode = $state(false)
+  $effect(() => {
+    fetch(window.location.origin + '/api/health').then(r => r.json()).then(d => {
+      devMode = d.mode === 'development'
+      if (devMode) checkOAuthProviders()
+    }).catch(() => {})
+  })
+
   async function handleSubmit(e: Event) {
     e.preventDefault()
     loading = true
@@ -52,6 +81,11 @@
       loading = false
     }
   }
+
+  function signInWithOAuth(provider: string) {
+    const callbackURL = window.location.origin + '/_/'
+    window.location.href = `${window.location.origin}/api/auth/sign-in/social?provider=${provider}&callbackURL=${encodeURIComponent(callbackURL)}`
+  }
 </script>
 
 <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg);">
@@ -63,8 +97,31 @@
     <p style="color: var(--text-secondary); margin-bottom: 2rem;">Sign in to manage your backend</p>
 
     {#if error}
-      <div style="background: #fef2f2; color: var(--danger); padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.875rem;">
+      <div style="background: var(--bg); color: var(--text); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.875rem;">
         {error}
+      </div>
+    {/if}
+
+    <!-- OAuth provider buttons (dev mode only — awaiting session-exchange path for production) -->
+    {#if devMode && oauthProviders.length > 0}
+      <div style="margin-bottom: 1.5rem;">
+        {#each oauthProviders as provider (provider.id)}
+          <button
+            type="button"
+            onclick={() => signInWithOAuth(provider.id)}
+            style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 0.5rem; margin-bottom: 0.5rem; background: var(--bg); color: var(--text); cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;"
+          >
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: {provider.color}; color: white; font-size: 0.75rem; font-weight: 700;">
+              {provider.label[0] ?? '?'}
+            </span>
+            Sign in with {provider.label}
+          </button>
+        {/each}
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0;">
+          <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
+          <span style="font-size: 0.75rem; color: var(--text-secondary);">or</span>
+          <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
+        </div>
       </div>
     {/if}
 
@@ -73,14 +130,14 @@
       <button
         type="button"
         onclick={() => { mode = 'service_role'; error = '' }}
-        style="flex: 1; padding: 0.5rem; border: none; background: {mode === 'service_role' ? 'var(--primary)' : 'transparent'}; color: {mode === 'service_role' ? '#fff' : 'var(--text)'}; cursor: pointer; font-size: 0.8125rem; font-weight: 500;"
+        style="flex: 1; padding: 0.5rem; border: none; cursor: pointer; font-size: 0.8125rem; font-weight: 500; background: {mode === 'service_role' ? '#f4f1ea' : 'transparent'}; color: {mode === 'service_role' ? '#0b0c0e' : '#f4f1ea'};"
       >
         Service Role Key
       </button>
       <button
         type="button"
         onclick={() => { mode = 'password'; error = '' }}
-        style="flex: 1; padding: 0.5rem; border: none; background: {mode === 'password' ? 'var(--primary)' : 'transparent'}; color: {mode === 'password' ? '#fff' : 'var(--text)'}; cursor: pointer; font-size: 0.8125rem; font-weight: 500;"
+        style="flex: 1; padding: 0.5rem; border: none; cursor: pointer; font-size: 0.8125rem; font-weight: 500; background: {mode === 'password' ? '#f4f1ea' : 'transparent'}; color: {mode === 'password' ? '#0b0c0e' : '#f4f1ea'};"
       >
         Email / Password
       </button>
@@ -121,7 +178,7 @@
     <button
       type="submit"
       disabled={loading}
-      style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; font-size: 0.875rem;"
+      style="width: 100%; padding: 0.75rem; background: #f4f1ea; color: #0b0c0e; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; font-size: 0.875rem;"
     >
       {loading ? 'Signing in...' : 'Sign In'}
     </button>

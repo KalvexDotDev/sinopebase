@@ -23,14 +23,18 @@ await app.start()
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `POSTGRES_URL` | Yes | PostgreSQL connection string |
+| `POSTGRES_URL` | Yes (prod) | PostgreSQL connection string |
 | `JWT_SECRET` | **Yes** | Signing key for JWT tokens (≥32 chars) |
-| `READ_REPLICA_URL` | No | Read replica for SELECT queries |
+| `SINOPEBASE_SERVICE_ROLE_KEY` | **Yes** (prod) | Admin/service-role API key (≥32 chars) |
+| `SINOPEBASE_ANON_KEY` | **Yes** (prod) | Anonymous/public API key (≥32 chars) |
+| `SINOPEBASE_PRODUCTION` | No | Set to `true` for fail-closed production mode |
 | `RUSTFS_ENDPOINT` | No | S3-compatible storage URL |
 | `RUSTFS_ACCESS_KEY` | No | S3 access key |
 | `RUSTFS_SECRET_KEY` | No | S3 secret key |
 | `OPENAI_API_KEY` | No | For AI/Mastra features |
-| `SINOPEBASE_PORT` | No | Server port (default 8090) |
+| `BETTER_AUTH_URL` | No | Public-facing base URL (default: `http://localhost:8090`) |
+
+See `.env.example` for a complete template with placeholder values. Copy with `cp .env.example .env`.
 
 ## TLS / HTTPS
 

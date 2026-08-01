@@ -301,7 +301,24 @@ interface BetterAuthInstance {
   [key: string]: unknown
 }
 
-export function createAuthPlugin(auth: BetterAuthInstance) {
+export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: string[]) {
+  // Map known provider IDs to display labels and colors.
+  // Source of truth: BUILTIN_SOCIAL from auth-better.
+  const PROVIDER_LABELS: Record<string, { label: string; color: string }> = {
+    google: { label: 'Google', color: '#4285F4' },
+    github: { label: 'GitHub', color: '#24292e' },
+    discord: { label: 'Discord', color: '#5865F2' },
+    apple: { label: 'Apple', color: '#000000' },
+    microsoft: { label: 'Microsoft', color: '#00A4EF' },
+    spotify: { label: 'Spotify', color: '#1DB954' },
+    gitlab: { label: 'GitLab', color: '#FC6D26' },
+    bitbucket: { label: 'Bitbucket', color: '#0052CC' },
+    twitch: { label: 'Twitch', color: '#9146FF' },
+    twitter: { label: 'Twitter', color: '#1DA1F2' },
+    linkedin: { label: 'LinkedIn', color: '#0A66C2' },
+    dropbox: { label: 'Dropbox', color: '#0061FF' },
+  }
+
   return (
     new Elysia({ name: 'sinopebase-auth' })
       // Mount better-auth's own handler for /api/auth/* endpoints
@@ -309,6 +326,16 @@ export function createAuthPlugin(auth: BetterAuthInstance) {
         '/api/auth',
         (auth as unknown as { handler: (req: Request) => Promise<Response> }).handler,
       )
+      // List configured OAuth providers for the admin UI login page
+      .get('/api/auth/oauth-providers', () => {
+        const providers = (oauthProviderIds ?? []).map((id) => {
+          const meta = PROVIDER_LABELS[id]
+          return meta
+            ? { id, label: meta.label, color: meta.color }
+            : { id, label: id.charAt(0).toUpperCase() + id.slice(1), color: '#666' }
+        })
+        return { providers }
+      })
       .post('/auth/v1/signup', async ({ body, set }) => {
         const { email, password } = body as { email: string; password: string }
         if (!email || !password) {

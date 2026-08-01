@@ -51,12 +51,20 @@ export class MemoryDatabaseAdapter implements IDatabase {
     table: string,
     filters: Filter[],
     data: Record<string, unknown>,
+    orFilters?: Filter[][],
   ): Promise<Record<string, unknown>[]> {
-    return this.database.update(table, toParsedFilters(filters), data)
+    // When orFilters are provided, pre-select matching row IDs
+    const ids = orFilters?.length
+      ? (await this.select(table, { filters, orFilters })).map((r) => r.id as string)
+      : undefined
+    return this.database.update(table, toParsedFilters(filters), data, ids)
   }
 
-  async delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]> {
-    return this.database.delete(table, toParsedFilters(filters))
+  async delete(table: string, filters: Filter[], orFilters?: Filter[][]): Promise<Record<string, unknown>[]> {
+    const ids = orFilters?.length
+      ? (await this.select(table, { filters, orFilters })).map((r) => r.id as string)
+      : undefined
+    return this.database.delete(table, toParsedFilters(filters), ids)
   }
 
   async count(table: string, filters: Filter[] = []): Promise<number> {

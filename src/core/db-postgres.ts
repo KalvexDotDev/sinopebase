@@ -319,7 +319,19 @@ export class PostgresDatabase implements IDatabase {
     table: string,
     filters: Filter[],
     data: Record<string, unknown>,
+    orFilters?: Filter[][],
   ): Promise<Record<string, unknown>[]> {
+    // When orFilters are provided, pre-select matching row IDs
+    if (orFilters?.length) {
+      const selected = await this.select(table, { filters, orFilters })
+      const ids = selected.map((r) => r.id as string)
+      if (ids.length === 0) return []
+      let query = this.writer.updateTable(table as never).set(data as never)
+      query = query.where('id' as never, 'in' as never, ids as never) as never
+      const result = await query.returningAll().execute()
+      return result as unknown as Record<string, unknown>[]
+    }
+
     let query = this.writer.updateTable(table as never).set(data as never)
 
     for (const filter of filters) {
@@ -330,7 +342,18 @@ export class PostgresDatabase implements IDatabase {
     return result as unknown as Record<string, unknown>[]
   }
 
-  async delete(table: string, filters: Filter[]): Promise<Record<string, unknown>[]> {
+  async delete(table: string, filters: Filter[], orFilters?: Filter[][]): Promise<Record<string, unknown>[]> {
+    // When orFilters are provided, pre-select matching row IDs
+    if (orFilters?.length) {
+      const selected = await this.select(table, { filters, orFilters })
+      const ids = selected.map((r) => r.id as string)
+      if (ids.length === 0) return []
+      let query = this.writer.deleteFrom(table as never)
+      query = query.where('id' as never, 'in' as never, ids as never) as never
+      const result = await query.returningAll().execute()
+      return result as unknown as Record<string, unknown>[]
+    }
+
     let query = this.writer.deleteFrom(table as never)
 
     for (const filter of filters) {
@@ -410,8 +433,12 @@ export class PostgresDatabase implements IDatabase {
     switch (filter.operator) {
       case 'eq':
         return sql<boolean>`${column} = ${filter.value}`
-      case 'neq':
+      case 'neq': {
+        // PostgREST semantics: neq.null → IS NOT NULL
+        if (filter.value === null || filter.value === 'null')
+          return sql<boolean>`${column} IS NOT NULL`
         return sql<boolean>`${column} <> ${filter.value}`
+      }
       case 'gt':
         return sql<boolean>`${column} > ${filter.value}`
       case 'gte':

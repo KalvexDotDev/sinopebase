@@ -25,18 +25,8 @@ export type FilterOperator =
   | 'ilike'
   | 'is'
   | 'in'
-  | 'cs'
-  | 'cd'
-  | 'sl'
-  | 'sr'
-  | 'nxl'
-  | 'nxr'
-  | 'adj'
-  | 'ov'
-  | 'fts'
-  | 'plfts'
-  | 'phfts'
-  | 'wfts'
+// Note: cs, cd, sl, sr, nxl, nxr, adj, ov operators are deferred to v0.7.
+// Note: fts, plfts, phfts, wfts full-text search operators are deferred to v0.7.
 
 export interface PostgrestClient<T extends Record<string, unknown>> {
   // Select
@@ -71,7 +61,7 @@ export interface PostgrestFilterBuilder<T extends Record<string, unknown>> {
   in(column: string, values: unknown[]): this
   contains(column: string, value: unknown): this
   or(filters: string): this
-  not(column: string, operator: FilterOperator, value: unknown): this
+  // not() operator deferred to v0.7 — server-side support not yet implemented
 
   // Modify return shape (for mutations: tells backend to return the modified rows)
   select(columns?: string): this
@@ -274,10 +264,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
     this.filters.push(`or=(${encodeURIComponent(filters)})`)
     return this
   }
-  not(column: string, operator: FilterOperator, value: unknown): this {
-    this.filters.push(`${column}=not.${operator}.${encodeURIComponent(String(value))}`)
-    return this
-  }
+  // not() operator deferred to v0.7 — server-side support not yet implemented
 
   // Modify return shape
   select(columns = '*'): this {
@@ -357,8 +344,8 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
         Authorization: `Bearer ${this.apiKey}`,
       }
 
-      if (this.options.count === 'exact') {
-        headers.Prefer = 'count=exact'
+      if (this.options.count) {
+        headers.Prefer = `count=${this.options.count}`
       }
       if (this.body && (this.method === 'POST' || this.method === 'PATCH')) {
         headers.Prefer = `${headers.Prefer ?? ''},return=representation`

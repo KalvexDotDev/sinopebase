@@ -145,6 +145,32 @@ export async function updateSettings(data: Record<string, unknown>) {
   return request('/api/settings', { method: 'PATCH', body: data })
 }
 
+// ── OAuth Providers ──
+
+export interface OAuthProvider {
+  providerId: string
+  clientId: string
+  clientSecret: string
+  tenantId?: string
+  issuer?: string
+}
+
+export async function listOAuthProviders() {
+  return request<{ providers: OAuthProvider[]; restartRequired: boolean }>('/api/admin/oauth-providers')
+}
+
+export async function addOAuthProvider(provider: OAuthProvider) {
+  return request<{ provider: OAuthProvider; restartRequired: boolean }>('/api/admin/oauth-providers', { method: 'POST', body: provider })
+}
+
+export async function updateOAuthProvider(providerId: string, data: Partial<OAuthProvider>) {
+  return request<{ provider: OAuthProvider; restartRequired: boolean }>(`/api/admin/oauth-providers/${encodeURIComponent(providerId)}`, { method: 'PATCH', body: data })
+}
+
+export async function deleteOAuthProvider(providerId: string) {
+  return request<{ deleted: boolean; restartRequired: boolean }>(`/api/admin/oauth-providers/${encodeURIComponent(providerId)}`, { method: 'DELETE' })
+}
+
 // ── Logs ──
 
 export async function getLogs(params?: { page?: number; perPage?: number }) {

@@ -19,6 +19,17 @@ let tablesEnsured = false
 import { createAuthTables, createBetterAuthDB } from './adapter'
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Built-in social providers supported directly by better-auth v1.6.25. */
+export const BUILTIN_SOCIAL = new Set([
+  'google', 'github', 'discord', 'apple', 'microsoft',
+  'spotify', 'twitch', 'twitter', 'dropbox', 'linkedin',
+  'gitlab', 'bitbucket',
+])
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -178,8 +189,6 @@ export async function validateRefreshTokenForRotation(
 // ---------------------------------------------------------------------------
 
 /**
-
-/**
  * Create and configure a better-auth instance.
  *
  * Supports email/password + optional OAuth/OIDC providers:
@@ -211,21 +220,44 @@ export async function createAuth(
     ...(options?.extraOrigins?.filter((o) => o && o !== '*') || []),
   ]
 
+  // ── OAuth providers: split built-in social vs generic OAuth ──
+  const allProviders = options?.oauthProviders ?? []
+
+  const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {}
+  const genericConfigs: Array<Record<string, unknown>> = []
+
+  for (const p of allProviders) {
+    if (BUILTIN_SOCIAL.has(p.providerId)) {
+      socialProviders[p.providerId] = {
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+      }
+    } else {
+      // Generic OAuth / OIDC provider
+      const config: Record<string, unknown> = {
+        providerId: p.providerId,
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+      }
+      // Map issuer → discoveryUrl (required by genericOAuth v1.6.25+)
+      if (p.issuer) {
+        const issuer = p.issuer.replace(/\/$/, '') // strip trailing slash
+        config.discoveryUrl = `${issuer}/.well-known/openid-configuration`
+      }
+      if (p.tenantId) {
+        config.tenantId = p.tenantId
+      }
+      genericConfigs.push(config)
+    }
+  }
+
   // Build plugins array
   const plugins: Record<string, unknown>[] = []
-  if (options?.oauthProviders?.length) {
-    plugins.push(
-      genericOAuth({
-        config: options.oauthProviders.map((p) => ({
-          providerId: p.providerId,
-          clientId: p.clientId,
-          clientSecret: p.clientSecret,
-          tenantId: p.tenantId,
-          issuer: p.issuer,
-        })),
-      }),
-    )
+  if (genericConfigs.length > 0) {
+    plugins.push(genericOAuth({ config: genericConfigs }))
   }
+
+  const allProviderIds = allProviders.map((p) => p.providerId)
 
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
@@ -241,12 +273,14 @@ export async function createAuth(
     secret,
     trustedOrigins,
     baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
+    // Built-in social providers (Google, GitHub, Discord, etc.)
+    socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
     plugins,
     // Social login links accounts by email by default
     account: {
       accountLinking: {
         enabled: true,
-        trustedProviders: options?.oauthProviders?.map((p) => p.providerId) || [],
+        trustedProviders: allProviderIds,
       },
     },
   })

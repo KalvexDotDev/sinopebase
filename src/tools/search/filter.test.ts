@@ -163,15 +163,20 @@ describe('parseFilterParam', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseOrFilters', () => {
-  it('parses OR filter group', () => {
+  it('parses comma-separated OR filters as separate groups', () => {
     const result = parseOrFilters('(id.eq.1,status.eq.active)')
+    expect(result).toHaveLength(2) // comma = OR → two groups
+    expect(result[0]).toEqual([{ column: 'id', operator: 'eq', value: '1' }])
+    expect(result[1]).toEqual([{ column: 'status', operator: 'eq', value: 'active' }])
+  })
+
+  it('parses and(...) wrapper as single AND group', () => {
+    const result = parseOrFilters('(and(id.eq.1,status.eq.active))')
     expect(result).toHaveLength(1)
     const group = result[0]
     expect(group).toHaveLength(2)
-    const first = group?.[0]
-    const second = group?.[1]
-    expect(first).toEqual({ column: 'id', operator: 'eq', value: '1' })
-    expect(second).toEqual({ column: 'status', operator: 'eq', value: 'active' })
+    expect(group?.[0]).toEqual({ column: 'id', operator: 'eq', value: '1' })
+    expect(group?.[1]).toEqual({ column: 'status', operator: 'eq', value: 'active' })
   })
 })
 

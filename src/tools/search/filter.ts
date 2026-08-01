@@ -1011,6 +1011,13 @@ export function parseFilterParam(
  *
  * Format: or=(column1.op1.val1,column2.op2.val2)
  */
+/**
+ * Parse the `or=(...)` query parameter into filter groups.
+ *
+ * PostgREST semantics: comma = OR, `and(...)` wrapper = AND group.
+ *   `or=(a.eq.1,b.eq.2)`      → [[{a=1}], [{b=2}]]  (a=1 OR b=2)
+ *   `or=(and(a.eq.1,b.eq.2))` → [[{a=1}, {b=2}]]    (a=1 AND b=2)
+ */
 export function parseOrFilters(
   rawValue: string,
 ): Array<Array<{ column: string; operator: string; value: string }>> {
@@ -1022,31 +1029,47 @@ export function parseOrFilters(
   const groups: Array<Array<{ column: string; operator: string; value: string }>> = []
   const parts = splitTopLevelCommas(inner)
 
-  const currentGroup: Array<{ column: string; operator: string; value: string }> = []
   for (const part of parts) {
     const trimmed = part.trim()
     if (!trimmed) continue
 
-    const firstDot = trimmed.indexOf('.')
-    if (firstDot === -1) continue
+    // Check for and(...) wrapper — creates an AND group
+    const andMatch = trimmed.match(/^and\((.*)\)$/i)
+    if (andMatch && andMatch[1]) {
+      const andGroup: Array<{ column: string; operator: string; value: string }> = []
+      const andParts = andMatch[1].split(',').map((s) => s.trim()).filter(Boolean)
+      for (const ap of andParts) {
+        const filter = parseSingleOrFilter(ap)
+        if (filter) andGroup.push(filter)
+      }
+      if (andGroup.length > 0) groups.push(andGroup)
+      continue
+    }
 
-    const column = trimmed.slice(0, firstDot)
-    const rest = trimmed.slice(firstDot + 1)
-
-    const secondDot = rest.indexOf('.')
-    if (secondDot === -1) continue
-
-    const operator = rest.slice(0, secondDot)
-    const value = rest.slice(secondDot + 1)
-
-    currentGroup.push({ column, operator, value })
-  }
-
-  if (currentGroup.length > 0) {
-    groups.push(currentGroup)
+    // Single filter — each comma-separated part is its own OR group
+    const filter = parseSingleOrFilter(trimmed)
+    if (filter) groups.push([filter])
   }
 
   return groups
+}
+
+function parseSingleOrFilter(
+  input: string,
+): { column: string; operator: string; value: string } | null {
+  const firstDot = input.indexOf('.')
+  if (firstDot === -1) return null
+
+  const column = input.slice(0, firstDot)
+  const rest = input.slice(firstDot + 1)
+
+  const secondDot = rest.indexOf('.')
+  if (secondDot === -1) return null
+
+  const operator = rest.slice(0, secondDot)
+  const value = rest.slice(secondDot + 1)
+
+  return { column, operator, value }
 }
 
 function splitTopLevelCommas(input: string): string[] {
@@ -1078,11 +1101,29 @@ function splitTopLevelCommas(input: string): string[] {
 
 /**
  * Parse an `in` filter value like `(val1,val2)` into an array of values.
+ * Supports double-quoted values containing commas, e.g. `("a,b","c")`.
  */
 export function parseInValue(raw: string): string[] {
   const inner = raw.startsWith('(') && raw.endsWith(')') ? raw.slice(1, -1) : raw
-  return inner
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
+  const values: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i] as string
+    if (ch === '"') {
+      inQuotes = !inQuotes
+    } else if (ch === ',' && !inQuotes) {
+      values.push(current.trim())
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  if (current.trim()) {
+    values.push(current.trim())
+  }
+
+  // Unquote values that were double-quoted
+  return values.map((v) => (v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1) : v)).filter(Boolean)
 }

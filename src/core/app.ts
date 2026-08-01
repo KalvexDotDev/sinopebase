@@ -754,6 +754,11 @@ export class Sinopebase {
 
     // Initialize database: PostgreSQL or in-memory fallback
     const postgresUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
+
+    // Merge code-configured OAuth providers with file-based ones (for Admin UI management).
+    // Hoisted to method scope so both createAuth and createAuthPlugin can reference it.
+    let mergedProviderIds: string[] = (this.config.oauthProviders ?? []).map((p) => p.providerId)
+
     if (postgresUrl) {
       const pg = new PostgresDatabase({
         postgresUrl,
@@ -817,12 +822,31 @@ export class Sinopebase {
         // not from ambient env reads.
       }
 
+      // Load file-based OAuth providers (from Admin UI), merge with code config.
+      // File providers take precedence on same providerId.
+      const { loadProviders: loadOAuthProviders } = await import('../apis/admin-oauth')
+      const fileProviders = await loadOAuthProviders(this.dataDir())
+      const codeProviders = this.config.oauthProviders ?? []
+      const mergedProviders = [
+        ...fileProviders,
+        ...codeProviders.filter((p) => !fileProviders.some((fp) => fp.providerId === p.providerId)),
+      ]
+      mergedProviderIds = mergedProviders.map((p) => p.providerId)
+      if (fileProviders.length > 0) {
+        logger.info('OAuth providers loaded', {
+          file: fileProviders.length,
+          code: codeProviders.length,
+          merged: mergedProviders.length,
+        })
+      }
+
       // Initialize better-auth with PostgreSQL
       try {
         const pool = pg.getPool()
+
         this.auth = await createAuth(pool, {
           jwtSecret: this.config.jwtSecret,
-          oauthProviders: this.config.oauthProviders,
+          oauthProviders: mergedProviders,
           extraOrigins: this.config.extraOrigins,
         })
         logger.info('Auth', {
@@ -899,8 +923,9 @@ export class Sinopebase {
     ): Promise<PostgresRequestContext | undefined> => {
       if (!token) return undefined
       // Keys are validated at startup — cached, never read from process.env per-request.
-      if (token === this.cachedServiceRoleKey) return { role: 'service_role' }
-      if (token === this.cachedAnonKey) return { role: 'anon' }
+      // Timing-safe comparison (same as the REST path).
+      if (Equal(token, this.cachedServiceRoleKey)) return { role: 'service_role' }
+      if (Equal(token, this.cachedAnonKey)) return { role: 'anon' }
 
       try {
         if (this.auth) {
@@ -1094,8 +1119,10 @@ export class Sinopebase {
       })
 
     // ── Rate limiting handler — computed before chain (H3, H25) ──
+    // Default 1000 req/min per IP. Admin API, health, and static assets are
+    // exempt — they're either auth-guarded or non-mutating infrastructure.
     const rlHandler = rateLimit(
-      this.config.rateLimitMax ?? 100,
+      this.config.rateLimitMax ?? 1000,
       this.config.rateLimitWindow ?? 60,
       undefined,
       this.config.trustedProxies,
@@ -1105,7 +1132,14 @@ export class Sinopebase {
     const s1 = server
       .onRequest(async ({ request, set }) => {
         const url = new URL(request.url)
-        if (url.pathname === '/api/health' || url.pathname === '/api/ready') return
+        // Exempt: health, readiness, admin UI, admin API, logs
+        if (
+          url.pathname === '/api/health' ||
+          url.pathname === '/api/ready' ||
+          url.pathname.startsWith('/_/') ||
+          url.pathname.startsWith('/api/admin/') ||
+          url.pathname.startsWith('/api/logs')
+        ) return
         await rlHandler({ request, set })
       })
 
@@ -1145,7 +1179,7 @@ export class Sinopebase {
       .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
 
       // ── Auth — /auth/v1/* ──
-      .use(this.auth ? createAuthPlugin(this.auth) : authPlugin)
+      .use(this.auth ? createAuthPlugin(this.auth, mergedProviderIds) : authPlugin)
 
       // Instance-scoped auth guard: applies to every /rest/v1/* and /storage/v1/*
       // route registered on this chain. Instance-scoped (not global) so plugins
@@ -1229,6 +1263,8 @@ export class Sinopebase {
 
     // ── Admin API auth helper — validates service_role token ──
     const isSuperuser = (req: Request): boolean => {
+      // Reject when no service-role key is configured (in-memory dev mode)
+      if (!this.cachedServiceRoleKey) return false
       const h = req.headers.get('authorization') ?? ''
       const tok = h.startsWith('Bearer ') ? h.slice(7) : h
       return Equal(tok, this.cachedServiceRoleKey)
@@ -1365,6 +1401,18 @@ export class Sinopebase {
       const { createCronCrudPlugin } = await import('../apis/cron-crud')
       s5.use(createCronCrudPlugin(this.database.getPool(), isSuperuser))
     }
+
+    // ── Admin OAuth Providers API — CRUD for OAuth/OIDC providers ──
+    const { createAdminOAuthPlugin, loadProviders } = await import('../apis/admin-oauth')
+    s5.use(
+      createAdminOAuthPlugin(
+        this.dataDir(),
+        isSuperuser,
+        (providers) => {
+          logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
+        },
+      ),
+    )
 
     // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
@@ -1752,9 +1800,35 @@ export class Sinopebase {
    */
   private mountAdminUI(server: Elysia): Elysia {
     const distPath = resolve('./ui/dist')
+    const viteUrl = 'http://localhost:5173'
+    let viteOk = false
 
-    // Single catch-all route for admin UI — serves files or falls back to index.html
+    // In dev mode, proxy to Vite dev server for HMR if it's reachable.
+    if (this.mode === 'development') {
+      fetch(`${viteUrl}/@vite/client`, { signal: AbortSignal.timeout(500) })
+        .then(r => { viteOk = r.ok })
+        .catch(() => { viteOk = false })
+    }
+
+    // Single catch-all route for admin UI — proxy Vite in dev, serve static otherwise
     const s = server.get('/_/*', async ({ request, set }) => {
+      // ── HMR proxy: forward to Vite dev server ──
+      if (viteOk) {
+        const url = new URL(request.url)
+        const proxied = await fetch(`${viteUrl}${url.pathname}${url.search}`, {
+          headers: { 'Accept': request.headers.get('accept') ?? '*/*' },
+          signal: AbortSignal.timeout(30000),
+        }).catch(() => null)
+        if (proxied) {
+          set.status = proxied.status
+          proxied.headers.forEach((v, k) => { if (k !== 'content-encoding') set.headers[k] = v })
+          return proxied.body ? new Uint8Array(await proxied.arrayBuffer()) : null
+        }
+        // Vite not reachable — fall through to static serving
+        viteOk = false
+      }
+
+      // ── H9: Auth guard ──
       // ── H9: Auth guard ──
       const authHeader = request.headers.get('authorization') ?? ''
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader

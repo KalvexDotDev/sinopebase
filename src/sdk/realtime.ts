@@ -20,4 +20,15 @@ export interface RealtimeChannel {
   subscribe(callback?: (status: string) => void): Promise<void>
   unsubscribe(): void
   send(payload: unknown): void
+  /**
+   * Track a presence state for this channel.
+   * Sends a `track` message to the server with the given key and data.
+   * The server broadcasts a `presence_diff` to other subscribers.
+   */
+  track(key: string, data?: Record<string, unknown>): void
+  /**
+   * Untrack a presence state for this channel.
+   * Sends an `untrack` message to the server.
+   */
+  untrack(key?: string): void
 }

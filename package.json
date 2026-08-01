@@ -1,9 +1,9 @@
 {
   "name": "sinopebase",
-  "version": "0.2.1",
+  "version": "0.6.0",
   "module": "cmd/serve.ts",
   "type": "module",
-  "private": true,
+  "private": false,
   "scripts": {
     "dev": "bun run --watch cmd/serve.ts",
     "build": "bun build cmd/serve.ts --outdir dist --target bun",
@@ -12,7 +12,9 @@
     "test:watch": "bun test --watch",
     "test:harness": "bun test tests/harness/harness.test.ts",
     "test:taxonomy": "bun tests/harness/audit.ts",
-    "test:e2e": "bun test tests/e2e/admin-ui.e2e.ts",
+    "test:e2e": "bun test tests/e2e/admin-ui.e2e.test.ts",
+    "screenshots": "bun run scripts/screenshots.ts",
+    "benchmark": "bun run scripts/benchmark.ts",
     "test:tls": "bun test tests/integration/tls.test.ts",
     "test:component": "bun test tests/integration/app-lifecycle.test.ts tests/integration/pb-api-",
     "test:contract:auth": "bun test tests/integration/auth.test.ts tests/integration/auth-better.test.ts",

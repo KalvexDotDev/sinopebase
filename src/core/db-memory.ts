@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { parseInValue } from '~/tools/search/filter'
 
 // ---------------------------------------------------------------------------
 // Filter types
@@ -157,18 +158,22 @@ export class MemoryDatabase {
 
   /**
    * Update rows matching filters with the given data.
+   * When ids is provided, only those rows are updated (used for or-filter mutations).
    * Returns the updated rows.
    */
   update(
     table: string,
     filters: ParsedFilter[],
     data: Record<string, unknown>,
+    ids?: string[],
   ): Record<string, unknown>[] {
     const store = this.getTable(table)
     const updated: Record<string, unknown>[] = []
+    const idSet = ids ? new Set(ids) : undefined
 
     for (const [id, row] of store) {
-      if (this.matchesAllFilters(row, filters)) {
+      const matches = idSet ? idSet.has(id) : this.matchesAllFilters(row, filters)
+      if (matches) {
         const newRow = { ...row, ...data, id }
         store.set(id, newRow)
         updated.push(newRow)
@@ -180,15 +185,18 @@ export class MemoryDatabase {
 
   /**
    * Delete rows matching filters.
+   * When ids is provided, only those rows are deleted (used for or-filter mutations).
    * Returns the deleted rows.
    */
-  delete(table: string, filters: ParsedFilter[]): Record<string, unknown>[] {
+  delete(table: string, filters: ParsedFilter[], ids?: string[]): Record<string, unknown>[] {
     const store = this.getTable(table)
     const deleted: Record<string, unknown>[] = []
     const idsToDelete: string[] = []
+    const idSet = ids ? new Set(ids) : undefined
 
     for (const [id, row] of store) {
-      if (this.matchesAllFilters(row, filters)) {
+      const matches = idSet ? idSet.has(id) : this.matchesAllFilters(row, filters)
+      if (matches) {
         idsToDelete.push(id)
         deleted.push(row)
       }
@@ -231,6 +239,8 @@ export class MemoryDatabase {
       case 'eq':
         return this.compareEq(rowValue, value)
       case 'neq':
+        // PostgREST semantics: neq.null → IS NOT NULL
+        if (value === null || value === 'null') return rowValue !== null && rowValue !== undefined
         return !this.compareEq(rowValue, value)
       case 'gt':
         return this.compareOrdered(rowValue, value) > 0
@@ -251,14 +261,10 @@ export class MemoryDatabase {
         return String(rowValue) === String(value)
       }
       case 'in': {
-        // Parse (val1,val2,...) format
+        // Parse (val1,val2,...) format; double-quoted values may contain commas
         const values = Array.isArray(value)
           ? value
-          : String(value)
-              .replace(/^\(|\)$/g, '')
-              .split(',')
-              .map((v) => v.trim())
-              .filter(Boolean)
+          : parseInValue(String(value))
         return values.some((v) => this.compareEq(rowValue, v))
       }
       case 'not': {
