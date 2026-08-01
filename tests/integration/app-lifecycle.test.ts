@@ -38,6 +38,7 @@ function localConfig(port: number): AppConfig {
   const disabledRemote = ''
   return {
     port,
+    mode: 'development',
     dataDir: join(tmpdir(), `sinopebase-app-lifecycle-${port}`),
     postgresUrl: disabledRemote,
     minioEndpoint: disabledRemote,

@@ -51,6 +51,7 @@ afterAll(() => {
 function rateLimitConfig(port: number, overrides?: Partial<AppConfig>): AppConfig {
   return {
     port,
+    mode: 'development',
     dataDir: join(tmpdir(), `sinopebase-rate-limit-${port}`),
     postgresUrl: '',
     minioEndpoint: '',
