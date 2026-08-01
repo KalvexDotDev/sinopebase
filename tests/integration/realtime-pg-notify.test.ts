@@ -101,11 +101,11 @@ describe('PgRealtimeListener', () => {
     await new Promise((r) => setTimeout(r, 200))
 
     expect(receivedChanges.length).toBeGreaterThan(0)
-    const insert = receivedChanges.find((c) => c.event === 'INSERT')
+    const insert = receivedChanges.find((c) => c.event === 'INSERT') as NonNullable<typeof insert>
     expect(insert).toBeDefined()
-    expect(insert!.table).toBe(TABLE)
-    expect(insert!.new.name).toBe('test-row')
-    expect(insert!.new.value).toBe(42)
+    expect(insert.table).toBe(TABLE)
+    expect(insert.new.name).toBe('test-row')
+    expect(insert.new.value).toBe(42)
   })
 
   test('receives UPDATE notifications', async () => {
@@ -114,10 +114,10 @@ describe('PgRealtimeListener', () => {
 
     await new Promise((r) => setTimeout(r, 200))
 
-    const update = receivedChanges.find((c) => c.event === 'UPDATE')
+    const update = receivedChanges.find((c) => c.event === 'UPDATE') as NonNullable<typeof update>
     expect(update).toBeDefined()
-    expect(update!.new.value).toBe(99)
-    expect(update!.old.name).toBe('test-row')
+    expect(update.new.value).toBe(99)
+    expect(update.old.name).toBe('test-row')
   })
 
   test('receives DELETE notifications', async () => {
@@ -131,7 +131,8 @@ describe('PgRealtimeListener', () => {
 
     const del = receivedChanges.find((c) => c.event === 'DELETE')
     expect(del).toBeDefined()
-    expect(del!.old.name).toBe('to-delete')
+    if (!del) throw new Error('expected DELETE event')
+    expect(del.old.name).toBe('to-delete')
   })
 
   test('self-originated changes are skipped', async () => {

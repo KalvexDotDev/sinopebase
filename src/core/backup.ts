@@ -188,7 +188,7 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
       )
 
       let colDefs = cols.rows
-        .map((c: any) => {
+        .map((c: Record<string, unknown>) => {
           let def = `  "${c.column_name}" ${c.data_type}`
           if (c.is_nullable === 'NO') def += ' NOT NULL'
           if (c.column_default) def += ` DEFAULT ${c.column_default}`
@@ -208,7 +208,7 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
       )
 
       if (pks.rows.length > 0) {
-        const pkCols = pks.rows.map((r: any) => `"${r.column_name}"`).join(', ')
+        const pkCols = pks.rows.map((r: Record<string, unknown>) => `"${r.column_name}"`).join(', ')
         colDefs += `,\n  PRIMARY KEY (${pkCols})`
       }
 

@@ -4,7 +4,7 @@ import type { Pool } from 'pg'
 async function loadCronJobs(pool: Pool) {
   try {
     const { rows } = await pool.query('SELECT * FROM _crons ORDER BY id')
-    return rows.map((r: any) => ({
+    return rows.map((r: Record<string, unknown>) => ({
       id: r.id,
       label: r.label || '',
       schedule: r.schedule || '',
@@ -39,7 +39,7 @@ export function createCronCrudPlugin(pool: Pool, isSuperuser: (r: Request) => bo
       set.status = 403
       return { code: 403, message: 'Unauthorized' }
     }
-    const { id, label, schedule, handler } = (body ?? {}) as any
+    const { id, label, schedule, handler } = (body ?? {}) as Record<string, unknown>
     if (!id) {
       set.status = 400
       return { code: 400, message: 'id required' }
@@ -60,9 +60,9 @@ export function createCronCrudPlugin(pool: Pool, isSuperuser: (r: Request) => bo
       set.status = 403
       return { code: 403, message: 'Unauthorized' }
     }
-    const { label, schedule, handler } = (body ?? {}) as any
+    const { label, schedule, handler } = (body ?? {}) as Record<string, unknown>
     const sets: string[] = []
-    const vals: any[] = []
+    const vals: unknown[] = []
     let i = 1
     if (label !== undefined) {
       sets.push(`label = $${i++}`)
@@ -99,7 +99,7 @@ export function createCronCrudPlugin(pool: Pool, isSuperuser: (r: Request) => bo
       return { code: 403, message: 'Unauthorized' }
     }
     const { rows } = await pool.query('SELECT handler FROM _crons WHERE id = $1', [params.id])
-    const handler = (rows[0] as any)?.handler || ''
+    const handler = (rows[0] as Record<string, unknown>)?.handler || ''
     if (!handler) return { message: 'No handler configured.' }
     try {
       if (handler.startsWith('fn:')) {
@@ -122,7 +122,7 @@ export function createCronCrudPlugin(pool: Pool, isSuperuser: (r: Request) => bo
         return { message: `Fetched ${handler}.`, output: out.slice(0, 500) }
       }
       return { message: `Unknown handler: ${handler}` }
-    } catch (e: any) {
+    } catch (e: unknown) {
       return { message: `Error: ${e.message}` }
     }
   })

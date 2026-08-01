@@ -170,9 +170,9 @@ export class MastraPlugin {
                 name: a.name,
                 description: a.description,
                 instructions: a.instructions,
-                provider: this.provider!,
+                provider: this.provider,
                 model: a.model,
-                tools: mcpTools,
+                tools: mcpTools as typeof mcpTools,
               }),
           )
         } else {
@@ -183,8 +183,8 @@ export class MastraPlugin {
               name: 'Sinopebase Assistant',
               instructions:
                 'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.',
-              provider: this.provider!,
-              tools: mcpTools,
+              provider: this.provider,
+              tools: mcpTools as typeof mcpTools,
             }),
           ]
           const { createAgent } = await import('./agent-store')
@@ -208,8 +208,8 @@ export class MastraPlugin {
           id: 'default',
           name: 'Sinopebase Assistant',
           instructions: 'You are a helpful assistant.',
-          provider: this.provider!,
-          tools: mcpTools,
+          provider: this.provider,
+          tools: mcpTools as typeof mcpTools,
         }),
       ]
     }
@@ -265,7 +265,7 @@ export class MastraPlugin {
           set.status = 401
           return { error: 'Unauthorized' }
         }
-        const { id, name, description, instructions, model } = body as any
+        const { id, name, description, instructions, model } = body as Record<string, unknown>
         if (!name) {
           set.status = 400
           return { error: 'name is required' }
@@ -275,7 +275,7 @@ export class MastraPlugin {
           name,
           description: description || '',
           instructions: instructions || 'You are a helpful assistant.',
-          provider: this.provider!,
+          provider: this.provider,
           tools: [],
         })
         this.agents.push(agent)
@@ -303,8 +303,8 @@ export class MastraPlugin {
           set.status = 404
           return { error: 'Agent not found' }
         }
-        const { name, description, instructions, model } = body as any
-        const existing = this.agents[idx]!
+        const { name, description, instructions, model } = body as Record<string, unknown>
+        const existing = this.agents[idx] as (typeof this.agents)[number]
         if (name) existing.name = name
         if (description !== undefined) existing.description = description
         if (instructions !== undefined) existing.instructions = instructions

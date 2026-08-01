@@ -21,7 +21,7 @@ export async function ensureMastraTables(pool: Pool): Promise<void> {
 
 export async function loadAgents(pool: Pool): Promise<AgentConfig[]> {
   const { rows } = await pool.query('SELECT * FROM _mastra_agents ORDER BY name')
-  return rows.map((r: any) => ({
+  return rows.map((r: Record<string, unknown>) => ({
     id: r.id,
     name: r.name,
     description: r.description || '',
@@ -41,7 +41,7 @@ export async function createAgent(
     [a.id, a.name, a.description, a.instructions, a.model],
   )
   const { rows } = await pool.query('SELECT * FROM _mastra_agents WHERE id = $1', [a.id])
-  const r = rows[0]!
+  const r = rows[0] as { id: string; name: string; description: string; instructions: string; model: string; created_at: string; updated_at: string }
   return {
     id: r.id,
     name: r.name,
@@ -55,7 +55,7 @@ export async function createAgent(
 
 export async function updateAgent(pool: Pool, id: string, a: Partial<AgentConfig>): Promise<void> {
   const sets: string[] = []
-  const vals: any[] = []
+  const vals: unknown[] = []
   let i = 1
   for (const [k, v] of Object.entries(a)) {
     if (v !== undefined && k !== 'createdAt' && k !== 'updatedAt') {
