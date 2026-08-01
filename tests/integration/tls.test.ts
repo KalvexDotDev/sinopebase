@@ -54,7 +54,8 @@ describe('TLS', () => {
     }
   })
 
-  test.skip(!tlsAvailable, 'server starts with TLS and responds over HTTPS', async () => {
+  const tlsTest = tlsAvailable ? test : test.skip
+  tlsTest('server starts with TLS and responds over HTTPS', async () => {
     app = new Sinopebase({
       port: TLS_PORT,
       host: '127.0.0.1',
@@ -77,7 +78,7 @@ describe('TLS', () => {
     expect(body.tls).toBe(true)
   })
 
-  test.skip(!tlsAvailable, 'HSTS header is present on HTTPS responses', async () => {
+  tlsTest('HSTS header is present on HTTPS responses', async () => {
     const res = await fetch(`https://127.0.0.1:${TLS_PORT}/api/health`, {
       tls: { rejectUnauthorized: false },
     })
@@ -87,7 +88,7 @@ describe('TLS', () => {
     expect(hsts).toContain('includeSubDomains')
   })
 
-  test.skip(!tlsAvailable, 'HTTP→HTTPS redirect works', async () => {
+  tlsTest('HTTP→HTTPS redirect works', async () => {
     const res = await fetch(`http://127.0.0.1:${REDIRECT_PORT}/api/health`, {
       redirect: 'manual',
     })
@@ -97,7 +98,7 @@ describe('TLS', () => {
     expect(location).toContain('https://')
   })
 
-  test.skip(!tlsAvailable, 'health endpoint reports tls: true', async () => {
+  tlsTest('health endpoint reports tls: true', async () => {
     const res = await fetch(`https://127.0.0.1:${TLS_PORT}/api/health`, {
       tls: { rejectUnauthorized: false },
     })
