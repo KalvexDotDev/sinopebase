@@ -1146,11 +1146,10 @@ export class Sinopebase {
     const s1 = server
       .onRequest(async ({ request, set }) => {
         const url = new URL(request.url)
-        // Exempt: health, readiness, admin UI, admin API, logs
+        // Exempt: health, readiness, admin API (auth-guarded), logs
         if (
           url.pathname === '/api/health' ||
           url.pathname === '/api/ready' ||
-          url.pathname.startsWith('/_/') ||
           url.pathname.startsWith('/api/admin/') ||
           url.pathname.startsWith('/api/logs')
         )
