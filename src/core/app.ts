@@ -1403,7 +1403,7 @@ export class Sinopebase {
     }
 
     // ── Admin OAuth Providers API — CRUD for OAuth/OIDC providers ──
-    const { createAdminOAuthPlugin, loadProviders } = await import('../apis/admin-oauth')
+    const { createAdminOAuthPlugin } = await import('../apis/admin-oauth')
     s5.use(
       createAdminOAuthPlugin(
         this.dataDir(),
