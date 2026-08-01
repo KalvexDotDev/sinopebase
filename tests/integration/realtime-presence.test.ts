@@ -19,11 +19,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Sinopebase } from '../../src/core/app'
 import { RealtimeHub } from '../../src/apis/realtime'
 import { createClient } from '../../src/sdk/client'
-import {
-  requireAnonKey,
-  requirePostgres,
-  reserveLoopbackPort,
-} from '../harness'
+import { requireAnonKey, requirePostgres, reserveLoopbackPort } from '../harness'
 
 let server: Sinopebase
 let origin: string
@@ -53,7 +49,11 @@ async function rawRealtimeSocket(baseUrl: string, apiKey: string) {
     `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${apiKey}&vsn=2.0.0`,
   )
   ws.onmessage = (event) => {
-    try { messages.push(JSON.parse(event.data as string)) } catch { /* ignore */ }
+    try {
+      messages.push(JSON.parse(event.data as string))
+    } catch {
+      /* ignore */
+    }
   }
   await new Promise<void>((resolve, reject) => {
     ws.onopen = () => resolve()
@@ -81,7 +81,9 @@ type PhoenixV2 = [string | null, string | null, string, string, Record<string, u
 function isPhoenix(m: unknown, topic: string, event: string, ref?: string): boolean {
   const msg = m as PhoenixV2
   return (
-    Array.isArray(msg) && msg[2] === topic && msg[3] === event &&
+    Array.isArray(msg) &&
+    msg[2] === topic &&
+    msg[3] === event &&
     (ref === undefined || msg[1] === ref)
   )
 }
@@ -106,14 +108,23 @@ function joinPayload(presence?: { key: string }, data?: Record<string, unknown>)
 }
 
 async function joinChannel(
-  ws: WebSocket, messages: unknown[], topic: string, ref: string,
+  ws: WebSocket,
+  messages: unknown[],
+  topic: string,
+  ref: string,
   payload: Record<string, unknown>,
 ): Promise<PhoenixV2> {
   ws.send(JSON.stringify(['1', ref, topic, 'phx_join', payload]))
   return waitForMessage<PhoenixV2>(messages, (m) => isPhoenix(m, topic, 'phx_reply', ref))
 }
 
-function sendTrack(ws: WebSocket, topic: string, key: string, data: Record<string, unknown>, ref = '2') {
+function sendTrack(
+  ws: WebSocket,
+  topic: string,
+  key: string,
+  data: Record<string, unknown>,
+  ref = '2',
+) {
   ws.send(JSON.stringify(['1', ref, topic, 'track', { key, data }]))
 }
 
@@ -121,7 +132,11 @@ function sendUntrack(ws: WebSocket, topic: string, key?: string, ref = '3') {
   ws.send(JSON.stringify(['1', ref, topic, 'untrack', key ? { key } : {}]))
 }
 
-function waitForPresenceDiff(messages: unknown[], topic: string, fromIndex = 0): Promise<PhoenixV2> {
+function waitForPresenceDiff(
+  messages: unknown[],
+  topic: string,
+  fromIndex = 0,
+): Promise<PhoenixV2> {
   return waitForMessage<PhoenixV2>(
     messages,
     (m, i) => i >= fromIndex && isPhoenix(m, topic, 'presence_diff'),
@@ -139,13 +154,18 @@ class TestSocket {
     this.data = { query: { apikey: apiKey } }
   }
 
-  send(data: unknown): void { this.sent.push(data) }
+  send(data: unknown): void {
+    this.sent.push(data)
+  }
   subscribe(_topic: string): void {}
   unsubscribe(_topic: string): void {}
   publish(_topic: string, _data: unknown): void {}
 }
 
-function findLastSent<T>(socket: TestSocket, predicate: (msg: PhoenixV2) => boolean): T | undefined {
+function findLastSent<T>(
+  socket: TestSocket,
+  predicate: (msg: PhoenixV2) => boolean,
+): T | undefined {
   const parsed = socket.sent.map((raw) => JSON.parse(raw as string) as PhoenixV2)
   for (let i = parsed.length - 1; i >= 0; i--) {
     if (predicate(parsed[i] as PhoenixV2)) return parsed[i] as T
@@ -161,10 +181,23 @@ describe('Realtime Presence', () => {
     const { ws, messages, close } = await rawRealtimeSocket(origin, anonKey)
 
     try {
-      ws.send(JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'user1' }, { online: true })]))
-      const reply = await waitForMessage<PhoenixV2>(messages, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
+      ws.send(
+        JSON.stringify([
+          '1',
+          '1',
+          topic,
+          'phx_join',
+          joinPayload({ key: 'user1' }, { online: true }),
+        ]),
+      )
+      const reply = await waitForMessage<PhoenixV2>(messages, (m) =>
+        isPhoenix(m, topic, 'phx_reply', '1'),
+      )
 
-      expect(reply[4]).toMatchObject({ status: 'ok', response: { postgres_changes: expect.any(Array) } })
+      expect(reply[4]).toMatchObject({
+        status: 'ok',
+        response: { postgres_changes: expect.any(Array) },
+      })
       const response = reply[4].response as Record<string, unknown>
       expect(response.presence_state).toBeDefined()
     } finally {
@@ -184,7 +217,9 @@ describe('Realtime Presence', () => {
       const fromIndex = b.messages.length
       sendTrack(a.ws, topic, 'user1', { online: true })
 
-      const trackReply = await waitForMessage<PhoenixV2>(a.messages, (m) => isPhoenix(m, topic, 'phx_reply', '2'))
+      const trackReply = await waitForMessage<PhoenixV2>(a.messages, (m) =>
+        isPhoenix(m, topic, 'phx_reply', '2'),
+      )
       expect(trackReply[4]).toMatchObject({ status: 'ok' })
 
       const diff = await waitForPresenceDiff(b.messages, topic, fromIndex)
@@ -193,7 +228,8 @@ describe('Realtime Presence', () => {
         leaves: {},
       })
     } finally {
-      a.close(); b.close()
+      a.close()
+      b.close()
     }
   })
 
@@ -219,7 +255,8 @@ describe('Realtime Presence', () => {
         leaves: { user1: { metas: [{ key: 'user1', data: { online: true } }] } },
       })
     } finally {
-      a.close(); b.close()
+      a.close()
+      b.close()
     }
   })
 
@@ -244,7 +281,8 @@ describe('Realtime Presence', () => {
         leaves: { user1: { metas: [{ key: 'user1', data: { online: true } }] } },
       })
     } finally {
-      a.close(); b.close()
+      a.close()
+      b.close()
     }
   })
 
@@ -263,79 +301,97 @@ describe('Realtime Presence', () => {
       sendTrack(b.ws, topic, 'shared', { name: 'b' })
       await waitForMessage<PhoenixV2>(b.messages, (m) => isPhoenix(m, topic, 'phx_reply', '2'))
 
-      c.ws.send(JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'c' }, { online: true })]))
-      const cJoin = await waitForMessage<PhoenixV2>(c.messages, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
+      c.ws.send(
+        JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'c' }, { online: true })]),
+      )
+      const cJoin = await waitForMessage<PhoenixV2>(c.messages, (m) =>
+        isPhoenix(m, topic, 'phx_reply', '1'),
+      )
       expect(cJoin[4]).toMatchObject({ status: 'ok' })
 
-      const state = (cJoin[4].response as Record<string, unknown>).presence_state as Record<string, { metas: Array<{ key: string }> }>
+      const state = (cJoin[4].response as Record<string, unknown>).presence_state as Record<
+        string,
+        { metas: Array<{ key: string }> }
+      >
       expect(Object.keys(state)).toEqual(['shared'])
       expect(state['shared']?.metas).toHaveLength(2)
       expect(state['shared']?.metas.map((m) => m.key).sort()).toEqual(['shared', 'shared'])
     } finally {
-      a.close(); b.close(); c.close()
+      a.close()
+      b.close()
+      c.close()
     }
   })
 
   // SKIP in CI: requires 80s wall-clock time. Run manually with:
   //   bun test -t "heartbeat" tests/integration/realtime-presence.test.ts
-  test.skip(
-    'heartbeat keeps presence alive past the 60s sweep timeout',
-    { timeout: 150_000 },
-    async () => {
-      // Dedicated hub so the sweeper timing is fully contained in this test.
-      const hub = new RealtimeHub()
-      const topic = uniqueTopic('hb')
+  test.skip('heartbeat keeps presence alive past the 60s sweep timeout', {
+    timeout: 150_000,
+  }, async () => {
+    // Dedicated hub so the sweeper timing is fully contained in this test.
+    const hub = new RealtimeHub()
+    const topic = uniqueTopic('hb')
 
-      const a = new TestSocket(anonKey)
-      const b = new TestSocket(anonKey)
+    const a = new TestSocket(anonKey)
+    const b = new TestSocket(anonKey)
 
-      // A joins with presence (auto-track user1); B joins as an observer.
-      await hub.handleMessage(
-        a,
-        JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'user1' }, { online: true })]),
-      )
-      await hub.handleMessage(b, JSON.stringify(['1', '1', topic, 'phx_join', joinPayload()]))
+    // A joins with presence (auto-track user1); B joins as an observer.
+    await hub.handleMessage(
+      a,
+      JSON.stringify([
+        '1',
+        '1',
+        topic,
+        'phx_join',
+        joinPayload({ key: 'user1' }, { online: true }),
+      ]),
+    )
+    await hub.handleMessage(b, JSON.stringify(['1', '1', topic, 'phx_join', joinPayload()]))
 
-      // Sanity: A's join reply carries a presence_state object.
-      const joinReply = findLastSent<PhoenixV2>(a, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
-      expect(joinReply?.[4]).toMatchObject({ status: 'ok' })
-      const joinState = ((joinReply?.[4].response ?? {}) as Record<string, unknown>).presence_state
-      expect(joinState).toBeDefined()
+    // Sanity: A's join reply carries a presence_state object.
+    const joinReply = findLastSent<PhoenixV2>(a, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
+    expect(joinReply?.[4]).toMatchObject({ status: 'ok' })
+    const joinState = ((joinReply?.[4].response ?? {}) as Record<string, unknown>).presence_state
+    expect(joinState).toBeDefined()
 
-      // Wait 59s — still within the 60s presence timeout — then send a
-      // heartbeat to refresh the entry's lastHeartbeat before the sweeper
-      // (runs every 15s, removes entries older than 60s) can remove it.
-      await Bun.sleep(59_000)
-      await hub.handleMessage(a, JSON.stringify(['1', '2', topic, 'phx_heartbeat', {}]))
-      const hbReply = findLastSent<PhoenixV2>(a, (m) => isPhoenix(m, topic, 'phx_reply', '2'))
-      expect(hbReply?.[4]).toMatchObject({ status: 'ok' })
+    // Wait 59s — still within the 60s presence timeout — then send a
+    // heartbeat to refresh the entry's lastHeartbeat before the sweeper
+    // (runs every 15s, removes entries older than 60s) can remove it.
+    await Bun.sleep(59_000)
+    await hub.handleMessage(a, JSON.stringify(['1', '2', topic, 'phx_heartbeat', {}]))
+    const hbReply = findLastSent<PhoenixV2>(a, (m) => isPhoenix(m, topic, 'phx_reply', '2'))
+    expect(hbReply?.[4]).toMatchObject({ status: 'ok' })
 
-      // Wait past the ~75s sweep tick. Without the heartbeat the entry would
-      // have been swept by now (60s timeout + 15s sweep interval); with the
-      // heartbeat its lastHeartbeat was refreshed to ~59s, so it survives.
-      await Bun.sleep(21_000)
+    // Wait past the ~75s sweep tick. Without the heartbeat the entry would
+    // have been swept by now (60s timeout + 15s sweep interval); with the
+    // heartbeat its lastHeartbeat was refreshed to ~59s, so it survives.
+    await Bun.sleep(21_000)
 
-      // A fresh joiner must still see user1 in presence_state.
-      const c = new TestSocket(anonKey)
-      await hub.handleMessage(
-        c,
-        JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'c' }, { online: true })]),
-      )
-      const reply = findLastSent<PhoenixV2>(c, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
-      expect(reply?.[4]).toMatchObject({ status: 'ok' })
-      const state = ((reply?.[4].response ?? {}) as Record<string, unknown>).presence_state as Record<string, unknown>
-      expect(state['user1']).toBeDefined()
+    // A fresh joiner must still see user1 in presence_state.
+    const c = new TestSocket(anonKey)
+    await hub.handleMessage(
+      c,
+      JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'c' }, { online: true })]),
+    )
+    const reply = findLastSent<PhoenixV2>(c, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
+    expect(reply?.[4]).toMatchObject({ status: 'ok' })
+    const state = ((reply?.[4].response ?? {}) as Record<string, unknown>).presence_state as Record<
+      string,
+      unknown
+    >
+    expect(state['user1']).toBeDefined()
 
-      // The sweeper must never have broadcast a leave for user1 to observers.
-      const swept = findLastSent<PhoenixV2>(
-        b,
-        (m) => isPhoenix(m, topic, 'presence_diff') &&
-          (m[4] as Record<string, unknown>)?.leaves !== undefined &&
-          Object.keys(((m[4] as Record<string, unknown>).leaves ?? {}) as Record<string, unknown>).length > 0,
-      )
-      expect(swept).toBeUndefined()
-    },
-  )
+    // The sweeper must never have broadcast a leave for user1 to observers.
+    const swept = findLastSent<PhoenixV2>(
+      b,
+      (m) =>
+        isPhoenix(m, topic, 'presence_diff') &&
+        (m[4] as Record<string, unknown>)?.leaves !== undefined &&
+        Object.keys(((m[4] as Record<string, unknown>).leaves ?? {}) as Record<string, unknown>)
+          .length > 0,
+    )
+    expect(swept).toBeUndefined()
+  })
 
   test('SDK track/untrack delivers presence events over HTTP', async () => {
     const topic = uniqueTopic('sdk')

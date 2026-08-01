@@ -25,10 +25,7 @@ export interface TableInfo {
   hasRLS: boolean
 }
 
-export function createAdminTablesPlugin(
-  pool: Pool,
-  isSuperuser: (request: Request) => boolean,
-) {
+export function createAdminTablesPlugin(pool: Pool, isSuperuser: (request: Request) => boolean) {
   const app = new Elysia({ name: 'sinopebase-admin-tables' })
 
   app.get('/api/admin/tables', async ({ request, set }) => {

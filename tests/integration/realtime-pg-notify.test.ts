@@ -15,7 +15,10 @@ import type { PostgresChange, PostgrestChangePublisher } from '../../src/apis/re
 import { PgRealtimeListener, attachRealtimeTriggers } from '../../src/apis/realtime-pg-listener'
 
 // ── Test infrastructure ──
-const PG_URL = process.env.TEST_POSTGRES_URL || process.env.POSTGRES_URL || 'postgres://127.0.0.1:5432/sinopebase_test'
+const PG_URL =
+  process.env.TEST_POSTGRES_URL ||
+  process.env.POSTGRES_URL ||
+  'postgres://127.0.0.1:5432/sinopebase_test'
 
 describe('PgRealtimeListener', () => {
   let pool: Pool
@@ -53,7 +56,9 @@ describe('PgRealtimeListener', () => {
       END;
       $$
     `)
-    await pool.query(`CREATE TRIGGER "sinopebase_notify_${TABLE}" AFTER INSERT OR UPDATE OR DELETE ON "${TABLE}" FOR EACH ROW EXECUTE FUNCTION sinopebase_notify_change()`)
+    await pool.query(
+      `CREATE TRIGGER "sinopebase_notify_${TABLE}" AFTER INSERT OR UPDATE OR DELETE ON "${TABLE}" FOR EACH ROW EXECUTE FUNCTION sinopebase_notify_change()`,
+    )
 
     // Create hub that captures changes
     hub = new RealtimeHub({

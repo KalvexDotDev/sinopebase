@@ -58,45 +58,50 @@ function userResponse(user: ReturnType<typeof authStore.toUser>) {
 // ---------------------------------------------------------------------------
 
 export const authPlugin = new Elysia({ name: 'sinopebase-auth-fallback' })
-  .post('/auth/v1/signup', async ({ body, set }) => {
-    const { email, password } = body as {
-      email: string
-      password: string
-    }
+  .post(
+    '/auth/v1/signup',
+    async ({ body, set }) => {
+      const { email, password } = body as {
+        email: string
+        password: string
+      }
 
-    if (!email || !password) {
-      set.status = 400
-      return errorResponse('Email and password are required', 400)
-    }
+      if (!email || !password) {
+        set.status = 400
+        return errorResponse('Email and password are required', 400)
+      }
 
-    const existing = authStore.findUserByEmail(email)
-    if (existing) {
-      set.status = 400
-      return errorResponse('User already exists', 400)
-    }
+      const existing = authStore.findUserByEmail(email)
+      if (existing) {
+        set.status = 400
+        return errorResponse('User already exists', 400)
+      }
 
-    const passwordHash = await Bun.password.hash(password)
-    const storedUser = await authStore.createUser(email, passwordHash)
-    const user = authStore.toUser(storedUser)
+      const passwordHash = await Bun.password.hash(password)
+      const storedUser = await authStore.createUser(email, passwordHash)
+      const user = authStore.toUser(storedUser)
 
-    // Issue tokens with session and family tracking
-    const sessionId = generateSessionId()
-    const tokenId = generateTokenId()
-    const familyId = generateFamilyId()
+      // Issue tokens with session and family tracking
+      const sessionId = generateSessionId()
+      const tokenId = generateTokenId()
+      const familyId = generateFamilyId()
 
-    const accessToken = await generateAccessToken(user, sessionId)
-    const refreshToken = await generateRefreshToken(user.id, sessionId, tokenId, familyId)
+      const accessToken = await generateAccessToken(user, sessionId)
+      const refreshToken = await generateRefreshToken(user.id, sessionId, tokenId, familyId)
 
-    authStore.addRefreshToken(tokenId, user.id, sessionId, familyId)
+      authStore.addRefreshToken(tokenId, user.id, sessionId, familyId)
 
-    return sessionResponse(user, accessToken, refreshToken)
-  }, {
-    detail: {
-      tags: ['Auth'],
-      summary: 'Sign up with email and password',
-      description: 'Creates a new user account and returns an access token, refresh token, and user profile. Passwords are hashed with bcrypt via Bun.password.',
+      return sessionResponse(user, accessToken, refreshToken)
     },
-  })
+    {
+      detail: {
+        tags: ['Auth'],
+        summary: 'Sign up with email and password',
+        description:
+          'Creates a new user account and returns an access token, refresh token, and user profile. Passwords are hashed with bcrypt via Bun.password.',
+      },
+    },
+  )
 
   .post('/auth/v1/token', async ({ body, query, set }) => {
     const grantType = query.grant_type as string | undefined

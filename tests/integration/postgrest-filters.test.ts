@@ -332,12 +332,7 @@ describe('PostgREST Prefer count=planned/estimated', () => {
 
   it('GET with count=exact returns the same Content-Range header', async () => {
     const app = createApp(MATRIX_ROWS)
-    const { response } = await get(
-      app,
-      'items',
-      { active: 'is.true' },
-      { prefer: 'count=exact' },
-    )
+    const { response } = await get(app, 'items', { active: 'is.true' }, { prefer: 'count=exact' })
 
     expect(response.status).toBe(200)
     expect(response.headers.get('content-range')).toBe('*/2')

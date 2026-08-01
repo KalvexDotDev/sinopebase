@@ -46,7 +46,11 @@ export interface IDatabase {
     data: Record<string, unknown>,
     orFilters?: Filter[][],
   ): Promise<Record<string, unknown>[]>
-  delete(table: string, filters: Filter[], orFilters?: Filter[][]): Promise<Record<string, unknown>[]>
+  delete(
+    table: string,
+    filters: Filter[],
+    orFilters?: Filter[][],
+  ): Promise<Record<string, unknown>[]>
   count(table: string, filters?: Filter[]): Promise<number>
 
   /** Optional because the in-memory database has no schema metadata. */

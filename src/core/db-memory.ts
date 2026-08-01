@@ -262,9 +262,7 @@ export class MemoryDatabase {
       }
       case 'in': {
         // Parse (val1,val2,...) format; double-quoted values may contain commas
-        const values = Array.isArray(value)
-          ? value
-          : parseInValue(String(value))
+        const values = Array.isArray(value) ? value : parseInValue(String(value))
         return values.some((v) => this.compareEq(rowValue, v))
       }
       case 'not': {

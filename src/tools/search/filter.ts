@@ -1037,7 +1037,10 @@ export function parseOrFilters(
     const andMatch = trimmed.match(/^and\((.*)\)$/i)
     if (andMatch && andMatch[1]) {
       const andGroup: Array<{ column: string; operator: string; value: string }> = []
-      const andParts = andMatch[1].split(',').map((s) => s.trim()).filter(Boolean)
+      const andParts = andMatch[1]
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
       for (const ap of andParts) {
         const filter = parseSingleOrFilter(ap)
         if (filter) andGroup.push(filter)
@@ -1125,5 +1128,7 @@ export function parseInValue(raw: string): string[] {
   }
 
   // Unquote values that were double-quoted
-  return values.map((v) => (v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1) : v)).filter(Boolean)
+  return values
+    .map((v) => (v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1) : v))
+    .filter(Boolean)
 }

@@ -41,7 +41,10 @@ export function createManageRoutes(
         if (auth) {
           const token = extractBearerToken(request)
           const user = await validateFunctionAuth(auth, token)
-          const isServiceRole = token && process.env.SINOPEBASE_SERVICE_ROLE_KEY && token === process.env.SINOPEBASE_SERVICE_ROLE_KEY
+          const isServiceRole =
+            token &&
+            process.env.SINOPEBASE_SERVICE_ROLE_KEY &&
+            token === process.env.SINOPEBASE_SERVICE_ROLE_KEY
           if (!user && !isServiceRole) {
             set.status = 401
             return { error: 'Authentication required', status: 401 }

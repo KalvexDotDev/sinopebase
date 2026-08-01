@@ -60,7 +60,11 @@ export class MemoryDatabaseAdapter implements IDatabase {
     return this.database.update(table, toParsedFilters(filters), data, ids)
   }
 
-  async delete(table: string, filters: Filter[], orFilters?: Filter[][]): Promise<Record<string, unknown>[]> {
+  async delete(
+    table: string,
+    filters: Filter[],
+    orFilters?: Filter[][],
+  ): Promise<Record<string, unknown>[]> {
     const ids = orFilters?.length
       ? (await this.select(table, { filters, orFilters })).map((r) => r.id as string)
       : undefined

@@ -342,7 +342,11 @@ export class PostgresDatabase implements IDatabase {
     return result as unknown as Record<string, unknown>[]
   }
 
-  async delete(table: string, filters: Filter[], orFilters?: Filter[][]): Promise<Record<string, unknown>[]> {
+  async delete(
+    table: string,
+    filters: Filter[],
+    orFilters?: Filter[][],
+  ): Promise<Record<string, unknown>[]> {
     // When orFilters are provided, pre-select matching row IDs
     if (orFilters?.length) {
       const selected = await this.select(table, { filters, orFilters })

@@ -8,10 +8,7 @@
 import { Elysia } from 'elysia'
 import type { Pool } from 'pg'
 
-export function createAdminRlsPlugin(
-  pool: Pool,
-  isSuperuser: (request: Request) => boolean,
-) {
+export function createAdminRlsPlugin(pool: Pool, isSuperuser: (request: Request) => boolean) {
   const app = new Elysia({ name: 'sinopebase-admin-rls' })
 
   app.post('/api/admin/rls/enable', async ({ request, body, set }) => {
@@ -21,11 +18,17 @@ export function createAdminRlsPlugin(
     }
 
     const { table } = (body ?? {}) as { table?: string }
-    if (!table) { set.status = 400; return { code: 400, message: 'Table name required.' } }
+    if (!table) {
+      set.status = 400
+      return { code: 400, message: 'Table name required.' }
+    }
 
     // Prevent SQL injection — validate table name against actual tables
     const valid = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)
-    if (!valid) { set.status = 400; return { code: 400, message: 'Invalid table name.' } }
+    if (!valid) {
+      set.status = 400
+      return { code: 400, message: 'Invalid table name.' }
+    }
 
     try {
       await pool.query(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`)

@@ -12,7 +12,11 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Pool } from 'pg'
-import { createAuth, type OAuthProviderConfig, type SinopebaseAuth } from '../../src/tools/auth-better'
+import {
+  createAuth,
+  type OAuthProviderConfig,
+  type SinopebaseAuth,
+} from '../../src/tools/auth-better'
 import { requirePostgres } from '../harness'
 
 interface GenericOAuthPluginShape {

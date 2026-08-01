@@ -24,9 +24,18 @@ import { createAuthTables, createBetterAuthDB } from './adapter'
 
 /** Built-in social providers supported directly by better-auth v1.6.25. */
 export const BUILTIN_SOCIAL = new Set([
-  'google', 'github', 'discord', 'apple', 'microsoft',
-  'spotify', 'twitch', 'twitter', 'dropbox', 'linkedin',
-  'gitlab', 'bitbucket',
+  'google',
+  'github',
+  'discord',
+  'apple',
+  'microsoft',
+  'spotify',
+  'twitch',
+  'twitter',
+  'dropbox',
+  'linkedin',
+  'gitlab',
+  'bitbucket',
 ])
 
 // ---------------------------------------------------------------------------

@@ -1005,9 +1005,12 @@ export class Sinopebase {
             info: {
               title: 'Sinopebase API',
               version: '0.5.0',
-              description: 'PocketBase-shaped, Supabase-compatible backend. REST, Auth, Storage, Realtime, Admin.',
+              description:
+                'PocketBase-shaped, Supabase-compatible backend. REST, Auth, Storage, Realtime, Admin.',
             },
-            servers: [{ url: `http://${this.config.host ?? '127.0.0.1'}:${this.config.port ?? 8090}` }],
+            servers: [
+              { url: `http://${this.config.host ?? '127.0.0.1'}:${this.config.port ?? 8090}` },
+            ],
           },
         }),
       )
@@ -1109,10 +1112,21 @@ export class Sinopebase {
           // Persist to _logs table if we have a database (fire-and-forget)
           if (this.database instanceof PostgresDatabase) {
             const pool = this.database.getPool()
-            pool.query(
-              `INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`,
-              [0, `${request.method} ${pathname}`, JSON.stringify({ method: request.method, path: pathname, status: set.status ?? 200, duration_ms: duration, request_id: meta.requestId })],
-            ).catch(() => { /* best-effort */ })
+            pool
+              .query(`INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`, [
+                0,
+                `${request.method} ${pathname}`,
+                JSON.stringify({
+                  method: request.method,
+                  path: pathname,
+                  status: set.status ?? 200,
+                  duration_ms: duration,
+                  request_id: meta.requestId,
+                }),
+              ])
+              .catch(() => {
+                /* best-effort */
+              })
           }
           requestMeta.delete(request)
         }
@@ -1139,7 +1153,8 @@ export class Sinopebase {
           url.pathname.startsWith('/_/') ||
           url.pathname.startsWith('/api/admin/') ||
           url.pathname.startsWith('/api/logs')
-        ) return
+        )
+          return
         await rlHandler({ request, set })
       })
 
@@ -1357,7 +1372,8 @@ export class Sinopebase {
         async (settings) => {
           // Persist settings by merging into config
           if (settings.appName) (this.config as Record<string, unknown>).appName = settings.appName
-          if (settings.minPasswordLength) (this.config as Record<string, unknown>).minPasswordLength = settings.minPasswordLength
+          if (settings.minPasswordLength)
+            (this.config as Record<string, unknown>).minPasswordLength = settings.minPasswordLength
         },
         isSuperuser,
       ),
@@ -1405,13 +1421,9 @@ export class Sinopebase {
     // ── Admin OAuth Providers API — CRUD for OAuth/OIDC providers ──
     const { createAdminOAuthPlugin } = await import('../apis/admin-oauth')
     s5.use(
-      createAdminOAuthPlugin(
-        this.dataDir(),
-        isSuperuser,
-        (providers) => {
-          logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
-        },
-      ),
+      createAdminOAuthPlugin(this.dataDir(), isSuperuser, (providers) => {
+        logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
+      }),
     )
 
     // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
@@ -1438,7 +1450,10 @@ export class Sinopebase {
     // ── Log retention — prune old entries on startup and hourly ──
     const pruneLogs = async () => {
       if (this.database instanceof PostgresDatabase) {
-        this.database.getPool().query(`DELETE FROM _logs WHERE created < now() - make_interval(days => 30)`).catch(() => {})
+        this.database
+          .getPool()
+          .query(`DELETE FROM _logs WHERE created < now() - make_interval(days => 30)`)
+          .catch(() => {})
       }
     }
     await pruneLogs()
@@ -1631,7 +1646,11 @@ export class Sinopebase {
 
     // Stop the PG LISTEN/NOTIFY listener if active
     if (this._pgListener) {
-      try { await this._pgListener.stop() } catch { /* ignore */ }
+      try {
+        await this._pgListener.stop()
+      } catch {
+        /* ignore */
+      }
       this._pgListener = null
     }
 
@@ -1806,8 +1825,12 @@ export class Sinopebase {
     // In dev mode, proxy to Vite dev server for HMR if it's reachable.
     if (this.mode === 'development') {
       fetch(`${viteUrl}/@vite/client`, { signal: AbortSignal.timeout(500) })
-        .then(r => { viteOk = r.ok })
-        .catch(() => { viteOk = false })
+        .then((r) => {
+          viteOk = r.ok
+        })
+        .catch(() => {
+          viteOk = false
+        })
     }
 
     // Single catch-all route for admin UI — proxy Vite in dev, serve static otherwise
@@ -1816,12 +1839,14 @@ export class Sinopebase {
       if (viteOk) {
         const url = new URL(request.url)
         const proxied = await fetch(`${viteUrl}${url.pathname}${url.search}`, {
-          headers: { 'Accept': request.headers.get('accept') ?? '*/*' },
+          headers: { Accept: request.headers.get('accept') ?? '*/*' },
           signal: AbortSignal.timeout(30000),
         }).catch(() => null)
         if (proxied) {
           set.status = proxied.status
-          proxied.headers.forEach((v, k) => { if (k !== 'content-encoding') set.headers[k] = v })
+          proxied.headers.forEach((v, k) => {
+            if (k !== 'content-encoding') set.headers[k] = v
+          })
           return proxied.body ? new Uint8Array(await proxied.arrayBuffer()) : null
         }
         // Vite not reachable — fall through to static serving

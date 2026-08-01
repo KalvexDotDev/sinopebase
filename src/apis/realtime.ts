@@ -399,7 +399,9 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           : undefined
         const topPresence = msg.payload?.presence
         const presenceKey =
-          (isRecord(configPresence) && typeof configPresence.key === 'string' && configPresence.key) ||
+          (isRecord(configPresence) &&
+            typeof configPresence.key === 'string' &&
+            configPresence.key) ||
           (isRecord(topPresence) && typeof topPresence.key === 'string' && topPresence.key) ||
           undefined
         const presenceData = isRecord(msg.payload?.data) ? msg.payload.data : {}
@@ -606,7 +608,10 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
           })
           return
         }
-        const untrackKey = typeof msg.payload?.key === 'string' ? msg.payload.key : entry.state.presenceKeys.get(msg.topic)
+        const untrackKey =
+          typeof msg.payload?.key === 'string'
+            ? msg.payload.key
+            : entry.state.presenceKeys.get(msg.topic)
         if (untrackKey) {
           this.untrackPresence(msg.topic, untrackKey, ws)
           entry.state.presenceKeys.delete(msg.topic)
@@ -636,14 +641,19 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   // -------------------------------------------------------------------------
 
   /** Get current presence state for a topic (Phoenix Presence format). */
-  private getPresenceState(topic: string): Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> {
+  private getPresenceState(
+    topic: string,
+  ): Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> {
     const entries = this.presenceByTopic.get(topic) ?? []
-    const state: Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> = {}
+    const state: Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> =
+      {}
     for (const entry of entries) {
       if (!state[entry.key]) {
         state[entry.key] = { metas: [] }
       }
-      (state[entry.key] as { metas: Array<{ key: string; data: Record<string, unknown> }> }).metas.push({
+      ;(
+        state[entry.key] as { metas: Array<{ key: string; data: Record<string, unknown> }> }
+      ).metas.push({
         key: entry.key,
         data: entry.data,
       })
@@ -700,7 +710,10 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   /** Broadcast a presence_diff event to all subscribers of a topic. */
   private broadcastPresenceDiff(
     topic: string,
-    diff: { joins: Array<{ key: string; data: Record<string, unknown> }>; leaves: Array<{ key: string; data: Record<string, unknown> }> },
+    diff: {
+      joins: Array<{ key: string; data: Record<string, unknown> }>
+      leaves: Array<{ key: string; data: Record<string, unknown> }>
+    },
   ): void {
     if (diff.joins.length === 0 && diff.leaves.length === 0) return
 
@@ -723,12 +736,15 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
   private presenceDiffPayload(
     entries: Array<{ key: string; data: Record<string, unknown> }>,
   ): Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> {
-    const result: Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> = {}
+    const result: Record<string, { metas: Array<{ key: string; data: Record<string, unknown> }> }> =
+      {}
     for (const entry of entries) {
       if (!result[entry.key]) {
         result[entry.key] = { metas: [] }
       }
-      (result[entry.key] as { metas: Array<{ key: string; data: Record<string, unknown> }> }).metas.push({
+      ;(
+        result[entry.key] as { metas: Array<{ key: string; data: Record<string, unknown> }> }
+      ).metas.push({
         key: entry.key,
         data: entry.data,
       })

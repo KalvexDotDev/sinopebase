@@ -33,7 +33,9 @@ async function loadProviders(dataDir: string): Promise<OAuthProviderConfig[]> {
     if (!Array.isArray(parsed)) return []
     return parsed.filter(
       (p: unknown) =>
-        typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).providerId === 'string',
+        typeof p === 'object' &&
+        p !== null &&
+        typeof (p as Record<string, unknown>).providerId === 'string',
     ) as OAuthProviderConfig[]
   } catch {
     return []

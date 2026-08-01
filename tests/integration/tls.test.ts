@@ -42,8 +42,16 @@ describe('TLS', () => {
 
   afterAll(async () => {
     await app?.stop()
-    try { unlinkSync(CERT_PATH) } catch { /* ignore */ }
-    try { unlinkSync(KEY_PATH) } catch { /* ignore */ }
+    try {
+      unlinkSync(CERT_PATH)
+    } catch {
+      /* ignore */
+    }
+    try {
+      unlinkSync(KEY_PATH)
+    } catch {
+      /* ignore */
+    }
   })
 
   test('server starts with TLS and responds over HTTPS', async () => {

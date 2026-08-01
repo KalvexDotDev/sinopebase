@@ -80,10 +80,9 @@ export class PgRealtimeListener {
       })
 
       // Set process ID on the connection so the trigger function can read it
-      await this.client.query(
-        `SELECT set_config('app.sinopebase_process_id', $1, false)`,
-        [this.processId],
-      )
+      await this.client.query(`SELECT set_config('app.sinopebase_process_id', $1, false)`, [
+        this.processId,
+      ])
 
       // Start listening
       await this.client.query(`LISTEN "${this.channel}"`)
@@ -114,7 +113,9 @@ export class PgRealtimeListener {
       })
       this.running = false
       // Retry after delay
-      setTimeout(() => { if (!this.running) this.start() }, this.reconnectDelay)
+      setTimeout(() => {
+        if (!this.running) this.start()
+      }, this.reconnectDelay)
     }
   }
 
@@ -165,7 +166,11 @@ export class PgRealtimeListener {
   private reconnect(): void {
     if (!this.running) return
     // Release old client if any
-    try { this.client?.release() } catch { /* ignore */ }
+    try {
+      this.client?.release()
+    } catch {
+      /* ignore */
+    }
     this.client = null
 
     const delay = this.reconnectDelay
@@ -187,10 +192,14 @@ export class PgRealtimeListener {
 
 function normalizeEvent(pgOp: string): PostgresChange['event'] | null {
   switch (pgOp.toUpperCase()) {
-    case 'INSERT': return 'INSERT'
-    case 'UPDATE': return 'UPDATE'
-    case 'DELETE': return 'DELETE'
-    default: return null
+    case 'INSERT':
+      return 'INSERT'
+    case 'UPDATE':
+      return 'UPDATE'
+    case 'DELETE':
+      return 'DELETE'
+    default:
+      return null
   }
 }
 

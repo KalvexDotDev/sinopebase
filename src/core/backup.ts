@@ -177,27 +177,35 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
       const table = row.table_name as string
 
       // Dump schema
-      const cols = await pool.query(`
+      const cols = await pool.query(
+        `
         SELECT column_name, data_type, is_nullable, column_default
         FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = $1
         ORDER BY ordinal_position
-      `, [table])
+      `,
+        [table],
+      )
 
-      let colDefs = cols.rows.map((c: any) => {
-        let def = `  "${c.column_name}" ${c.data_type}`
-        if (c.is_nullable === 'NO') def += ' NOT NULL'
-        if (c.column_default) def += ` DEFAULT ${c.column_default}`
-        return def
-      }).join(',\n')
+      let colDefs = cols.rows
+        .map((c: any) => {
+          let def = `  "${c.column_name}" ${c.data_type}`
+          if (c.is_nullable === 'NO') def += ' NOT NULL'
+          if (c.column_default) def += ` DEFAULT ${c.column_default}`
+          return def
+        })
+        .join(',\n')
 
       // Get PKs
-      const pks = await pool.query(`
+      const pks = await pool.query(
+        `
         SELECT kcu.column_name
         FROM information_schema.table_constraints tc
         JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name
         WHERE tc.table_schema = 'public' AND tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
-      `, [table])
+      `,
+        [table],
+      )
 
       if (pks.rows.length > 0) {
         const pkCols = pks.rows.map((r: any) => `"${r.column_name}"`).join(', ')
@@ -219,7 +227,9 @@ export async function sqlDump(connectionString: string, outputPath: string): Pro
           if (v instanceof Date) return `'${v.toISOString()}'`
           return `'${String(v).replace(/'/g, "''")}'`
         })
-        const colNames = Object.keys(dr).map((c) => `"${c}"`).join(', ')
+        const colNames = Object.keys(dr)
+          .map((c) => `"${c}"`)
+          .join(', ')
         lines.push(`INSERT INTO "${table}" (${colNames}) VALUES (${vals.join(', ')});`)
       }
       lines.push('')
@@ -333,9 +343,15 @@ export async function listBackups(backupDir: string): Promise<BackupFileInfo[]> 
       try {
         const contents = await readdir(fullPath)
         for (const f of contents) {
-          try { size += (await stat(join(fullPath, f))).size } catch { /* skip */ }
+          try {
+            size += (await stat(join(fullPath, f))).size
+          } catch {
+            /* skip */
+          }
         }
-      } catch { /* use dir size */ }
+      } catch {
+        /* use dir size */
+      }
       files.push({
         name: entry.name,
         path: fullPath,

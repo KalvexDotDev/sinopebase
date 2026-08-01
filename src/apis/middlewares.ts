@@ -433,8 +433,7 @@ export function securityHeaders() {
     // HSTS: browsers ignore this on plain HTTP (RFC 6797), so it's safe to
     // include unconditionally. Railway edge already strips it on HTTP responses
     // but we add it here for standalone TLS deployments.
-    ctx.set.headers['strict-transport-security'] =
-      'max-age=31536000; includeSubDomains'
+    ctx.set.headers['strict-transport-security'] = 'max-age=31536000; includeSubDomains'
   }
 }
 

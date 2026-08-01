@@ -163,19 +163,55 @@ export class MastraPlugin {
         await ensureMastraTables(pool)
         const saved = await loadAgents(pool)
         if (saved.length > 0) {
-          this.agents = saved.map((a) => new Agent({ id: a.id, name: a.name, description: a.description, instructions: a.instructions, provider: this.provider!, model: a.model, tools: mcpTools }))
+          this.agents = saved.map(
+            (a) =>
+              new Agent({
+                id: a.id,
+                name: a.name,
+                description: a.description,
+                instructions: a.instructions,
+                provider: this.provider!,
+                model: a.model,
+                tools: mcpTools,
+              }),
+          )
         } else {
           // First run — create default agent and persist
-          this.agents = [new Agent({ id: 'default', name: 'Sinopebase Assistant', instructions: 'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.', provider: this.provider!, tools: mcpTools })]
+          this.agents = [
+            new Agent({
+              id: 'default',
+              name: 'Sinopebase Assistant',
+              instructions:
+                'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.',
+              provider: this.provider!,
+              tools: mcpTools,
+            }),
+          ]
           const { createAgent } = await import('./agent-store')
           for (const a of this.agents) {
-            await createAgent(pool, { id: a.id, name: a.name, description: a.description, instructions: a.instructions, model: 'deepseek-chat' }).catch(() => {})
+            await createAgent(pool, {
+              id: a.id,
+              name: a.name,
+              description: a.description,
+              instructions: a.instructions,
+              model: 'deepseek-chat',
+            }).catch(() => {})
           }
         }
-      } catch { /* fall through to in-memory */ }
+      } catch {
+        /* fall through to in-memory */
+      }
     }
     if (this.agents.length === 0) {
-      this.agents = [new Agent({ id: 'default', name: 'Sinopebase Assistant', instructions: 'You are a helpful assistant.', provider: this.provider!, tools: mcpTools })]
+      this.agents = [
+        new Agent({
+          id: 'default',
+          name: 'Sinopebase Assistant',
+          instructions: 'You are a helpful assistant.',
+          provider: this.provider!,
+          tools: mcpTools,
+        }),
+      ]
     }
 
     const requireAuth = this.options.requireAuth
@@ -188,7 +224,10 @@ export class MastraPlugin {
       const h = request.headers.get('authorization') ?? ''
       const token = h.startsWith('Bearer ') ? h.slice(7) : h
       if (serviceKey && token === serviceKey) return true
-      if (mastraAuth) { const user = await mastraAuth.authorize(request); return !!user }
+      if (mastraAuth) {
+        const user = await mastraAuth.authorize(request)
+        return !!user
+      }
       return false
     }
 
@@ -200,31 +239,70 @@ export class MastraPlugin {
           const user = await mastraAuth.authorize(request)
           if (user) {
             return withRequestContext(user, () => ({
-              data: this.agents.map((a) => ({ id: a.id, name: a.name, description: a.description, instructions: a.instructions, model: this.provider?.displayName?.() ?? 'deepseek-chat' })),
+              data: this.agents.map((a) => ({
+                id: a.id,
+                name: a.name,
+                description: a.description,
+                instructions: a.instructions,
+                model: this.provider?.displayName?.() ?? 'deepseek-chat',
+              })),
             }))
           }
         }
-        return { data: this.agents.map((a) => ({ id: a.id, name: a.name, description: a.description, instructions: a.instructions, model: this.provider?.displayName?.() ?? 'deepseek-chat' })) }
+        return {
+          data: this.agents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            description: a.description,
+            instructions: a.instructions,
+            model: this.provider?.displayName?.() ?? 'deepseek-chat',
+          })),
+        }
       })
       // Create agent
       .post('/api/mastra/agents', async ({ request, body, set }) => {
-        if (!(await checkAuth(request))) { set.status = 401; return { error: 'Unauthorized' } }
+        if (!(await checkAuth(request))) {
+          set.status = 401
+          return { error: 'Unauthorized' }
+        }
         const { id, name, description, instructions, model } = body as any
-        if (!name) { set.status = 400; return { error: 'name is required' } }
-        const agent = new Agent({ id: id || crypto.randomUUID(), name, description: description || '', instructions: instructions || 'You are a helpful assistant.', provider: this.provider!, tools: [] })
+        if (!name) {
+          set.status = 400
+          return { error: 'name is required' }
+        }
+        const agent = new Agent({
+          id: id || crypto.randomUUID(),
+          name,
+          description: description || '',
+          instructions: instructions || 'You are a helpful assistant.',
+          provider: this.provider!,
+          tools: [],
+        })
         this.agents.push(agent)
         // Persist to DB
         if (db instanceof PostgresDatabase) {
           const { createAgent } = await import('./agent-store')
-          await createAgent(db.getPool(), { id: agent.id, name: agent.name, description: agent.description, instructions: agent.instructions, model: model || 'deepseek-chat' }).catch(() => {})
+          await createAgent(db.getPool(), {
+            id: agent.id,
+            name: agent.name,
+            description: agent.description,
+            instructions: agent.instructions,
+            model: model || 'deepseek-chat',
+          }).catch(() => {})
         }
         return { data: { id: agent.id, name: agent.name } }
       })
       // Update agent
       .patch('/api/mastra/agents/:id', async ({ request, params, body, set }) => {
-        if (!(await checkAuth(request))) { set.status = 401; return { error: 'Unauthorized' } }
+        if (!(await checkAuth(request))) {
+          set.status = 401
+          return { error: 'Unauthorized' }
+        }
         const idx = this.agents.findIndex((a) => a.id === params.id)
-        if (idx === -1) { set.status = 404; return { error: 'Agent not found' } }
+        if (idx === -1) {
+          set.status = 404
+          return { error: 'Agent not found' }
+        }
         const { name, description, instructions, model } = body as any
         const existing = this.agents[idx]!
         if (name) existing.name = name
@@ -233,15 +311,26 @@ export class MastraPlugin {
         // Persist to DB
         if (db instanceof PostgresDatabase) {
           const { updateAgent } = await import('./agent-store')
-          await updateAgent(db.getPool(), params.id, { name, description, instructions, model }).catch(() => {})
+          await updateAgent(db.getPool(), params.id, {
+            name,
+            description,
+            instructions,
+            model,
+          }).catch(() => {})
         }
         return { data: { id: existing.id, name: existing.name } }
       })
       // Delete agent
       .delete('/api/mastra/agents/:id', async ({ request, params, set }) => {
-        if (!(await checkAuth(request))) { set.status = 401; return { error: 'Unauthorized' } }
+        if (!(await checkAuth(request))) {
+          set.status = 401
+          return { error: 'Unauthorized' }
+        }
         const idx = this.agents.findIndex((a) => a.id === params.id)
-        if (idx === -1) { set.status = 404; return { error: 'Agent not found' } }
+        if (idx === -1) {
+          set.status = 404
+          return { error: 'Agent not found' }
+        }
         this.agents.splice(idx, 1)
         // Persist to DB
         if (db instanceof PostgresDatabase) {
@@ -265,7 +354,11 @@ export class MastraPlugin {
           }
           try {
             const result = await agent.generate(messages)
-            return { message: { content: result.text }, usage: result.usage, toolCalls: result.toolCalls }
+            return {
+              message: { content: result.text },
+              usage: result.usage,
+              toolCalls: result.toolCalls,
+            }
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err)
             set.status = 500
