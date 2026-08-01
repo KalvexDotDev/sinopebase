@@ -38,6 +38,19 @@
 - After every significant change: `/code-review`, `/security-review`, `/simplify`
 - Fix all confirmed findings before tagging
 
+### Pre-Push Checklist (run before `git push`)
+1. **`bun run ci:quick`** — format, lint, typecheck regression gate (fast, no Docker needed)
+2. **`bun test`** — full test suite (needs Docker PostgreSQL + RustFS). At minimum, run the tests for the domain you changed.
+3. **`bun run build`** — backend compiles; `cd ui && bun run build` — admin UI compiles
+4. **Typecheck baseline**: if you introduce or fix TS errors, run `bun run tsc --noEmit 2>&1 > typecheck-baseline.txt` to update the baseline BEFORE pushing. The CI gate diffs against this file.
+
+### Common CI Pitfalls
+- **Biome version**: use `./node_modules/.bin/biome`, never `npx biome` (resolves to wrong global version). The project scripts (`bun run format`, `bun run lint`) use the correct version automatically.
+- **`typecheck` vs `typecheck:ci`**: `bun run typecheck` just runs tsc. `bun run typecheck:ci` diffs against the baseline and fails on NEW errors. Use `typecheck:ci` before pushing.
+- **GHCR requires lowercase**: Docker tags must be all lowercase. Use `tr '[:upper:]' '[:lower:]'` for org/repo names with capitals.
+- **Rate limit defaults**: the server defaults to 1000 req/min. Tests that set explicit `rateLimitMax` are unaffected. Path exemptions (`/api/admin/*`, `/api/logs`, `/api/health`, `/api/ready`) skip rate limiting.
+- **`Record<string, unknown>` breaks property access**: pg row types need proper interfaces, not loose records. Define `interface XxxRow { ... }` and use `pool.query<XxxRow>(...)`.
+
 ## Architecture
 
 - PocketBase v0.25.x 1:1 port (Go → TypeScript)

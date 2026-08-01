@@ -39,7 +39,8 @@
     "security:gitleaks": "gitleaks detect --config .gitleaks.toml --verbose",
     "gitleaks:install": "git config core.hooksPath .githooks",
     "lint:yaml": "yaml valid .github/workflows/ci.yml .github/workflows/supply-chain.yml .semgrep.yml .mega-linter.yml",
-    "ci": "bun run ci:audit && bun run lint:yaml && bun run format:check && bun run lint && bun run lint:eslint && bun run lint:jscpd && bun run typecheck && bun run test && bun run build",
+    "ci": "bun run ci:audit && bun run lint:yaml && bun run format:check && bun run lint && bun run lint:eslint && bun run lint:jscpd && bun run typecheck:ci && bun run test && bun run build",
+    "ci:quick": "bun run format:check && bun run lint && bun run typecheck:ci",
     "ci:audit": "bun audit; exit 0"
   },
   "exports": {
