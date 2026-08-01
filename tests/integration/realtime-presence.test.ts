@@ -419,7 +419,7 @@ describe('Realtime Presence', () => {
         leaves: Record<string, unknown>
       }>(presenceEvents, (p) => {
         const payload = p as { joins?: Record<string, unknown> }
-        return payload?.joins?..user1 !== undefined
+        return (payload?.joins as Record<string, unknown>)?.user1 !== undefined
       })
       expect(joinEvent.joins.user1).toEqual({
         metas: [{ key: 'user1', data: { online: true } }],
@@ -433,7 +433,7 @@ describe('Realtime Presence', () => {
         leaves: Record<string, unknown>
       }>(presenceEvents, (p) => {
         const payload = p as { leaves?: Record<string, unknown> }
-        return payload?.leaves?..user1 !== undefined
+        return (payload?.leaves as Record<string, unknown>)?.user1 !== undefined
       })
       expect(leaveEvent.leaves.user1).toEqual({
         metas: [{ key: 'user1', data: { online: true } }],
