@@ -1978,29 +1978,29 @@ export class Sinopebase {
       errors.push('File store is not initialized in production mode.')
     }
 
-    // 4. JWT secret is not a dev/placeholder secret
-    const jwtSecret = this.config.jwtSecret || process.env.JWT_SECRET || ''
-    if (jwtSecret && isDevSecret(jwtSecret)) {
-      errors.push(
-        'JWT_SECRET matches a dev/placeholder secret pattern. ' +
-          'Set a cryptographically random value (≥32 chars) for production.',
-      )
-    }
+    // 4–6. Dev/placeholder secret checks — fatal only in production
+    if (this.mode === 'production') {
+      const jwtSecret = this.config.jwtSecret || process.env.JWT_SECRET || ''
+      if (jwtSecret && isDevSecret(jwtSecret)) {
+        errors.push(
+          'JWT_SECRET matches a dev/placeholder secret pattern. ' +
+            'Set a cryptographically random value (≥32 chars) for production.',
+        )
+      }
 
-    // 5. Service role key is not a dev/placeholder secret
-    if (this.cachedServiceRoleKey && isDevSecret(this.cachedServiceRoleKey)) {
-      errors.push(
-        'SINOPEBASE_SERVICE_ROLE_KEY matches a dev/placeholder secret pattern. ' +
-          'Set a cryptographically random value (≥32 chars) for production.',
-      )
-    }
+      if (this.cachedServiceRoleKey && isDevSecret(this.cachedServiceRoleKey)) {
+        errors.push(
+          'SINOPEBASE_SERVICE_ROLE_KEY matches a dev/placeholder secret pattern. ' +
+            'Set a cryptographically random value (≥32 chars) for production.',
+        )
+      }
 
-    // 6. Anon key is not a dev/placeholder secret
-    if (this.cachedAnonKey && isDevSecret(this.cachedAnonKey)) {
-      errors.push(
-        'SINOPEBASE_ANON_KEY matches a dev/placeholder secret pattern. ' +
-          'Set a cryptographically random value (≥32 chars) for production.',
-      )
+      if (this.cachedAnonKey && isDevSecret(this.cachedAnonKey)) {
+        errors.push(
+          'SINOPEBASE_ANON_KEY matches a dev/placeholder secret pattern. ' +
+            'Set a cryptographically random value (≥32 chars) for production.',
+        )
+      }
     }
 
     if (errors.length > 0) {
