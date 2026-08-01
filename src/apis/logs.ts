@@ -63,7 +63,7 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) 
 
       const rows = await selectRows(db, '_logs')
 
-      let logs = rows.map((r) => ({
+      const logs = rows.map((r) => ({
         id: String(r.id ?? ''),
         level: Number(r.level ?? 0),
         message: String(r.message ?? ''),

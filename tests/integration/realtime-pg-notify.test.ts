@@ -8,11 +8,11 @@
  * Requires: PostgreSQL running with the sinopebase_notify_change trigger.
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Pool } from 'pg'
-import { RealtimeHub } from '../../src/apis/realtime'
 import type { PostgresChange, PostgrestChangePublisher } from '../../src/apis/realtime'
-import { PgRealtimeListener, attachRealtimeTriggers } from '../../src/apis/realtime-pg-listener'
+import { RealtimeHub } from '../../src/apis/realtime'
+import { attachRealtimeTriggers, PgRealtimeListener } from '../../src/apis/realtime-pg-listener'
 
 // ── Test infrastructure ──
 const PG_URL =

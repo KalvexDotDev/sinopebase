@@ -8,11 +8,11 @@
  * - HTTP→HTTPS redirect works (when redirect port is configured)
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { Sinopebase } from '../../src/core/app'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { execSync } from 'node:child_process'
-import { existsSync, unlinkSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { Sinopebase } from '../../src/core/app'
 
 const CERT_DIR = join(import.meta.dirname ?? '.', '.test-certs')
 const CERT_PATH = join(CERT_DIR, 'cert.pem')

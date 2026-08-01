@@ -6,8 +6,8 @@
  */
 
 import { existsSync } from 'node:fs'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { resolve, dirname } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import { Elysia } from 'elysia'
 import type { OAuthProviderConfig } from '~/tools/auth-better'
 
@@ -109,10 +109,13 @@ export function createAdminOAuthPlugin(
       return { code: 409, message: `Provider "${input.providerId}" already exists.` }
     }
 
+    const pid = input.providerId as string
+    const cid = input.clientId as string
+    const csecret = input.clientSecret as string
     const entry: OAuthProviderConfig = {
-      providerId: input.providerId!,
-      clientId: input.clientId!,
-      clientSecret: input.clientSecret!,
+      providerId: pid,
+      clientId: cid,
+      clientSecret: csecret,
     }
     if (input.tenantId) entry.tenantId = input.tenantId
     if (input.issuer) entry.issuer = input.issuer
@@ -151,7 +154,7 @@ export function createAdminOAuthPlugin(
       return { code: 404, message: `Provider "${providerId}" not found.` }
     }
 
-    const existing = providers[idx]!
+    const existing = providers[idx] as OAuthProviderConfig
     if (input.clientId) existing.clientId = input.clientId
     if (input.clientSecret) existing.clientSecret = input.clientSecret
     if (input.tenantId !== undefined) existing.tenantId = input.tenantId || undefined

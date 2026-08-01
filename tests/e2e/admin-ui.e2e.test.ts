@@ -9,9 +9,9 @@
  *   bun test tests/e2e/admin-ui.e2e.ts   # run e2e tests
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { chromium } from '@playwright/test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { Browser, Page } from '@playwright/test'
+import { chromium } from '@playwright/test'
 
 const BASE = 'http://127.0.0.1:8090'
 const SERVICE_KEY = process.env.SINOPEBASE_SERVICE_ROLE_KEY || 'test-service-role-key-32-chars!!'

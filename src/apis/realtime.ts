@@ -420,7 +420,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         break
       }
 
-      case 'phx_leave':
+      case 'phx_leave': {
         // Clean up presence entries for this topic
         const presenceKey = entry.state.presenceKeys.get(msg.topic)
         if (presenceKey) {
@@ -431,8 +431,9 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         ws.unsubscribe(msg.topic)
         sendPhoenix(ws, msg, 'phx_reply', { status: 'ok', response: {} })
         break
+      }
 
-      case 'phx_heartbeat':
+      case 'phx_heartbeat': {
         // Heartbeat: refresh presence timestamps for this client's tracked keys.
         const clientKey = key
         for (const [topic] of entry.state.presenceKeys) {
@@ -481,6 +482,7 @@ export class RealtimeHub<TContext = unknown> implements PostgrestChangePublisher
         }
         sendPhoenix(ws, msg, 'phx_reply', { status: 'ok', response: {} })
         break
+      }
 
       case 'broadcast': {
         // ── Joined-state enforcement ──

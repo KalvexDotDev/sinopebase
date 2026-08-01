@@ -16,8 +16,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { Sinopebase } from '../../src/core/app'
 import { RealtimeHub } from '../../src/apis/realtime'
+import { Sinopebase } from '../../src/core/app'
 import { createClient } from '../../src/sdk/client'
 import { requireAnonKey, requirePostgres, reserveLoopbackPort } from '../harness'
 
@@ -314,8 +314,8 @@ describe('Realtime Presence', () => {
         { metas: Array<{ key: string }> }
       >
       expect(Object.keys(state)).toEqual(['shared'])
-      expect(state['shared']?.metas).toHaveLength(2)
-      expect(state['shared']?.metas.map((m) => m.key).sort()).toEqual(['shared', 'shared'])
+      expect(state.shared?.metas).toHaveLength(2)
+      expect(state.shared?.metas.map((m) => m.key).sort()).toEqual(['shared', 'shared'])
     } finally {
       a.close()
       b.close()
@@ -379,7 +379,7 @@ describe('Realtime Presence', () => {
       string,
       unknown
     >
-    expect(state['user1']).toBeDefined()
+    expect(state.user1).toBeDefined()
 
     // The sweeper must never have broadcast a leave for user1 to observers.
     const swept = findLastSent<PhoenixV2>(
@@ -419,9 +419,9 @@ describe('Realtime Presence', () => {
         leaves: Record<string, unknown>
       }>(presenceEvents, (p) => {
         const payload = p as { joins?: Record<string, unknown> }
-        return payload?.joins?.['user1'] !== undefined
+        return payload?.joins?..user1 !== undefined
       })
-      expect(joinEvent.joins['user1']).toEqual({
+      expect(joinEvent.joins.user1).toEqual({
         metas: [{ key: 'user1', data: { online: true } }],
       })
 
@@ -433,9 +433,9 @@ describe('Realtime Presence', () => {
         leaves: Record<string, unknown>
       }>(presenceEvents, (p) => {
         const payload = p as { leaves?: Record<string, unknown> }
-        return payload?.leaves?.['user1'] !== undefined
+        return payload?.leaves?..user1 !== undefined
       })
-      expect(leaveEvent.leaves['user1']).toEqual({
+      expect(leaveEvent.leaves.user1).toEqual({
         metas: [{ key: 'user1', data: { online: true } }],
       })
     } finally {

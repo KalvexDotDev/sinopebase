@@ -16,9 +16,9 @@
 
 import { describe, expect, it } from 'bun:test'
 import { Elysia } from 'elysia'
+import { mountPostgrestRoutes } from '../../src/apis/postgrest'
 import { MemoryDatabase } from '../../src/core/db-memory'
 import { MemoryDatabaseAdapter } from '../../src/core/db-memory-adapter'
-import { mountPostgrestRoutes } from '../../src/apis/postgrest'
 
 // ---------------------------------------------------------------------------
 // Test doubles

@@ -16,7 +16,7 @@
  */
 
 import type { Pool, PoolClient } from 'pg'
-import type { PostgrestChangePublisher, PostgresChange } from './realtime'
+import type { PostgresChange, PostgrestChangePublisher } from './realtime'
 
 // ---------------------------------------------------------------------------
 // Types
