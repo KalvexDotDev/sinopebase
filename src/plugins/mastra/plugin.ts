@@ -170,7 +170,7 @@ export class MastraPlugin {
                 name: a.name,
                 description: a.description,
                 instructions: a.instructions,
-                provider: this.provider,
+                provider: this.provider ?? undefined,
                 model: a.model,
                 tools: mcpTools as typeof mcpTools,
               }),
@@ -183,7 +183,7 @@ export class MastraPlugin {
               name: 'Sinopebase Assistant',
               instructions:
                 'You are a helpful assistant with access to Sinopebase resources. Use tools when appropriate.',
-              provider: this.provider,
+              provider: this.provider ?? undefined,
               tools: mcpTools as typeof mcpTools,
             }),
           ]
@@ -208,7 +208,7 @@ export class MastraPlugin {
           id: 'default',
           name: 'Sinopebase Assistant',
           instructions: 'You are a helpful assistant.',
-          provider: this.provider,
+          provider: this.provider ?? undefined,
           tools: mcpTools as typeof mcpTools,
         }),
       ]
@@ -275,7 +275,7 @@ export class MastraPlugin {
           name,
           description: description || '',
           instructions: instructions || 'You are a helpful assistant.',
-          provider: this.provider,
+          provider: this.provider ?? undefined,
           tools: [],
         })
         this.agents.push(agent)

@@ -1,10 +1,21 @@
 import { Elysia } from 'elysia'
 import type { Pool } from 'pg'
 
+interface CronRow {
+  id: string
+  label: string | null
+  schedule: string | null
+  handler: string | null
+  running: boolean | null
+  last_run: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
 async function loadCronJobs(pool: Pool) {
   try {
-    const { rows } = await pool.query('SELECT * FROM _crons ORDER BY id')
-    return rows.map((r: Record<string, unknown>) => ({
+    const { rows } = await pool.query<CronRow>('SELECT * FROM _crons ORDER BY id')
+    return rows.map((r) => ({
       id: r.id,
       label: r.label || '',
       schedule: r.schedule || '',
@@ -99,7 +110,7 @@ export function createCronCrudPlugin(pool: Pool, isSuperuser: (r: Request) => bo
       return { code: 403, message: 'Unauthorized' }
     }
     const { rows } = await pool.query('SELECT handler FROM _crons WHERE id = $1', [params.id])
-    const handler = (rows[0] as Record<string, unknown>)?.handler || ''
+    const handler = (rows[0] as CronRow | undefined)?.handler || ''
     if (!handler) return { message: 'No handler configured.' }
     try {
       if (handler.startsWith('fn:')) {

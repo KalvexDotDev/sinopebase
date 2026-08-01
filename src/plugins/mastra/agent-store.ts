@@ -10,6 +10,16 @@ export interface AgentConfig {
   updatedAt: string
 }
 
+interface MastraAgentRow {
+  id: string
+  name: string
+  description: string | null
+  instructions: string | null
+  model: string | null
+  created_at: Date | null
+  updated_at: Date | null
+}
+
 export async function ensureMastraTables(pool: Pool): Promise<void> {
   await pool.query(
     `CREATE TABLE IF NOT EXISTS _mastra_agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT DEFAULT '', instructions TEXT DEFAULT 'You are a helpful assistant.', model TEXT DEFAULT 'deepseek-chat', created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())`,
@@ -20,15 +30,15 @@ export async function ensureMastraTables(pool: Pool): Promise<void> {
 }
 
 export async function loadAgents(pool: Pool): Promise<AgentConfig[]> {
-  const { rows } = await pool.query('SELECT * FROM _mastra_agents ORDER BY name')
-  return rows.map((r: Record<string, unknown>) => ({
+  const { rows } = await pool.query<MastraAgentRow>('SELECT * FROM _mastra_agents ORDER BY name')
+  return rows.map((r) => ({
     id: r.id,
     name: r.name,
-    description: r.description || '',
-    instructions: r.instructions || '',
-    model: r.model || 'deepseek-chat',
-    createdAt: r.created_at?.toISOString?.() ?? '',
-    updatedAt: r.updated_at?.toISOString?.() ?? '',
+    description: r.description ?? '',
+    instructions: r.instructions ?? '',
+    model: r.model ?? 'deepseek-chat',
+    createdAt: r.created_at?.toISOString() ?? '',
+    updatedAt: r.updated_at?.toISOString() ?? '',
   }))
 }
 
@@ -40,8 +50,8 @@ export async function createAgent(
     'INSERT INTO _mastra_agents (id, name, description, instructions, model) VALUES ($1,$2,$3,$4,$5)',
     [a.id, a.name, a.description, a.instructions, a.model],
   )
-  const { rows } = await pool.query('SELECT * FROM _mastra_agents WHERE id = $1', [a.id])
-  const r = rows[0] as { id: string; name: string; description: string; instructions: string; model: string; created_at: string; updated_at: string }
+  const { rows } = await pool.query<MastraAgentRow>('SELECT * FROM _mastra_agents WHERE id = $1', [a.id])
+  const r = rows[0] as MastraAgentRow
   return {
     id: r.id,
     name: r.name,

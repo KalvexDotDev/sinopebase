@@ -5,6 +5,8 @@ scripts/benchmark.ts(126,49): error TS2532: Object is possibly 'undefined'.
 scripts/benchmark.ts(171,9): error TS6133: 'authP50' is declared but its value is never read.
 scripts/benchmark.ts(192,53): error TS18048: 'fnColdP50' is possibly 'undefined'.
 scripts/benchmark.ts(193,53): error TS18048: 'fnColdP99' is possibly 'undefined'.
+src/apis/cron-crud.ts(23,28): error TS2551: Property 'toISOString' does not exist on type 'string'. Did you mean 'toString'?
+src/apis/cron-crud.ts(137,35): error TS18046: 'e' is of type 'unknown'.
 src/apis/extensions.ts(86,21): error TS2769: No overload matches this call.
   The last overload gave the following error.
     Argument of type '(ctx: { request: Request; set: { headers: Record<string, string>; }; params: Record<string, string>; }) => void' is not assignable to parameter of type 'PreHandler<{}, { decorator: {}; store: {}; derive: {}; resolve: {}; }>[]'.
@@ -177,7 +179,19 @@ src/plugins/mastra/middleware.ts(33,42): error TS2559: Type 'Auth<BetterAuthOpti
 src/plugins/mastra/plugin.ts(148,7): error TS2345: Argument of type 'IDatabase | undefined' is not assignable to parameter of type 'IDatabase'.
   Type 'undefined' is not assignable to type 'IDatabase'.
 src/plugins/mastra/plugin.ts(171,17): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'AgentConfig'.
-src/plugins/mastra/plugin.ts(276,11): error TS2353: Object literal may only specify known properties, and 'description' does not exist in type 'AgentConfig'.
+src/plugins/mastra/plugin.ts(274,11): error TS2322: Type '{}' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(275,11): error TS2322: Type '{}' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(277,11): error TS2322: Type '{}' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(290,13): error TS2322: Type '{}' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(308,19): error TS2322: Type '{}' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(309,40): error TS2322: Type '{} | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(310,41): error TS2322: Type '{} | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+src/plugins/mastra/plugin.ts(315,13): error TS2322: Type 'unknown' is not assignable to type 'string | undefined'.
+src/plugins/mastra/plugin.ts(316,13): error TS2322: Type 'unknown' is not assignable to type 'string | undefined'.
+src/plugins/mastra/plugin.ts(317,13): error TS2322: Type 'unknown' is not assignable to type 'string | undefined'.
+src/plugins/mastra/plugin.ts(318,13): error TS2322: Type 'unknown' is not assignable to type 'string | undefined'.
 src/plugins/mastra/routes/chat.ts(18,49): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
 src/plugins/mastra/routes/chat.ts(63,49): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
 src/plugins/mastra/routes/embeddings.ts(16,47): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Auth<BetterAuthOptions>'.
@@ -335,6 +349,8 @@ tests/integration/realtime-pg-notify.test.ts(64,5): error TS2322: Type 'Realtime
       Type '(context: {} | undefined, change: PostgresChange) => Promise<boolean>' is not assignable to type '(context: unknown, change: PostgresChange) => Promise<boolean>'.
         Types of parameters 'context' and 'context' are incompatible.
           Type 'unknown' is not assignable to type '{} | undefined'.
+tests/integration/realtime-pg-notify.test.ts(104,11): error TS7022: 'insert' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+tests/integration/realtime-pg-notify.test.ts(117,11): error TS7022: 'update' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
 tests/integration/realtime-presence.test.ts(329,5): error TS2353: Object literal may only specify known properties, and 'timeout' does not exist in type '(done: (err?: unknown) => void) => void | Promise<unknown>'.
 tests/plugins/drop-functions/execute.test.ts(100,38): error TS2352: Conversion of type 'Sinopebase' to type 'TestResponse' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Index signature for type 'string' is missing in type 'Sinopebase'.
