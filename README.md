@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sinopebase/sinopebase/main/docs/assets/logo.png" alt="Sinopebase" width="320" />
+  <img src="https://raw.githubusercontent.com/KalvexDotDev/sinopebase/main/docs/assets/logo.png" alt="Sinopebase" width="320" />
 </p>
 
 <p align="center">
