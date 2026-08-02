@@ -64,9 +64,12 @@ describe('Admin UI E2E', () => {
   async function openAdminPage(hash = ''): Promise<Page> {
     const p = await browser.newPage()
     await p.goto(`${baseUrl}/_/`)
-    await p.evaluate(({ key }: { key: string }) => localStorage.setItem('sb-service-role-key', key), {
-      key: serviceKey,
-    })
+    await p.evaluate(
+      ({ key }: { key: string }) => localStorage.setItem('sb-service-role-key', key),
+      {
+        key: serviceKey,
+      },
+    )
     await p.goto(`${baseUrl}/_/${hash}`)
     await p.waitForSelector('nav', { timeout: 5000 })
     return p

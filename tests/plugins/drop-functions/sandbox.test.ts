@@ -33,7 +33,11 @@ function writeTestFunction(name: string, source: string): void {
 function cleanupTestFunctions(): void {
   const names = ['test-fn', 'slow-fn', 'error-fn', 'env-fn', 'resp-fn']
   for (const fn of names) {
-    try { rmSync(join(DEFAULT_FN_DIR, `${fn}.ts`), { force: true }) } catch { /* ok */ }
+    try {
+      rmSync(join(DEFAULT_FN_DIR, `${fn}.ts`), { force: true })
+    } catch {
+      /* ok */
+    }
   }
 }
 

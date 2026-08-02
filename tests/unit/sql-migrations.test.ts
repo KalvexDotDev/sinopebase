@@ -57,8 +57,8 @@ describe('SQL migration discovery', () => {
 
   it('skips files not matching the timestamp_name.sql pattern', async () => {
     writeFileSync(join(tmpDir, 'some-random-file.sql'), 'SELECT 1;') // no timestamp prefix
-    writeFileSync(join(tmpDir, 'not-a-migration.txt'), 'SELECT 1;')  // wrong extension
-    writeFileSync(join(tmpDir, '001.sql'), 'SELECT 1;')               // digits but no underscore+name
+    writeFileSync(join(tmpDir, 'not-a-migration.txt'), 'SELECT 1;') // wrong extension
+    writeFileSync(join(tmpDir, '001.sql'), 'SELECT 1;') // digits but no underscore+name
 
     const withSuffix = await loadSqlMigrationsFromDirectory(tmpDir)
     const names = withSuffix.map((m) => m.name)

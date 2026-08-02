@@ -33,7 +33,11 @@ function cleanupTestFunctions(): void {
     const entries = readdirSync(DEFAULT_FN_DIR)
     for (const entry of entries) {
       if (entry.endsWith('.ts') || entry.endsWith('.js')) {
-        try { rmSync(join(DEFAULT_FN_DIR, entry), { force: true }) } catch { /* ok */ }
+        try {
+          rmSync(join(DEFAULT_FN_DIR, entry), { force: true })
+        } catch {
+          /* ok */
+        }
       }
     }
   } catch {
@@ -120,8 +124,16 @@ describe('DropFunctions Plugin', () => {
   afterAll(async () => {
     await app.stop()
     // Clean up test functions from default functionsDir
-    try { rmSync(resolve('./functions/hello.ts'), { force: true }) } catch { /* ok */ }
-    try { rmSync(resolve('./functions/protected.ts'), { force: true }) } catch { /* ok */ }
+    try {
+      rmSync(resolve('./functions/hello.ts'), { force: true })
+    } catch {
+      /* ok */
+    }
+    try {
+      rmSync(resolve('./functions/protected.ts'), { force: true })
+    } catch {
+      /* ok */
+    }
   })
 
   // -----------------------------------------------------------------------
