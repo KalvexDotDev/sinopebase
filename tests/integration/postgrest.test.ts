@@ -35,7 +35,10 @@ beforeAll(async () => {
   anonKey = requireAnonKey()
   serviceRoleKey = requireServiceRoleKey()
   // DIAGNOSTIC: verify env var propagation in bun test workers
-  console.log('[DIAG] SERVICE_ROLE_KEY length:', process.env.SINOPEBASE_SERVICE_ROLE_KEY?.length ?? 'MISSING')
+  console.log(
+    '[DIAG] SERVICE_ROLE_KEY length:',
+    process.env.SINOPEBASE_SERVICE_ROLE_KEY?.length ?? 'MISSING',
+  )
   console.log('[DIAG] ANON_KEY length:', process.env.SINOPEBASE_ANON_KEY?.length ?? 'MISSING')
   // Write keys to process.env so the downstream preflight check passes.
   // Bun test workers may not inherit CI env vars, so set them explicitly.
