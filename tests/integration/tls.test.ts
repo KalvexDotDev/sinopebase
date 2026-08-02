@@ -81,17 +81,19 @@ describe('TLS', () => {
   tlsTest('HSTS header is present on HTTPS responses', async () => {
     // Start a self-contained server so this test doesn't depend on the
     // prior test's server still being up (CI ordering edge case).
+    // Port 0 lets the OS assign a free port — avoids CI port conflicts.
     const hstsApp = new Sinopebase({
-      port: 9878,
+      port: 0,
       host: '127.0.0.1',
       tls: { cert: CERT_PATH, key: KEY_PATH },
-      jwtSecret: 'test-jwt-secret-32-chars-minimum!!',
-      serviceRoleKey: 'test-service-role-key-32-chars!!',
-      anonKey: 'test-anon-key-32-chars-minimum!!',
+      jwtSecret: 'hsts-jwt-secret-min-32-chars!!!!',
+      serviceRoleKey: 'hsts-service-key-min-32-chars!!!!!',
+      anonKey: 'hsts-anon-key-min-32-chars!!!!!!!!',
     })
     await hstsApp.start()
+    const hstsPort = hstsApp.getConfig().port ?? 0
     try {
-      const res = await fetch('https://127.0.0.1:9878/api/health', {
+      const res = await fetch(`https://127.0.0.1:${hstsPort}/api/health`, {
         tls: { rejectUnauthorized: false },
       })
       const hsts = res.headers.get('strict-transport-security')
