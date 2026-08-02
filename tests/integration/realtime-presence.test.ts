@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { RealtimeHub } from '../../src/apis/realtime'
 import { Sinopebase } from '../../src/core/app'
 import { createClient } from '../../src/sdk/client'
-import { requireAnonKey, requirePostgres, reserveLoopbackPort } from '../harness'
+import { requirePostgres, reserveLoopbackPort } from '../harness'
 
 let server: Sinopebase
 let origin: string

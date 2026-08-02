@@ -17,12 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '../../src/core/app'
 import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import type { RealtimeChannel } from '../../src/sdk/realtime'
-import {
-  requireAnonKey,
-  requirePostgres,
-  requireServiceRoleKey,
-  reserveLoopbackPort,
-} from '../harness'
+import { requirePostgres, reserveLoopbackPort } from '../harness'
 import { pollUntil } from './setup'
 
 let client: SinopebaseClient

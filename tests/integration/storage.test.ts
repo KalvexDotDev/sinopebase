@@ -10,10 +10,8 @@ import { Sinopebase } from '../../src/core/app'
 import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import {
   createTestNamespace,
-  requireAnonKey,
   requirePostgres,
   requireRustFS,
-  requireServiceRoleKey,
   reserveLoopbackPort,
 } from '../harness'
 import { uniqueId } from './setup'
