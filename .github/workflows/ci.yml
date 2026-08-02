@@ -161,26 +161,14 @@ jobs:
       - name: Wait for RustFS
         run: until wget -q --spider http://localhost:9000/health; do sleep 2; done
 
-      - name: Generate CI test keys
-        id: keys
-        run: |
-          echo "SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32 | tr -d '\n')" >> "$GITHUB_OUTPUT"
-          echo "SINOPEBASE_ANON_KEY=$(openssl rand -hex 32 | tr -d '\n')" >> "$GITHUB_OUTPUT"
-          echo "JWT_SECRET=$(openssl rand -hex 32 | tr -d '\n')" >> "$GITHUB_OUTPUT"
-      - name: "[DIAGNOSTIC] Verify CI env vars"
-        run: |
-          echo "SERVICE_ROLE_KEY length: ${#SINOPEBASE_SERVICE_ROLE_KEY}"
-          echo "ANON_KEY length: ${#SINOPEBASE_ANON_KEY}"
-          echo "JWT_SECRET length: ${#JWT_SECRET}"
-          # Also verify bun test workers see them
-          bun -e "console.log('bun sees SERVICE_ROLE_KEY:', process.env.SINOPEBASE_SERVICE_ROLE_KEY?.length ?? 'MISSING')"
       - name: Run test suite (JUnit, PostgreSQL-backed)
-        run: bun run test:ci
+        run: |
+          export SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)
+          export SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)
+          export JWT_SECRET=$(openssl rand -hex 32)
+          bun run test:ci
         env:
           TEST_POSTGRES_URL: postgresql://sinopebase:sinopebase@localhost:5432/sinopebase
-          SINOPEBASE_SERVICE_ROLE_KEY: ${{ steps.keys.outputs.SINOPEBASE_SERVICE_ROLE_KEY }}
-          SINOPEBASE_ANON_KEY: ${{ steps.keys.outputs.SINOPEBASE_ANON_KEY }}
-          JWT_SECRET: ${{ steps.keys.outputs.JWT_SECRET }}
           RUSTFS_ENDPOINT: http://localhost:9000
           RUSTFS_ACCESS_KEY: rustfsadmin
           RUSTFS_SECRET_KEY: rustfsadmin

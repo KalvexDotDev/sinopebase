@@ -18,8 +18,6 @@ beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
   // Start the Sinopebase server for integration testing with validated credentials
   const anonKey = requireAnonKey()
-  process.env.SINOPEBASE_SERVICE_ROLE_KEY = 'authtest-service-key-min-32-chars!!!'
-  process.env.SINOPEBASE_ANON_KEY = anonKey
   server = new Sinopebase({
     postgresUrl: requirePostgres(),
     port: portReservation.port,
