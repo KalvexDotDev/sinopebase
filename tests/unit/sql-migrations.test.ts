@@ -5,8 +5,8 @@
  * as DiscoveredMigration objects compatible with MigrationRunner.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadSqlMigrationsFromDirectory } from '../../src/core/migrations_loader'
 
@@ -36,10 +36,13 @@ describe('SQL migration discovery', () => {
     const migrations = await loadSqlMigrationsFromDirectory(tmpDir)
 
     expect(migrations.length).toBe(2)
-    expect(migrations[0].name).toBe('20240101000000_create_users')
-    expect(migrations[1].name).toBe('20240102000000_add_email')
-    expect(typeof migrations[0].up).toBe('function')
-    expect(migrations[0].down).toBeUndefined()
+    if (!migrations[0] || !migrations[1]) throw new Error('Expected 2 migrations')
+    const m0 = migrations[0]
+    const m1 = migrations[1]
+    expect(m0.name).toBe('20240101000000_create_users')
+    expect(m1.name).toBe('20240102000000_add_email')
+    expect(typeof m0.up).toBe('function')
+    expect(m0.down).toBeUndefined()
   })
 
   it('returns empty array for non-existent directory', async () => {
@@ -77,7 +80,8 @@ describe('SQL migration discovery', () => {
     const migrations = await loadSqlMigrationsFromDirectory(tmpDir)
     const migration = migrations.find((m) => m.name === '20240104000000_create_index')
     expect(migration).toBeDefined()
-    expect(typeof migration!.up).toBe('function')
-    expect(migration!.down).toBeUndefined()
+    if (!migration) throw new Error('Expected migration')
+    expect(typeof migration.up).toBe('function')
+    expect(migration.down).toBeUndefined()
   })
 })

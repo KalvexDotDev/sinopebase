@@ -18,10 +18,7 @@ interface TestResponse {
   [key: string]: unknown
 }
 
-import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
-
-const namespace = createTestNamespace({ suiteId: 'drop-functions-sandbox' })
-const TEST_FUNCTIONS_DIR = namespace.tempPath('sandbox-functions')
+import { requirePostgres, reserveLoopbackPort } from '../../harness'
 
 const DEFAULT_FN_DIR = resolve('./functions')
 

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Sinopebase } from '~/core/app'
-import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
+import { requirePostgres, reserveLoopbackPort } from '../../harness'
 
 /** Loose test-response accessor — narrower than `any`. */
 interface TestResponse {
@@ -20,7 +20,6 @@ interface TestResponse {
   [key: string]: unknown
 }
 
-const namespace = createTestNamespace({ suiteId: 'drop-functions-execute' })
 const DEFAULT_FN_DIR = resolve('./functions')
 
 function writeTestFunction(name: string, source: string): void {
@@ -118,7 +117,7 @@ describe('DropFunctions Plugin', () => {
       'body:',
       JSON.stringify(signupJson).slice(0, 200),
     )
-    authToken = signupJson.access_token || ''
+    authToken = (signupJson.access_token as string) || ''
   })
 
   afterAll(async () => {
@@ -144,8 +143,9 @@ describe('DropFunctions Plugin', () => {
     const res = await fetch(`${baseUrl}/api/functions/v1/hello?name=Sinopebase`)
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
-    expect(json.data.message).toBe('Hello, Sinopebase!')
-    expect(json.data.requestId).toBeTruthy()
+    const data = json.data as { message?: string; requestId?: string }
+    expect(data.message).toBe('Hello, Sinopebase!')
+    expect(data.requestId).toBeTruthy()
   })
 
   it('returns requestId and functionName in response', async () => {
@@ -184,8 +184,9 @@ describe('DropFunctions Plugin', () => {
     })
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
-    expect(json.data).toBeInstanceOf(Array)
-    expect(json.data.length).toBeGreaterThanOrEqual(3)
+    const dataArr = json.data as unknown[]
+    expect(dataArr).toBeInstanceOf(Array)
+    expect(dataArr.length).toBeGreaterThanOrEqual(3)
   })
 
   it('gets function source', async () => {
@@ -194,8 +195,9 @@ describe('DropFunctions Plugin', () => {
     })
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
-    expect(json.data.name).toBe('hello')
-    expect(json.data.source).toContain('Hello')
+    const srcData = json.data as { name?: string; source?: string }
+    expect(srcData.name).toBe('hello')
+    expect(srcData.source).toContain('Hello')
   })
 
   it('creates a new function', async () => {
