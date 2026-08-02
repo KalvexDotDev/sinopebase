@@ -1,4 +1,187 @@
 {
   "schemaVersion": 1,
-  "reviewedHazards": []
+  "reviewedHazards": [
+    {
+      "kind": "runtime-fallback",
+      "file": "src/core/app.ts",
+      "line": 858,
+      "detail": "runtime silently substitutes non-production infrastructure",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "runtime-fallback",
+      "file": "src/core/app.ts",
+      "line": 871,
+      "detail": "runtime silently substitutes non-production infrastructure",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "runtime-fallback",
+      "file": "src/core/app.ts",
+      "line": 909,
+      "detail": "runtime silently substitutes non-production infrastructure",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "src/core/db-postgres-contract.test.ts",
+      "line": 7,
+      "detail": "test skip is selected from ambient state",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "src/core/db-postgres-rls.test.ts",
+      "line": 7,
+      "detail": "test skip is selected from ambient state",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 56,
+      "detail": "PostgreSQL can fall through to ambient POSTGRES_URL or memory",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 57,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 58,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/apis/rate-limit-wiring.test.ts",
+      "line": 59,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "tests/apis/storage-ownership-rls.test.ts",
+      "line": 21,
+      "detail": "test skip is selected from ambient state",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 19,
+      "detail": "PostgreSQL can fall through to ambient POSTGRES_URL or memory",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 20,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 21,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/health.test.ts",
+      "line": 22,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 19,
+      "detail": "PostgreSQL can fall through to ambient POSTGRES_URL or memory",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 20,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 21,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "ambient-infrastructure",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 22,
+      "detail": "object storage can fall through to ambient RUSTFS settings or local storage",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 118,
+      "detail": "literal port 8090",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/core/secure-boot.test.ts",
+      "line": 131,
+      "detail": "literal port 9999",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/e2e/admin-ui.e2e.test.ts",
+      "line": 4,
+      "detail": "hardcoded port 8090 in test URL fallback",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/e2e/admin-ui.e2e.test.ts",
+      "line": 16,
+      "detail": "hardcoded port 8090 in test URL fallback",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "tests/e2e/admin-ui.e2e.test.ts",
+      "line": 33,
+      "detail": "test skip is selected from ambient state",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "tests/integration/realtime-presence.test.ts",
+      "line": 328,
+      "detail": "test skip is selected from ambient state",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "infrastructure-skip",
+      "file": "tests/integration/tls.test.ts",
+      "line": 57,
+      "detail": "test skip is selected from ambient state",
+      "disposition": "acknowledged"
+    },
+    {
+      "kind": "fixed-server-port",
+      "file": "tests/integration/tls.test.ts",
+      "line": 85,
+      "detail": "literal port 9878",
+      "disposition": "acknowledged"
+    }
+  ]
 }

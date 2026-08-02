@@ -18,30 +18,28 @@ interface TestResponse {
   [key: string]: unknown
 }
 
-import { DropFunctionsPlugin } from '~/plugins/drop-functions/plugin'
 import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
 
 const namespace = createTestNamespace({ suiteId: 'drop-functions-sandbox' })
 const TEST_FUNCTIONS_DIR = namespace.tempPath('sandbox-functions')
 
+const DEFAULT_FN_DIR = resolve('./functions')
+
 function writeTestFunction(name: string, source: string): void {
-  const dir = resolve(TEST_FUNCTIONS_DIR)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, `${name}.ts`), source, 'utf-8')
+  mkdirSync(DEFAULT_FN_DIR, { recursive: true })
+  writeFileSync(join(DEFAULT_FN_DIR, `${name}.ts`), source, 'utf-8')
 }
 
 function cleanupTestFunctions(): void {
-  try {
-    rmSync(TEST_FUNCTIONS_DIR, { recursive: true, force: true })
-  } catch {
-    /* ok */
+  const names = ['test-fn', 'slow-fn', 'error-fn', 'env-fn', 'resp-fn']
+  for (const fn of names) {
+    try { rmSync(join(DEFAULT_FN_DIR, `${fn}.ts`), { force: true }) } catch { /* ok */ }
   }
 }
 
 describe('DropFunctions — Sandbox execution', () => {
   let app: Sinopebase
   let baseUrl: string
-  let plugin: DropFunctionsPlugin
 
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
@@ -109,19 +107,11 @@ describe('DropFunctions — Sandbox execution', () => {
     app = new Sinopebase({
       port: portReservation.port,
       postgresUrl: requirePostgres(),
+      jwtSecret: 'sandbox-test-jwt-secret-min-32-chars!',
+      serviceRoleKey: 'sandbox-test-service-key-min-32-chars!!',
+      anonKey: 'sandbox-test-anon-key-min-32-chars!!!',
     })
     await portReservation.release()
-
-    plugin = new DropFunctionsPlugin({
-      functionsDir: TEST_FUNCTIONS_DIR,
-      defaultTimeout: 5000,
-    })
-
-    // Register the plugin via app.use() so its routes are wired BEFORE
-    // server.listen(), avoiding Elysia's onError(NOT_FOUND) route-lock issue.
-    app.use(async (server) => {
-      await plugin.register(server, null)
-    })
 
     await app.start()
 

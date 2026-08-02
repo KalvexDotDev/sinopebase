@@ -540,7 +540,7 @@ import {
   type PostgresRequestContext,
 } from './db-postgres'
 import { generateRequestId, logger } from './logger'
-import { loadMigrationsFromDirectory } from './migrations_loader'
+import { loadMigrationsFromDirectory, loadSqlMigrationsFromDirectory } from './migrations_loader'
 import { MigrationRunner } from './migrations_runner'
 
 export interface AppConfig {
@@ -1726,10 +1726,21 @@ export class Sinopebase {
     const migrationsDir = resolve(import.meta.dir, '../../migrations')
     const discovered = await loadMigrationsFromDirectory(migrationsDir)
 
-    if (discovered.length === 0) return
+    // Also discover raw SQL migrations from supabase/migrations/ (Supabase format).
+    // Users can bring their existing supabase/migrations/*.sql files and they
+    // will be applied alongside Sinopebase's own TypeScript migrations.
+    const supabaseMigrationsDir = resolve(import.meta.dir, '../../../supabase/migrations')
+    const sqlDiscovered = await loadSqlMigrationsFromDirectory(supabaseMigrationsDir)
+
+    const allMigrations = [...discovered, ...sqlDiscovered]
+
+    // Sort all migrations by timestamp so interleaved TS + SQL files run in order.
+    allMigrations.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
+
+    if (allMigrations.length === 0) return
 
     const runner = new MigrationRunner(this.database, migrationDB)
-    runner.registerAll(discovered)
+    runner.registerAll(allMigrations)
 
     const count = await runner.run()
     if (count > 0) {

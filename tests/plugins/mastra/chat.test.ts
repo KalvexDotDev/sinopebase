@@ -4,7 +4,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '~/core/app'
-import { MastraPlugin } from '~/plugins/mastra/plugin'
 import { requirePostgres, reserveLoopbackPort } from '../../harness'
 
 /** Loose test-response accessor — narrower than `any`. */
@@ -19,22 +18,24 @@ interface TestResponse {
 describe('Mastra AI Plugin', () => {
   let app: Sinopebase
   let baseUrl: string
+  let prevOpenAIKey: string | undefined
 
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
+    // Detach from ambient OPENAI_API_KEY so the mock provider is used
+    prevOpenAIKey = process.env.OPENAI_API_KEY
+    process.env.OPENAI_API_KEY = ''
+
     app = new Sinopebase({
       port: portReservation.port,
       mode: 'development',
       postgresUrl: requirePostgres(),
+      jwtSecret: 'mastra-test-jwt-secret-min-32-chars!',
+      serviceRoleKey: 'mastra-test-service-key-min-32-chars!!',
+      anonKey: 'mastra-test-anon-key-min-32-chars!!!',
+      mastraRequireAuth: false,
     })
     await portReservation.release()
-
-    // MastraPlugin is already registered internally by initializeServer(),
-    // but we register it explicitly via app.use() for test isolation.
-    const plugin = new MastraPlugin({ requireAuth: false })
-    app.use(async (server, _auth) => {
-      await plugin.register(server)
-    })
 
     await app.start()
 
@@ -43,6 +44,7 @@ describe('Mastra AI Plugin', () => {
 
   afterAll(async () => {
     await app.stop()
+    if (prevOpenAIKey) process.env.OPENAI_API_KEY = prevOpenAIKey
   })
 
   // -----------------------------------------------------------------------

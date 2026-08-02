@@ -3,10 +3,9 @@
 // ---------------------------------------------------------------------------
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Sinopebase } from '~/core/app'
-import { DropFunctionsPlugin } from '~/plugins/drop-functions/plugin'
 import { createTestNamespace, requirePostgres, reserveLoopbackPort } from '../../harness'
 
 /** Loose test-response accessor — narrower than `any`. */
@@ -22,26 +21,29 @@ interface TestResponse {
 }
 
 const namespace = createTestNamespace({ suiteId: 'drop-functions-execute' })
-const TEST_FUNCTIONS_DIR = namespace.tempPath('functions')
+const DEFAULT_FN_DIR = resolve('./functions')
 
 function writeTestFunction(name: string, source: string): void {
-  const dir = resolve(TEST_FUNCTIONS_DIR)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, `${name}.ts`), source, 'utf-8')
+  mkdirSync(DEFAULT_FN_DIR, { recursive: true })
+  writeFileSync(join(DEFAULT_FN_DIR, `${name}.ts`), source, 'utf-8')
 }
 
 function cleanupTestFunctions(): void {
   try {
-    rmSync(TEST_FUNCTIONS_DIR, { recursive: true, force: true })
+    const entries = readdirSync(DEFAULT_FN_DIR)
+    for (const entry of entries) {
+      if (entry.endsWith('.ts') || entry.endsWith('.js')) {
+        try { rmSync(join(DEFAULT_FN_DIR, entry), { force: true }) } catch { /* ok */ }
+      }
+    }
   } catch {
-    /* ok */
+    /* directory may not exist */
   }
 }
 
 describe('DropFunctions Plugin', () => {
   let app: Sinopebase
   let baseUrl: string
-  let plugin: DropFunctionsPlugin
   let authToken = ''
 
   beforeAll(async () => {
@@ -86,19 +88,11 @@ describe('DropFunctions Plugin', () => {
     app = new Sinopebase({
       port: portReservation.port,
       postgresUrl: requirePostgres(),
+      jwtSecret: 'drop-fn-test-jwt-secret-min-32-chars!',
+      serviceRoleKey: 'drop-fn-test-service-key-min-32-chars!!',
+      anonKey: 'drop-fn-test-anon-key-min-32-chars!!!',
     })
     await portReservation.release()
-
-    plugin = new DropFunctionsPlugin({
-      functionsDir: TEST_FUNCTIONS_DIR,
-      defaultTimeout: 5000,
-    })
-
-    // Register the plugin via app.use() so its routes are wired BEFORE
-    // server.listen(), avoiding Elysia's onError(NOT_FOUND) route-lock issue.
-    app.use(async (server, _auth) => {
-      await plugin.register(server, (app as TestResponse).getAuth?.())
-    })
 
     await app.start()
 
@@ -125,7 +119,9 @@ describe('DropFunctions Plugin', () => {
 
   afterAll(async () => {
     await app.stop()
-    cleanupTestFunctions()
+    // Clean up test functions from default functionsDir
+    try { rmSync(resolve('./functions/hello.ts'), { force: true }) } catch { /* ok */ }
+    try { rmSync(resolve('./functions/protected.ts'), { force: true }) } catch { /* ok */ }
   })
 
   // -----------------------------------------------------------------------

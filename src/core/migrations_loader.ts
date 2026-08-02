@@ -6,12 +6,15 @@
  * order at startup. Already-applied migrations are skipped by the runner.
  */
 
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { MigrationDB } from '../../migrations/types'
 
 /** Regex matching `<digits>_<snake-case-name>.ts` migration filenames. */
 const MIGRATION_FILE_RE = /^(\d+)_([a-z0-9_]+)\.ts$/i
+
+/** Regex matching `<digits>_<snake-case-name>.sql` migration filenames (Supabase format). */
+const SQL_MIGRATION_FILE_RE = /^(\d+)_([a-z0-9_]+)\.sql$/i
 
 /** A migration module as exported by files in the migrations/ directory. */
 interface MigrationModule {
@@ -79,6 +82,69 @@ export async function loadMigrationsFromDirectory(
     } catch (err) {
       // Skip broken migration files — the app should still start so the
       // operator can fix them. The error is logged but not fatal.
+      const message = err instanceof Error ? err.message : String(err)
+      console.warn(`[migrations] Skipping "${filename}": ${message}`)
+    }
+  }
+
+  return migrations
+}
+
+/**
+ * Discover and load raw SQL migration files from a directory (Supabase format).
+ *
+ * Scans `migrationsDir` for files matching `<timestamp>_<name>.sql`, sorts by
+ * timestamp, reads each file, and wraps the SQL as a migration. Files are
+ * executed in timestamp order at startup. Already-applied migrations are
+ * skipped by the runner.
+ *
+ * This lets users bring their existing `supabase/migrations/*.sql` files
+ * and have them applied automatically — no conversion needed.
+ */
+export async function loadSqlMigrationsFromDirectory(
+  migrationsDir: string,
+): Promise<DiscoveredMigration[]> {
+  const migrations: DiscoveredMigration[] = []
+
+  let entries: string[]
+  try {
+    entries = readdirSync(migrationsDir)
+  } catch {
+    // Directory doesn't exist — no SQL migrations to load.
+    return migrations
+  }
+
+  const sqlFiles = entries
+    .filter((name) => SQL_MIGRATION_FILE_RE.test(name))
+    .sort((a, b) => {
+      const ta = a.match(SQL_MIGRATION_FILE_RE)?.[1] ?? '0'
+      const tb = b.match(SQL_MIGRATION_FILE_RE)?.[1] ?? '0'
+      return ta.localeCompare(tb, 'en', { numeric: true })
+    })
+
+  for (const filename of sqlFiles) {
+    const match = filename.match(SQL_MIGRATION_FILE_RE)
+    if (!match) continue
+    // Migration name is the filename without .sql extension.
+    const migrationName = match[0].replace(/\.sql$/i, '')
+
+    try {
+      const filePath = resolve(migrationsDir, filename)
+      const sql = readFileSync(filePath, 'utf-8')
+
+      if (sql.trim().length === 0) {
+        console.warn(`[migrations] Skipping empty SQL file "${filename}"`)
+        continue
+      }
+
+      migrations.push({
+        name: migrationName,
+        up: async (db: MigrationDB) => {
+          await db.raw(sql)
+        },
+        // SQL files have no rollback — down is undefined.
+      })
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.warn(`[migrations] Skipping "${filename}": ${message}`)
     }

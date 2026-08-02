@@ -20,9 +20,12 @@ const SERVICE_KEY = process.env.SINOPEBASE_SERVICE_ROLE_KEY || 'test-service-rol
 let e2eAvailable = false
 try {
   // Quick probe — can we reach the server and launch a browser?
-  const healthRes = await fetch(`${BASE}/api/health`)
+  const ctrl = new AbortController()
+  const timeout = setTimeout(() => ctrl.abort(), 5000)
+  const healthRes = await fetch(`${BASE}/api/health`, { signal: ctrl.signal })
+  clearTimeout(timeout)
   if (healthRes.ok) {
-    const browser = await chromium.launch({ headless: true })
+    const browser = await chromium.launch({ headless: true, timeout: 5000 })
     await browser.close()
     e2eAvailable = true
   }
