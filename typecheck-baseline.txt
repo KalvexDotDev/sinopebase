@@ -1,3 +1,11 @@
+functions/slow.ts(3,45): error TS6133: 'req' is declared but its value is never read.
+functions/slow.ts(3,45): error TS7006: Parameter 'req' implicitly has an 'any' type.
+functions/slow.ts(3,50): error TS6133: 'ctx' is declared but its value is never read.
+functions/slow.ts(3,50): error TS7006: Parameter 'ctx' implicitly has an 'any' type.
+functions/test-new.ts(1,39): error TS6133: 'req' is declared but its value is never read.
+functions/test-new.ts(1,39): error TS7006: Parameter 'req' implicitly has an 'any' type.
+functions/test-new.ts(1,44): error TS6133: 'ctx' is declared but its value is never read.
+functions/test-new.ts(1,44): error TS7006: Parameter 'ctx' implicitly has an 'any' type.
 scripts/benchmark.ts(60,29): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
   Type 'undefined' is not assignable to type 'string'.
 scripts/benchmark.ts(126,41): error TS2532: Object is possibly 'undefined'.

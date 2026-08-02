@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
-import { auditTestFoundation } from './audit'
 import { gateInfrastructure, RequiredInfrastructureError } from './infrastructure'
 import { createTestNamespace } from './namespace'
 import { moduleDirectory, stderrFixtureCommand } from './portable-process'
