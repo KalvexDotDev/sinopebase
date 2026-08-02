@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.6.2 — 2026-08-01
+
+### Added
+- **Dev-secret gate (production mode only)** — preflight checks for dev secrets only run in production mode, allowing development without false positives
+- **CI harness docs** — `ci:quick` gate + pre-push checklist in CLAUDE.md
+
+### Fixed
+- TLS test syntax (`test.skip` → correct `test.skip` usage)
+- Mastra chat test `mode: 'development'` for CI stability
+
+## v0.6.1 — 2026-08-01
+
+### Added
+- **Rate limit default: 1000 req/min** (up from 100). Admin, logs, health, and ready paths exempted.
+- **Prefer header for all SDK count values** — `count=planned`/`count=estimated` now set `Prefer: count=...` header
+- **Compat matrix** — signed-URL section corrected
+- **CHANGELOG** — "25+ providers" claim trimmed to reflect actual built-in + generic OIDC support
+
+### Fixed
+- `auth.role()` SQL function provisioned alongside `auth.uid()` — both available in RLS policies
+- `parseInValue` now used in both memory + Postgres backends (consistent comma-quoting)
+- `parseOrFilters` — proper comma=OR semantics in filter parsing
+- README pre-1.0 caveats section updated
+
+## v0.6.0 — 2026-08-01
+
+### Added
+- **OAuth — end-to-end** — better-auth `socialProviders` (Google, GitHub, Discord, Apple, Microsoft, Spotify, GitLab) + `genericOAuth` for enterprise OIDC (Keycloak, Okta, Auth0, Entra ID). `issuer` → `discoveryUrl` mapping. `/api/auth/oauth-providers` discovery endpoint. `oauth_providers.json` persistence in `pb_data/`. Admin UI OAuth login buttons + provider CRUD in Settings. `docs/auth.md` corrected provider table.
+- **Realtime Presence** — Full Phoenix Presence protocol: `presence_state`, `presence_diff`, `track`, `untrack`. Auth gates on track/untrack (joined-state + authentication required). Heartbeat sweeper (60s timeout, 15s cadence, 5 entries/client/topic cap). Payload size limit. Auto-cleanup on disconnect/phx_leave. SDK: `channel.track(key, data)` / `channel.untrack(key?)`. Supports both supabase-js and SDK shapes.
+- **PostgREST Filters** — 10 operators (`eq/neq/gt/gte/lt/lte/like/ilike/is/in`). `neq.null` → `IS NOT NULL`. `or=(...)` wired in PATCH/DELETE (was only GET/HEAD). `and()` wrapper for OR-of-AND groups. Comma-quoting in `in()` filter values. `count=planned/estimated` Prefer header support.
+- **Admin UI OAuth Management** — Settings page with provider CRUD, OAuth login buttons on Login page
+- **DevOps** — `docker-compose.yml` with sinopebase service, `.env.example` template, GHCR container images (`ghcr.io/kalvexdotdev/sinopebase:v0.6.2` + `:latest`), Railway `referralCode=9TQA5W` on deploy links
+
+### Security Fixes
+- Presence track/untrack gated on joined-state + auth
+- `isSuperuser` rejects empty service-role key (dev mode bypass fixed)
+- Timing-safe `Equal()` for keys in realtime context
+- POST redacts `clientSecret` in OAuth CRUD response
+- `try/catch` on `decodeURIComponent` for malformed providerId
+- Preflight dev-secret checks gated to production mode only
+
+### Changed
+- `FilterOperator` type trimmed to 10 implemented operators
+- CI: `ci` now uses `typecheck:ci` instead of bare `typecheck`
+- CI: `ci:quick` script added (`format:check && lint && typecheck:ci` — fast, no Docker)
+
 ## v0.5.0 — 2026-07-30
 
 ### Added

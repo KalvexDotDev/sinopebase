@@ -76,6 +76,40 @@ oauthProviders: [{
 }]
 ```
 
+### Client-Side OAuth
+
+Use the SDK to initiate OAuth login from your frontend:
+
+```ts
+import { createClient } from 'sinopebase'
+
+const sb = createClient('https://your-instance.example.com', 'your-anon-key')
+
+// Initiate OAuth login — redirects to the provider
+await sb.auth.signInWithOAuth({ provider: 'google' })
+
+// With options
+await sb.auth.signInWithOAuth({
+  provider: 'github',
+  options: { redirectTo: 'https://yourapp.com/auth/callback' }
+})
+```
+
+### OAuth Provider Discovery
+
+Clients can discover available OAuth providers at runtime:
+
+```bash
+curl 'https://your-instance/api/auth/oauth-providers'
+# → { "providers": ["google", "github", "keycloak", ...] }
+```
+
+Each provider returns `providerId`, `displayName`, and `iconUrl` for rendering login buttons.
+
+### OAuth via Admin UI
+
+Providers can also be managed through the Admin UI at `/_/` → Settings → OAuth Providers. Add, edit, and remove providers without restarting the server. Provider configuration is persisted to `pb_data/oauth_providers.json`.
+
 ### Account Linking
 
 Accounts are linked by email by default. A user signing in with Google
@@ -144,6 +178,7 @@ Keycloak's OIDC endpoint.
 |----------|---------|---------|
 | `JWT_SECRET` | JWT signing secret | **Must set in production** |
 | `POSTGRES_URL` | Database connection | `postgresql://localhost:5432/sinopebase` |
+| `BETTER_AUTH_URL` | Public-facing base URL for OAuth callbacks | `http://localhost:8090` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret | — |
 | `AZURE_CLIENT_ID` | Entra ID client | — |
@@ -156,4 +191,6 @@ Keycloak's OIDC endpoint.
 - Refresh tokens are rotated on each use. Old tokens are invalidated immediately.
 - Bearer tokens are validated via direct database lookup (not cookie-based).
 - Password minimum length is enforced by better-auth (8 characters default).
-- Rate limiting on auth endpoints is planned for v0.4.
+- Rate limiting is enabled by default (1000 req/min). Auth endpoints are rate-limited.
+- OAuth `clientSecret` is redacted in API responses (POST returns masked value).
+- Timing-safe key comparison (`crypto.timingSafeEqual`) for realtime and auth operations.

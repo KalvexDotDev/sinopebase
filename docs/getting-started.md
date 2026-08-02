@@ -87,8 +87,9 @@ For production, TLS is automatically handled by Railway's edge proxy — no app-
 my-project/
 ├── functions/        # Edge functions (auto-watched)
 │   └── hello.ts
-├── pb_data/          # Local storage (when not using S3)
-└── sinopebase.config.ts  # Optional config file
+├── pb_data/          # Local data (OAuth config, settings, backups)
+├── pb_migrations/    # Database migration files
+└── .env              # Environment configuration
 ```
 
 ## Using as a Library

@@ -1,0 +1,100 @@
+# Sinopebase production deployment
+# Start with: docker compose -f docker-compose.prod.yml up -d
+#
+# Uses the prebuilt GHCR image — no local build needed.
+# Pulls ghcr.io/kalvexdotdev/sinopebase:latest (currently v0.6.2).
+#
+# Requires these env vars (set in .env or shell):
+#   JWT_SECRET                — ≥32 char random string (required)
+#   SINOPEBASE_SERVICE_ROLE_KEY — ≥32 char random string (required)
+#   SINOPEBASE_ANON_KEY       — ≥32 char random string (required)
+#
+# Generate secrets: openssl rand -hex 32
+
+services:
+  # PostgreSQL 18
+  postgres:
+    image: postgres:18.4-alpine
+    container_name: sinopebase-pg
+    environment:
+      POSTGRES_USER: sinopebase
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_DB: sinopebase
+    ports:
+      - '127.0.0.1:5432:5432'  # localhost only in prod
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sinopebase']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # RustFS — S3-compatible object storage
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: sinopebase-storage
+    environment:
+      RUSTFS_ROOT_USER: ${S3_ACCESS_KEY:?S3_ACCESS_KEY must be set}
+      RUSTFS_ROOT_PASSWORD: ${S3_SECRET_KEY:?S3_SECRET_KEY must be set}
+    ports:
+      - '127.0.0.1:9000:9000'
+    volumes:
+      - storagedata:/data
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:9000/health']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # PgBouncer — connection pooling
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: sinopebase-pgbouncer
+    environment:
+      DB_HOST: postgres
+      DB_USER: sinopebase
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: sinopebase
+      MAX_CLIENT_CONN: '100'
+      DEFAULT_POOL_SIZE: '25'
+    ports:
+      - '127.0.0.1:6432:5432'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Sinopebase — prebuilt image from GHCR
+  sinopebase:
+    image: ghcr.io/kalvexdotdev/sinopebase:latest
+    container_name: sinopebase-app
+    ports:
+      - '8090:8090'
+    environment:
+      POSTGRES_URL: postgresql://sinopebase:${DB_PASSWORD}@postgres:5432/sinopebase
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      SINOPEBASE_SERVICE_ROLE_KEY: ${SINOPEBASE_SERVICE_ROLE_KEY:?SINOPEBASE_SERVICE_ROLE_KEY must be set}
+      SINOPEBASE_ANON_KEY: ${SINOPEBASE_ANON_KEY:?SINOPEBASE_ANON_KEY must be set}
+      SINOPEBASE_PRODUCTION: 'true'
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    volumes:
+      - appdata:/data
+
+volumes:
+  pgdata:
+  storagedata:
+  appdata:

@@ -85,7 +85,7 @@ All operators work on GET, HEAD, POST, PATCH, and DELETE. `or` filter groups are
 | `is` | `col=is.null` | `col IS NULL` / `IS TRUE` / `IS FALSE` |
 | `in` | `col=in.(a,b,c)` | `col IN ('a','b','c')` |
 
-> **Not yet implemented:** `cs` (contains), `cd` (contained by), `fts` (full-text search), `not.` (negation), array operators. Deferred to v0.7. See [CHANGELOG.md](../CHANGELOG.md) for current status.
+> **Not yet implemented:** `cs` (contains), `cd` (contained by), `fts`/`plfts`/`phfts`/`wfts` (full-text search), `not.` (negation), array operators, composite/deep relationships. Planned for a future release. See [CHANGELOG.md](../CHANGELOG.md) for current status.
 
 ## Auth API
 

@@ -23,22 +23,29 @@ await app.start()
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `POSTGRES_URL` | Yes (prod) | PostgreSQL connection string |
-| `JWT_SECRET` | **Yes** | Signing key for JWT tokens (≥32 chars) |
+| `POSTGRES_URL` | **Yes** (prod) | PostgreSQL connection string |
+| `JWT_SECRET` | **Yes** (prod) | Signing key for JWT tokens (≥32 chars) |
 | `SINOPEBASE_SERVICE_ROLE_KEY` | **Yes** (prod) | Admin/service-role API key (≥32 chars) |
 | `SINOPEBASE_ANON_KEY` | **Yes** (prod) | Anonymous/public API key (≥32 chars) |
-| `SINOPEBASE_PRODUCTION` | No | Set to `true` for fail-closed production mode |
-| `RUSTFS_ENDPOINT` | No | S3-compatible storage URL |
-| `RUSTFS_ACCESS_KEY` | No | S3 access key |
-| `RUSTFS_SECRET_KEY` | No | S3 secret key |
-| `OPENAI_API_KEY` | No | For AI/Mastra features |
-| `BETTER_AUTH_URL` | No | Public-facing base URL (default: `http://localhost:8090`) |
+| `SINOPEBASE_PRODUCTION` | No | Set to `true` for fail-closed production mode. Or `NODE_ENV=production`. |
+| `RUSTFS_ENDPOINT` | **Yes** (prod) | S3-compatible storage URL |
+| `RUSTFS_ACCESS_KEY` | **Yes** (prod) | S3 access key |
+| `RUSTFS_SECRET_KEY` | **Yes** (prod) | S3 secret key |
+| `BETTER_AUTH_URL` | No (prod) | Public-facing base URL for OAuth redirects and CORS (default: `http://localhost:8090`) |
+| `OPENAI_API_KEY` | No | Enable real AI responses. Without it, the mock provider echoes back. |
+| `OPENAI_BASE_URL` | No | OpenAI-compatible base URL. Swap for DeepSeek, Groq, Ollama, etc. (default: `https://api.openai.com/v1`) |
+| `PORT` | No | Server port (default: `8090`, or `$PORT` on Railway) |
+| `HOST` | No | Bind address (default: `0.0.0.0`) |
 
 See `.env.example` for a complete template with placeholder values. Copy with `cp .env.example .env`.
 
 ## TLS / HTTPS
 
-Sinopebase itself serves plain HTTP. Run it behind a reverse proxy for TLS:
+Sinopebase supports two TLS modes:
+
+### Option A: Reverse proxy (recommended for production)
+
+Run behind nginx, Caddy, or Railway's edge proxy:
 
 ```nginx
 # nginx example
@@ -70,6 +77,18 @@ api.example.com {
 }
 ```
 
+### Option B: Bun-native TLS
+
+Sinopebase can serve HTTPS directly using Bun's built-in TLS:
+
+```bash
+bun run cmd/serve.ts --tls-cert cert.pem --tls-key key.pem
+```
+
+For development: `bash scripts/gen-dev-cert.sh` generates a self-signed certificate.
+
+For production with auto-renewal, prefer Option A (reverse proxy) — it's the battle-tested pattern.
+
 ## Docker (Self-Contained)
 
 ```dockerfile
@@ -96,23 +115,47 @@ docker run -p 8090:8090 \
 
 ## Docker Compose (Full Stack)
 
+Use the prebuilt image — no local build needed. Pins to the latest tagged release.
+
+```bash
+# Copy and fill in secrets
+cp .env.example .env
+# Edit .env with: JWT_SECRET, SINOPEBASE_SERVICE_ROLE_KEY, SINOPEBASE_ANON_KEY,
+#                 DB_PASSWORD, S3_ACCESS_KEY, S3_SECRET_KEY
+
+docker compose -f docker-compose.prod.yml up -d
+```
+
+`docker-compose.prod.yml` pulls `ghcr.io/kalvexdotdev/sinopebase:latest` and starts PostgreSQL, RustFS, and PgBouncer alongside it. For production, pin a specific version:
+
+```bash
+SINOPEBASE_VERSION=v0.6.2 docker compose -f docker-compose.prod.yml up -d
+```
+
+The compose file uses `${VAR:?message}` syntax — Docker will refuse to start if required secrets are missing.
+
+### Reference (inline compose excerpt)
+
 ```yaml
 # docker-compose.prod.yml
 services:
   sinopebase:
-    build: .
+    image: ghcr.io/kalvexdotdev/sinopebase:latest
     ports: ['8090:8090']
     environment:
-      POSTGRES_URL: postgresql://postgres:5432/sinopebase
-      JWT_SECRET: ${JWT_SECRET}
+      POSTGRES_URL: postgresql://sinopebase:${DB_PASSWORD}@postgres:5432/sinopebase
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       RUSTFS_ENDPOINT: http://rustfs:9000
+      SINOPEBASE_PRODUCTION: 'true'
     depends_on: [postgres, rustfs]
+    read_only: true
+    restart: unless-stopped
 
   postgres:
     image: postgres:18.4-alpine
     environment:
       POSTGRES_USER: sinopebase
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: sinopebase
     volumes: ['pgdata:/var/lib/postgresql']
 

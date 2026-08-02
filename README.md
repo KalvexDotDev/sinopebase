@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Supabase compatibility. PocketBase simplicity. One service.</strong>
+  <strong>Backend as a Service. One binary. MIT licensed.</strong>
 </p>
 
 <p align="center">
@@ -31,11 +31,11 @@
 
 ## What is Sinopebase?
 
-Sinopebase is a **single TypeScript service** that speaks the Supabase protocol. It replaces six microservices (Kong, GoTrue, PostgREST, Realtime, Storage, Admin API) with one process. **Swap one import, change the URL** — everything else in your supabase-js code stays the same.
+Sinopebase is a **Backend as a Service built on Elysia** — good performance, core dev features, easily extensible via plugins, MIT licensed. It replaces six microservices (Kong, GoTrue, PostgREST, Realtime, Storage, Admin API) with one process. **Swap one import, change the URL** — everything else in your supabase-js code stays the same.
 
-It's what you'd get if PocketBase and Supabase had a child that grew up in the Bun ecosystem — the **simplicity of a single process**, the **compatibility of supabase-js**, and the **power of PostgreSQL**, all under an **MIT license**.
+It's for builders who want to focus on their product, not rebuild auth and data layers from scratch for the 10th time. One binary that gives you database, auth, storage, realtime, edge functions, and AI — all speaking the supabase-js API you already know.
 
-> **What you bring:** PostgreSQL (anywhere — Railway, AWS, your laptop) and S3-compatible storage (MinIO, R2, S3). Sinopebase handles everything else.
+> **What you bring:** PostgreSQL (anywhere — Railway, AWS, Hetzner, your laptop) and S3-compatible storage (MinIO, R2, S3). Sinopebase handles everything else.
 
 ```ts
 // One import swap. That's it.
@@ -52,21 +52,25 @@ const { data: { user } } = await sb.auth.signInWithPassword({ email, password })
 
 ## Why Sinopebase?
 
-| | Supabase Self-Hosted | PocketBase | Sinopebase |
-|---|:---:|:---:|---|
-| **License** | MIT | MIT | MIT |
-| **Deploy** | 6+ containers, Kong, GoTrue, PostgREST, etc. | Single Go binary (SQLite embedded) | **Single Bun service + PostgreSQL + S3** |
-| **Database** | PostgreSQL | SQLite (embedded) | **PostgreSQL** |
-| **SDK** | supabase-js | PocketBase SDK | **supabase-js (one import swap)** |
-| **Auth** | GoTrue (Go) | Built-in (Go) | **better-auth (TypeScript)** |
-| **Edge Functions** | Deno Deploy | — | **Bun Worker sandbox** |
-| **AI / Agents** | — | — | **Mastra agents + MCP tools** |
-| **Realtime** | Phoenix Channels | Server-sent events | **Phoenix Channels + PG LISTEN/NOTIFY** |
-| **Admin UI** | Supabase Studio | PocketBase Admin | **Svelte 5 — editorial dark** |
-| **Storage** | S3 | Local filesystem | **S3 / MinIO / RustFS** |
-| **TLS** | Self-managed | LetsEncrypt | **Bun-native + LetsEncrypt** |
+| | Supabase Self-Hosted | Sinopebase |
+|---|:---:|---|
+| **License** | MIT | MIT |
+| **Deploy** | 6+ containers (Kong, GoTrue, PostgREST, Realtime, Storage, Admin API) | **Single Bun service + PostgreSQL + S3** |
+| **Database** | PostgreSQL | PostgreSQL |
+| **SDK** | supabase-js | **supabase-js (one import swap)** |
+| **Auth** | GoTrue (Go) | **better-auth (TypeScript)** |
+| **Edge Functions** | Deno Deploy | **Bun Worker sandbox** |
+| **AI / Agents** | — | **Mastra agents + MCP tools** |
+| **Realtime** | Phoenix Channels | **Phoenix Channels + PG LISTEN/NOTIFY** |
+| **Admin UI** | Supabase Studio | **Svelte 5 — editorial dark** |
+| **Storage** | S3 | **S3 / MinIO / RustFS** |
+| **TLS** | Self-managed | **Bun-native + LetsEncrypt** |
+| **OAuth** | 12+ built-in providers | **Built-in social + generic OIDC (Keycloak, Okta, Auth0, Entra ID)** |
+| **Presence** | Phoenix Presence | **Phoenix Presence (track/untrack, diff, heartbeat sweeper)** |
+| **Extensibility** | — | **Plugin system — hooks, custom endpoints, background jobs** |
+| **Payments** | — | **better-auth payment flows (planned)** |
 
-**The bottom line:** If you want PostgreSQL, Phoenix Channels, and supabase-js compatibility — but don't want to orchestrate six containers — Sinopebase is one service that does all of it.
+**The bottom line:** If you want PostgreSQL, Phoenix Channels, and supabase-js compatibility — but don't want to orchestrate six containers — Sinopebase is one service that does all of it. You focus on your product, not the infrastructure.
 
 ---
 
@@ -115,17 +119,27 @@ OPENAI_API_KEY=sk-...
 
 See [`.env.railway`](.env.railway) for the full variable reference.
 
-### Docker
+### Docker (production)
 
 ```bash
-docker build -t sinopebase .
+# Pull the latest image and run with PostgreSQL + S3
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Or run the image directly:
+
+```bash
 docker run -p 8090:8090 \
   -e POSTGRES_URL=postgres://... \
   -e S3_ENDPOINT=https://... \
   -e JWT_SECRET=$(openssl rand -hex 32) \
   -e SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32) \
-  sinopebase
+  -e SINOPEBASE_ANON_KEY=$(openssl rand -hex 32) \
+  -e SINOPEBASE_PRODUCTION=true \
+  ghcr.io/kalvexdotdev/sinopebase:latest
 ```
+
+Pin to a specific version for production: `ghcr.io/kalvexdotdev/sinopebase:v0.6.2`
 
 ### Bare Metal
 
@@ -270,7 +284,7 @@ bun run compile && bun run benchmark   # needs Docker PostgreSQL + RustFS
 - **Trivy container scanning** — CRITICAL+HIGH gates in CI
 - **Read-only root filesystem** — Docker runs as UID 10001, all capabilities dropped
 
-> **⚠️ Pre-1.0 caveats:** OAuth social providers (Google, GitHub, Discord) work via better-auth's built-in `socialProviders`; enterprise OIDC (Keycloak, Okta, Auth0) works via `genericOAuth`. Realtime presence (`channel.track()` / `presence_diff`) is implemented in v0.6. PostgREST filter operators are limited to `eq/neq/gt/gte/lt/lte/like/ilike/is/in`; full-text search and array operators are planned (v0.7). See [CHANGELOG.md](CHANGELOG.md) for current status.
+> **⚠️ Pre-1.0 caveats:** Production-mode secret enforcement, signed URL cryptography, and supply-chain attestation (SBOM, signed containers) are in progress for v1.0. PostgREST filter operators currently cover 10 operators (`eq/neq/gt/gte/lt/lte/like/ilike/is/in`); full-text search (`fts`), array operators, and `not.` negation are deferred. OAuth social + enterprise OIDC and Realtime presence are shipped (v0.6.2). See [CHANGELOG.md](CHANGELOG.md) for current status.
 
 ---
 
