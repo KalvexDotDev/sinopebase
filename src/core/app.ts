@@ -1977,11 +1977,20 @@ export class Sinopebase {
     if (this.fileStore) {
       if (this.fileStore instanceof S3FileStore) {
         try {
-          await this.fileStore.listBuckets()
+          // Add a 5s timeout so a misconfigured endpoint doesn't block startup
+          await Promise.race([
+            this.fileStore.listBuckets(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('S3 connectivity check timed out after 5s')), 5000),
+            ),
+          ])
         } catch (err) {
-          errors.push(
-            `S3 file store connectivity check failed: ${err instanceof Error ? err.message : String(err)}`,
-          )
+          const msg = `S3 file store connectivity check failed: ${err instanceof Error ? err.message : String(err)}`
+          if (this.mode === 'production') {
+            errors.push(msg)
+          } else {
+            logger.warn(msg)
+          }
         }
       }
       // LocalFileStore is always ready — no remote connectivity needed
