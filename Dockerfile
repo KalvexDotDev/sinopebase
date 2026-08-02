@@ -54,8 +54,8 @@ WORKDIR /app
 # writable mount in production.
 RUN addgroup -S -g 10001 sinopebase \
  && adduser -S -D -H -u 10001 -G sinopebase sinopebase \
- && mkdir /data \
- && chown sinopebase:sinopebase /data
+ && mkdir /data /app/functions \
+ && chown sinopebase:sinopebase /data /app/functions
 
 COPY --from=builder --chown=sinopebase:sinopebase /out/sinopebase /app/sinopebase
 COPY --from=builder --chown=sinopebase:sinopebase /build/ui/dist /app/ui/dist

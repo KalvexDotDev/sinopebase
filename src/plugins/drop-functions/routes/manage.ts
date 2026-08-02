@@ -29,9 +29,26 @@ export function createManageRoutes(
   auth: unknown,
   prefix = '/api/functions/v1',
 ) {
-  // Ensure the directory exists
+  // Ensure the directory exists. On read-only filesystems (Docker with
+  // non-root user), mkdir may fail with EACCES. Don't crash — the operator
+  // can pre-create the directory or mount it as a volume.
   if (!existsSync(functionsDir)) {
-    mkdirSync(functionsDir, { recursive: true })
+    try {
+      mkdirSync(functionsDir, { recursive: true })
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        (err as NodeJS.ErrnoException).code === 'EACCES'
+      ) {
+        console.warn(
+          `[DropFunctions] Cannot create functionsDir "${functionsDir}" (EACCES). ` +
+            'Pre-create this directory in your Dockerfile or mount it as a volume.',
+        )
+      } else {
+        throw err
+      }
+    }
   }
 
   return (
