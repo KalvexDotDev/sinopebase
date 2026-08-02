@@ -89,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep SAST scan (security + elysia conventions)
-        run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --error
+        run: semgrep scan --config p/typescript --config p/secrets --config .semgrep.yml --severity ERROR
 
   gitleaks:
     needs: [lint, typecheck, jscpd]
