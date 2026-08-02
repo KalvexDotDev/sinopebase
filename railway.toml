@@ -65,11 +65,9 @@ sleepApplication = false
 # POSTGRES_URL = ${{Sinope-PG-Prod.DATABASE_URL}}
 #
 # --- Storage (Railway Bucket — S3-compatible) ---
-# S3_ENDPOINT = ${{<bucket-service>.BUCKET_ENDPOINT}}
-# S3_BUCKET = "sinope-evidence-prod"
-# S3_REGION = ${{<bucket-service>.BUCKET_REGION}}
-# S3_ACCESS_KEY (set by hand — ${{<bucket-service>.ACCESS_KEY_ID}})
-# S3_SECRET_KEY (set by hand — ${{<bucket-service>.SECRET_ACCESS_KEY}})
+# RUSTFS_ENDPOINT = ${{<bucket-service>.BUCKET_ENDPOINT}}
+# RUSTFS_ACCESS_KEY (set by hand — ${{<bucket-service>.ACCESS_KEY_ID}})
+# RUSTFS_SECRET_KEY (set by hand — ${{<bucket-service>.SECRET_ACCESS_KEY}})
 #
 # --- Auth (generated in dashboard via Raw Editor) ---
 # JWT_SECRET

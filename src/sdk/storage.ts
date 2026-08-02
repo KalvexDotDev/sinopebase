@@ -2,7 +2,7 @@
  * Storage Client (stub — implemented in Phase 3)
  *
  * Mirrors @supabase/storage-js.
- * Backed by MinIO via Sinopebase /storage/v1 endpoints.
+ * Backed by S3-compatible storage via Sinopebase /storage/v1 endpoints.
  */
 
 import type { PostgrestError } from './client'

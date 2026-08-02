@@ -55,3 +55,8 @@ jscpd-report.json/
 
 # Licensed design assets (not our IP)
 design.md
+
+# Retained locally but not in the public repo
+docs/releases/v0.4/
+.claude/
+docs/compatibility/

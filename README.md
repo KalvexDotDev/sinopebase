@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <strong>Backend as a Service. One binary. MIT licensed.</strong>
+  <strong>Ship your product, not your backend.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/sinopebase/sinopebase/actions/workflows/ci.yml"><img src="https://github.com/KalvexDotDev/sinopebase/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/sinopebase/sinopebase/actions/workflows/supply-chain.yml"><img src="https://github.com/KalvexDotDev/sinopebase/actions/workflows/supply-chain.yml/badge.svg" alt="Supply Chain" /></a>
+  <a href="https://github.com/KalvexDotDev/sinopebase/actions/workflows/ci.yml"><img src="https://github.com/KalvexDotDev/sinopebase/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/KalvexDotDev/sinopebase/actions/workflows/supply-chain.yml"><img src="https://github.com/KalvexDotDev/sinopebase/actions/workflows/supply-chain.yml/badge.svg" alt="Supply Chain" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-%23fbf0df?logo=bun" alt="Bun" /></a>
 </p>
@@ -29,53 +29,46 @@
 
 ## What is Sinopebase?
 
-Sinopebase is a **Backend as a Service built on Elysia** — good performance, core dev features, easily extensible via plugins, MIT licensed. It replaces six microservices (Kong, GoTrue, PostgREST, Realtime, Storage, Admin API) with one process. **Swap one import, change the URL** — everything else in your supabase-js code stays the same.
-
-It's for builders who want to focus on their product, not rebuild auth and data layers from scratch for the 10th time. One binary that gives you database, auth, storage, realtime, edge functions, and AI — all speaking the supabase-js API you already know.
-
-> **What you bring:** PostgreSQL (anywhere — Railway, AWS, Hetzner, your laptop) and S3-compatible storage (MinIO, R2, S3). Sinopebase handles everything else.
+Sinopebase is a **Backend as a Service** — auth, database, storage, realtime, and AI, all live the moment you deploy. You already know the API (it's supabase-js). You bring PostgreSQL and S3-compatible storage. Sinopebase handles everything else. MIT licensed, no vendor lock-in, pay only for what you use.
 
 ```ts
 // One import swap. That's it.
 import { createClient } from 'sinopebase'
 // was: import { createClient } from '@supabase/supabase-js'
 
-const sb = createClient('https://my-sinopebase.railway.app', 'anon-key')
+const sb = createClient('http://localhost:8090', 'anon-key')
+// or: 'https://your-service.railway.app'
 
 const { data } = await sb.from('todos').select('*')
 const { data: { user } } = await sb.auth.signInWithPassword({ email, password })
 ```
 
+> **What you bring:** PostgreSQL (anywhere — Railway, AWS, Hetzner, your laptop) and S3-compatible storage (RustFS for local dev, R2, S3, or any compatible endpoint).
+
 ---
 
 ## Why Sinopebase?
 
-| | Supabase Self-Hosted | Sinopebase |
-|---|:---:|---|
-| **License** | MIT | MIT |
-| **Deploy** | 6+ containers (Kong, GoTrue, PostgREST, Realtime, Storage, Admin API) | **Single Bun service + PostgreSQL + S3** |
-| **Database** | PostgreSQL | PostgreSQL |
-| **SDK** | supabase-js | **supabase-js (one import swap)** |
-| **Auth** | GoTrue (Go) | **better-auth (TypeScript)** |
-| **Edge Functions** | Deno Deploy | **Bun Worker sandbox** |
-| **AI / Agents** | — | **Mastra agents + MCP tools** |
-| **Realtime** | Phoenix Channels | **Phoenix Channels + PG LISTEN/NOTIFY** |
-| **Admin UI** | Supabase Studio | **Svelte 5 — editorial dark** |
-| **Storage** | S3 | **S3 / MinIO / RustFS** |
-| **TLS** | Self-managed | **Bun-native + LetsEncrypt** |
-| **OAuth** | 12+ built-in providers | **Built-in social + generic OIDC (Keycloak, Okta, Auth0, Entra ID)** |
-| **Presence** | Phoenix Presence | **Phoenix Presence (track/untrack, diff, heartbeat sweeper)** |
-| **Extensibility** | — | **Plugin system — hooks, custom endpoints, background jobs** |
-| **Payments** | — | **better-auth payment flows (planned)** |
+You're building a product. You don't want to spend a week wiring up auth, database migrations, file uploads, and realtime channels for the 10th time. You want a backend that works, an API you already know, and the freedom to host it wherever you want.
 
-**The bottom line:** If you want PostgreSQL, Phoenix Channels, and supabase-js compatibility — but don't want to orchestrate six containers — Sinopebase is one service that does all of it. You focus on your product, not the infrastructure.
+| | Sinopebase |
+|---|
+| **Auth** | Email/password, OAuth (Google, GitHub, Discord, Apple, Microsoft), enterprise OIDC (Keycloak, Okta, Auth0, Entra ID) |
+| **Database** | PostgreSQL with Row-Level Security, migrations, real-time subscriptions |
+| **Storage** | S3-compatible (RustFS, R2, S3, any endpoint). Upload, download, signed URLs |
+| **Realtime** | Phoenix Channels with full Presence — track/untrack, diff, heartbeat |
+| **AI** | Mastra agents, RAG, MCP tools, SSE streaming — built in, not bolted on |
+| **Edge Functions** | Bun Worker sandbox, per-function auth and timeout |
+| **Admin UI** | Modern dashboard at `/_/` — table editor, auth users, storage, RLS policies, API docs, AI playground, metrics, logs |
+| **SDK** | Drop-in compatible with supabase-js — one import swap |
+| **License** | MIT — own your stack, no vendor lock-in |
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/sinopebase/sinopebase
+git clone https://github.com/KalvexDotDev/sinopebase
 cd sinopebase
 
 # Copy .env.example and fill in your keys
@@ -90,7 +83,7 @@ bun install && bun run dev    # → http://localhost:8090
 
 Admin UI at [`http://localhost:8090/_/`](http://localhost:8090/_/). SDK ready at `http://localhost:8090/rest/v1/`.
 
-> **AI features** (playground, agents, chat) need an `OPENAI_API_KEY`. Without one, the mock provider echoes back your messages — fine for dev, not for production.
+> **AI features** (playground, agents, chat) need an `OPENAI_API_KEY`. Without one, the mock provider echoes back — fine for dev, not for production.
 
 ---
 
@@ -129,7 +122,7 @@ Or run the image directly:
 ```bash
 docker run -p 8090:8090 \
   -e POSTGRES_URL=postgres://... \
-  -e S3_ENDPOINT=https://... \
+  -e RUSTFS_ENDPOINT=https://... \
   -e JWT_SECRET=$(openssl rand -hex 32) \
   -e SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32) \
   -e SINOPEBASE_ANON_KEY=$(openssl rand -hex 32) \
@@ -155,7 +148,8 @@ Sinopebase implements the supabase-js API surface. Swap `@supabase/supabase-js` 
 ```ts
 import { createClient } from 'sinopebase'
 
-const sb = createClient('https://your-instance.example.com', 'your-anon-key')
+const sb = createClient('http://localhost:8090', 'your-anon-key')
+// or: createClient('https://your-service.railway.app', 'your-anon-key')
 
 // Database
 const { data } = await sb.from('todos').select('*').eq('done', false).order('created_at')
@@ -169,7 +163,7 @@ const { data: { session } } = await sb.auth.signInWithPassword({ email, password
 const { data } = await sb.storage.from('avatars').upload('photo.png', file)
 const url = sb.storage.from('avatars').getPublicUrl('photo.png')
 
-// Realtime (Phoenix Channels — same as Supabase)
+// Realtime
 const channel = sb.channel('room-1')
 channel.on('broadcast', { event: 'message' }, (payload) => console.log(payload))
 channel.subscribe()
@@ -177,17 +171,15 @@ channel.subscribe()
 // Edge Functions
 const { data } = await sb.functions.invoke('hello', { body: { name: 'World' } })
 
-// AI
-const { data } = await sb.functions.invoke('chat', {
-  body: { messages: [{ role: 'user', content: 'Summarize my todos' }] }
-})
+// AI (Mastra — agents, chat, embeddings)
+// POST /api/mastra/chat with an Authorization header
 ```
 
 ---
 
 ## 🎨 Admin UI
 
-Complete admin dashboard at `/_/` — editorial dark, Cormorant Garamond + Inter, single mint accent.
+Complete admin dashboard at `/_/` — modern design, dark theme, single mint accent.
 
 | | | |
 |:---:|:---:|:---:|
@@ -222,16 +214,16 @@ Complete admin dashboard at `/_/` — editorial dark, Cormorant Garamond + Inter
                        │ supabase-js compatible SDK
 ┌──────────────────────▼──────────────────────────────────┐
 │                  Sinopebase Core                         │
-│   REST API       Auth API        Realtime (Phoenix + PG) │
+│   REST API       Auth API        Realtime (Phoenix Ch.)  │
 │   /rest/v1       /auth/v1        /realtime/v1            │
 │                                                          │
 │   Core: Collections · Records · Fields · Events          │
 │   Hooks · Cron · Mailer · Migrations                     │
 │                                                          │
-│   Data: PostgreSQL (Kysely) · S3/MinIO/RustFS            │
-│   better-auth · PG LISTEN/NOTIFY                         │
+│   Data: PostgreSQL (Kysely) · S3-compatible storage      │
+│   better-auth · Bun-native TLS                           │
 │                                                          │
-│   Mastra AI      Edge Functions       Admin UI (Svelte)  │
+│   Mastra AI      Edge Functions       Admin UI           │
 │   /api/mastra/*  /api/funcs/v1        /_/               │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -320,6 +312,7 @@ cd ui && bun run dev              # Svelte dev server with hot reload
 | [AI & Mastra](docs/ai.md) | Agents, tools, MCP, RAG |
 | [API Reference](docs/api.md) | REST, Auth, Storage, Realtime APIs |
 | [Deployment](docs/deployment.md) | Railway, Docker, bare metal |
+| [Roadmap](docs/roadmap.md) | v0.7 → v0.8 → v0.9 → 1.0 |
 | [Development](docs/development.md) | Contributing, architecture, patterns |
 
 ---
