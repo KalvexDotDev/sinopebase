@@ -783,9 +783,9 @@ export class Sinopebase {
       // when PostgreSQL is configured. These keys bypass all authentication.
       // In local dev (no POSTGRES_URL) the defaults are acceptable.
       {
-        const serviceKey = process.env.SINOPEBASE_SERVICE_ROLE_KEY
-        const anonKey = process.env.SINOPEBASE_ANON_KEY
-        const jwtSecret = process.env.JWT_SECRET || this.config.jwtSecret || ''
+        const serviceKey = this.config.serviceRoleKey || process.env.SINOPEBASE_SERVICE_ROLE_KEY
+        const anonKey = this.config.anonKey || process.env.SINOPEBASE_ANON_KEY
+        const jwtSecret = this.config.jwtSecret || process.env.JWT_SECRET || ''
 
         if (!serviceKey || isDevSecret(serviceKey)) {
           throw new Error(
