@@ -39,12 +39,12 @@ beforeAll(async () => {
   })
   await portReservation.release()
   await server.start()
-  client = createClient(portReservation.origin, requireAnonKey())
+  client = createClient(portReservation.origin, 'storagetest-anon-key-min-32-chars!!!!')
 
   // Provision the test bucket via the service-role client so the bucket
   // exists in both the storage metadata schema (storage.buckets) and the
   // RustFS/S3 backend. The anon-key client cannot CREATE buckets (RLS).
-  const admin = createClient(portReservation.origin, requireServiceRoleKey())
+  const admin = createClient(portReservation.origin, 'storagetest-service-key-min-32-chars!!!')
   const { error: createError } = await admin.storage.createBucket(testBucket, { public: true })
   if (createError) {
     throw new Error(`Failed to create test bucket: ${createError.message}`)

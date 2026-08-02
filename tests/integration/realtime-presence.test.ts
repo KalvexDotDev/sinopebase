@@ -27,13 +27,13 @@ let anonKey: string
 
 beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
-  anonKey = requireAnonKey()
+  anonKey = 'presence-test-anon-key-min-32-chars!!!'
   server = new Sinopebase({
     postgresUrl: requirePostgres(),
     port: portReservation.port,
     jwtSecret: 'presence-test-jwt-secret-min-32-chars!',
     serviceRoleKey: 'presence-test-service-key-min-32-chars!!',
-    anonKey: 'presence-test-anon-key-min-32-chars!!!',
+    anonKey: anonKey,
   })
   await portReservation.release()
   await server.start()
