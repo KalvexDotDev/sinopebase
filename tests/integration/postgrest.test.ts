@@ -34,6 +34,10 @@ beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
   anonKey = requireAnonKey()
   serviceRoleKey = requireServiceRoleKey()
+  // Write keys to process.env so the downstream preflight check passes.
+  // Bun test workers may not inherit CI env vars, so set them explicitly.
+  process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceRoleKey
+  process.env.SINOPEBASE_ANON_KEY = anonKey
   // Start the Sinopebase server for integration testing with validated credentials
   server = new Sinopebase({
     postgresUrl: requirePostgres(),

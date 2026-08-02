@@ -25,6 +25,8 @@ describe('Auth API (better-auth)', () => {
 
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
+    process.env.SINOPEBASE_SERVICE_ROLE_KEY = 'authbt-service-key-min-32-chars!!!!'
+    process.env.SINOPEBASE_ANON_KEY = 'authbt-anon-key-min-32-chars!!!!!!'
     app = new Sinopebase({
       port: portReservation.port,
       postgresUrl: requirePostgres(),
