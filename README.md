@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sinopebase/sinopebase/main/docs/assets/wordmark.svg" alt="Sinopebase" width="480" />
+  <img src="https://raw.githubusercontent.com/sinopebase/sinopebase/main/docs/assets/logo.png" alt="Sinopebase" width="320" />
 </p>
 
 <p align="center">
@@ -16,15 +16,13 @@
 <br/>
 
 <p align="center">
-  <a href="https://railway.app/new?template=https%3A%2F%2Fgithub.com%2Fsinopebase%2Fsinopebase&referralCode=9TQA5W">
-    <img src="https://railway.app/button.svg" alt="Deploy on Railway" />
+  <a href="https://railway.com/deploy/dCZjHz?referralCode=9TQA5W">
+    <img src="https://railway.com/button.svg" alt="Deploy on Railway" />
   </a>
 </p>
 
 <p align="center">
   <sub><strong>Want it now?</strong> Deploy to Railway in 30 seconds. Free tier. No credit card.</sub>
-  <br/>
-  <sub>New to Railway? <a href="https://railway.com?referralCode=9TQA5W">Sign up here</a> for free credits.</sub>
 </p>
 
 ---
@@ -99,8 +97,8 @@ Admin UI at [`http://localhost:8090/_/`](http://localhost:8090/_/). SDK ready at
 ## ☁️ Deploy on Railway
 
 <p align="center">
-  <a href="https://railway.app/new?template=https%3A%2F%2Fgithub.com%2Fsinopebase%2Fsinopebase&referralCode=9TQA5W">
-    <img src="https://railway.app/button.svg" alt="Deploy on Railway" />
+  <a href="https://railway.com/deploy/dCZjHz?referralCode=9TQA5W">
+    <img src="https://railway.com/button.svg" alt="Deploy on Railway" />
   </a>
 </p>
 
