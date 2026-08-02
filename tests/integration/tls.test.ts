@@ -86,6 +86,7 @@ describe('TLS', () => {
       port: 0,
       host: '127.0.0.1',
       tls: { cert: CERT_PATH, key: KEY_PATH },
+      httpRedirectPort: 0, // don't bind port 80 (needs root on Linux)
       jwtSecret: 'hsts-jwt-secret-min-32-chars!!!!',
       serviceRoleKey: 'hsts-service-key-min-32-chars!!!!!',
       anonKey: 'hsts-anon-key-min-32-chars!!!!!!!!',

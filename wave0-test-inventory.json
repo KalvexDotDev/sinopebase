@@ -161,13 +161,6 @@
       "line": 57,
       "detail": "test skip is selected from ambient state",
       "disposition": "acknowledged"
-    },
-    {
-      "kind": "fixed-server-port",
-      "file": "tests/integration/tls.test.ts",
-      "line": 85,
-      "detail": "literal port 9878",
-      "disposition": "acknowledged"
     }
   ]
 }
