@@ -338,11 +338,11 @@ tests/integration/pb-api-record.test.ts(289,7): error TS2740: Type 'TestResponse
 tests/integration/pb-api-record.test.ts(298,7): error TS2352: Conversion of type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>' to type 'TestResponse' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Index signature for type 'string' is missing in type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
 tests/integration/pb-api-record.test.ts(298,7): error TS2740: Type 'TestResponse' is missing the following properties from type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>': config, server, dependencies, '~Prefix', and 85 more.
-tests/integration/postgrest.test.ts(202,16): error TS2571: Object is of type 'unknown'.
-tests/integration/postgrest.test.ts(202,31): error TS2571: Object is of type 'unknown'.
-tests/integration/postgrest.test.ts(217,9): error TS18048: 'page1.length' is possibly 'undefined'.
-tests/integration/postgrest.test.ts(217,30): error TS18048: 'page2.length' is possibly 'undefined'.
-tests/integration/postgrest.test.ts(307,5): error TS2322: Type 'unknown' is not assignable to type 'string'.
+tests/integration/postgrest.test.ts(205,16): error TS2571: Object is of type 'unknown'.
+tests/integration/postgrest.test.ts(205,31): error TS2571: Object is of type 'unknown'.
+tests/integration/postgrest.test.ts(220,9): error TS18048: 'page1.length' is possibly 'undefined'.
+tests/integration/postgrest.test.ts(220,30): error TS18048: 'page2.length' is possibly 'undefined'.
+tests/integration/postgrest.test.ts(310,5): error TS2322: Type 'unknown' is not assignable to type 'string'.
 tests/integration/realtime-pg-notify.test.ts(64,5): error TS2322: Type 'RealtimeHub<{}>' is not assignable to type 'RealtimeHub<unknown>'.
   The types of 'options.canRead' are incompatible between these types.
     Type '((context: {} | undefined, change: PostgresChange) => Promise<boolean>) | undefined' is not assignable to type '((context: unknown, change: PostgresChange) => Promise<boolean>) | undefined'.
