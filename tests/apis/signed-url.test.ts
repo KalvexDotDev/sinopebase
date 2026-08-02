@@ -156,8 +156,16 @@ describe('signUrl / verifySignedUrl — pure functions', () => {
 
   it('rejects a token with tampered signature', () => {
     const token = signUrl('b', 'f', 3600)
-    // Flip the last character of the signature portion
-    const tampered = token.slice(0, -1) + (token[token.length - 1] === 'a' ? 'b' : 'a')
+    // Tamper a character in the signature portion (after the last dot).
+    // Last-character tampering can produce collisions in base64url's
+    // trailing partial byte — flip a middle signature character instead.
+    const dotIndex = token.lastIndexOf('.')
+    const sigStart = dotIndex + 1
+    const flipIndex = sigStart + Math.floor((token.length - sigStart) / 2)
+    const tampered =
+      token.slice(0, flipIndex) +
+      (token[flipIndex] === 'a' ? 'b' : 'a') +
+      token.slice(flipIndex + 1)
     expect(() => verifySignedUrl(tampered)).toThrow(SignedUrlError)
     expect(() => verifySignedUrl(tampered)).toThrow('Invalid signature')
   })
@@ -436,7 +444,16 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
     store.files.set('evidence/report.pdf', Buffer.from('content'))
 
     const token = signUrl('evidence', 'report.pdf', 3600)
-    const tampered = token.slice(0, -1) + (token[token.length - 1] === 'a' ? 'b' : 'a')
+    // Tamper a character in the signature portion (after the last dot).
+    // Last-character tampering can produce collisions in base64url's
+    // trailing partial byte — flip a middle signature character instead.
+    const dotIndex = token.lastIndexOf('.')
+    const sigStart = dotIndex + 1
+    const flipIndex = sigStart + Math.floor((token.length - sigStart) / 2)
+    const tampered =
+      token.slice(0, flipIndex) +
+      (token[flipIndex] === 'a' ? 'b' : 'a') +
+      token.slice(flipIndex + 1)
     const response = await app.handle(
       new Request(`http://localhost/storage/v1/object/signed/${tampered}`),
     )
