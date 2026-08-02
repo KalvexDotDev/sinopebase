@@ -142,23 +142,9 @@
       "disposition": "acknowledged"
     },
     {
-      "kind": "fixed-server-port",
-      "file": "tests/e2e/admin-ui.e2e.test.ts",
-      "line": 4,
-      "detail": "hardcoded port 8090 in test URL fallback",
-      "disposition": "acknowledged"
-    },
-    {
-      "kind": "fixed-server-port",
-      "file": "tests/e2e/admin-ui.e2e.test.ts",
-      "line": 16,
-      "detail": "hardcoded port 8090 in test URL fallback",
-      "disposition": "acknowledged"
-    },
-    {
       "kind": "infrastructure-skip",
       "file": "tests/e2e/admin-ui.e2e.test.ts",
-      "line": 55,
+      "line": 27,
       "detail": "test skip is selected from ambient state",
       "disposition": "acknowledged"
     },

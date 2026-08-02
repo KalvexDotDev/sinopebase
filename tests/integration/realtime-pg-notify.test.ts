@@ -146,13 +146,6 @@ describe('PgRealtimeListener', () => {
   })
 
   test('attaches triggers to user tables', async () => {
-    // The migration creating sinopebase_notify_change() is applied at
-    // startup. If it hasn't run (fresh CI DB), skip this test.
-    const fnCheck = await pool.query(`
-      SELECT 1 FROM pg_proc WHERE proname = 'sinopebase_notify_change'
-    `)
-    if (fnCheck.rows.length === 0) return
-
     // Create a temp table and attach
     const tmpTable = 'notify_attach_test'
     await pool.query(`DROP TABLE IF EXISTS "${tmpTable}" CASCADE`)
