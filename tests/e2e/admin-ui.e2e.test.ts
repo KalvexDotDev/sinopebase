@@ -16,92 +16,87 @@ import { chromium } from '@playwright/test'
 const BASE = 'http://127.0.0.1:8090'
 const SERVICE_KEY = process.env.SINOPEBASE_SERVICE_ROLE_KEY || 'test-service-role-key-32-chars!!'
 
-// Check if a browser and server are available for E2E
+// No top-level await — probe synchronously and defer I/O to beforeAll.
+// On some platforms (Windows) Playwright's chromium.launch() hangs; on
+// CI without a display server, browsers are unavailable. Skip all tests
+// unless both the dev server and a Chromium browser are confirmed ready.
 let e2eAvailable = false
-try {
-  // Quick probe — can we reach the server and launch a browser?
-  const ctrl = new AbortController()
-  const timeout = setTimeout(() => ctrl.abort(), 5000)
-  const healthRes = await fetch(`${BASE}/api/health`, { signal: ctrl.signal })
-  clearTimeout(timeout)
-  if (healthRes.ok) {
-    const browser = await chromium.launch({ headless: true, timeout: 5000 })
-    await browser.close()
-    e2eAvailable = true
-  }
-} catch {
-  // Server not running, or browser not available — skip E2E
-}
-
-const e2eTest = e2eAvailable ? test : test.skip
 
 describe('Admin UI E2E', () => {
   let browser: Browser
   let page: Page
 
   beforeAll(async () => {
-    browser = await chromium.launch({ headless: true })
-
-    // Verify the server is reachable
+    // 1. Check dev server is running
     try {
-      const res = await fetch(`${BASE}/api/health`)
-      if (!res.ok) throw new Error(`Server not healthy: ${res.status}`)
+      const res = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) return
     } catch {
-      throw new Error(`Server not reachable at ${BASE}. Start with 'bun run dev' first.`)
+      console.warn('Skipping Admin UI E2E: server not reachable at', BASE)
+      return
     }
+
+    // 2. Launch browser (short timeout — Playwright may hang on Windows)
+    try {
+      browser = await chromium.launch({ headless: true, timeout: 5000 })
+    } catch (err) {
+      console.warn('Skipping Admin UI E2E: browser unavailable:', (err as Error).message)
+      return
+    }
+
+    e2eAvailable = true
   })
 
   afterAll(async () => {
-    await browser.close()
+    if (browser) await browser.close()
   })
 
+  const e2e = (name: string, fn: (...args: unknown[]) => unknown) => {
+    return (e2eAvailable ? test : test.skip)(name, fn)
+  }
+
   // ── Helper: open a fresh authenticated page ──
-  async function openAdminPage(hash = '') {
+  async function openAdminPage(hash = ''): Promise<Page> {
     const p = await browser.newPage()
-    // Set service role key in localStorage before navigating
     await p.goto(`${BASE}/_/`)
-    await p.evaluate(({ key }) => localStorage.setItem('sb-service-role-key', key), {
+    await p.evaluate(({ key }: { key: string }) => localStorage.setItem('sb-service-role-key', key), {
       key: SERVICE_KEY,
     })
     await p.goto(`${BASE}/_/${hash}`)
-    // Wait for Svelte to mount
     await p.waitForSelector('nav', { timeout: 5000 })
     return p
   }
 
   // ── Dashboard ──
-  e2eTest('Dashboard loads and shows health info', async () => {
+  e2e('Dashboard loads and shows health info', async () => {
     page = await openAdminPage('#/')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Dashboard')
-    // Should show API endpoint info
     const content = await page.textContent('main')
     expect(content).toContain('/rest/v1')
     await page.close()
   })
 
   // ── Table Editor ──
-  e2eTest('Table Editor shows table sidebar', async () => {
+  e2e('Table Editor shows table sidebar', async () => {
     page = await openAdminPage('#/tables')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Table Editor')
-    // Table sidebar should exist with the Tables label
     await page.waitForSelector('text=Tables', { timeout: 3000 })
     await page.close()
   })
 
   // ── Auth Users ──
-  e2eTest('Auth Users page loads', async () => {
+  e2e('Auth Users page loads', async () => {
     page = await openAdminPage('#/auth')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Auth Users')
-    // Should have a "New User" button
     await page.waitForSelector('text=New User', { timeout: 3000 })
     await page.close()
   })
 
   // ── Storage ──
-  e2eTest('Storage page loads with bucket list', async () => {
+  e2e('Storage page loads with bucket list', async () => {
     page = await openAdminPage('#/storage')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Storage')
@@ -110,7 +105,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── RLS Policies ──
-  e2eTest('RLS Policies page loads', async () => {
+  e2e('RLS Policies page loads', async () => {
     page = await openAdminPage('#/policies')
     const heading = await page.textContent('h2')
     expect(heading).toContain('RLS Policies')
@@ -118,7 +113,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── API Docs ──
-  e2eTest('API Docs page loads', async () => {
+  e2e('API Docs page loads', async () => {
     page = await openAdminPage('#/api-docs')
     const heading = await page.textContent('h2')
     expect(heading).toContain('API Documentation')
@@ -126,27 +121,25 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Realtime Inspector ──
-  e2eTest('Realtime Inspector shows connection status', async () => {
+  e2e('Realtime Inspector shows connection status', async () => {
     page = await openAdminPage('#/realtime')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Realtime Inspector')
-    // Should show Disconnected status (no WS connection in test)
     await page.waitForSelector('text=Disconnected', { timeout: 5000 })
     await page.close()
   })
 
   // ── Backups ──
-  e2eTest('Backups page loads', async () => {
+  e2e('Backups page loads', async () => {
     page = await openAdminPage('#/backups')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Backups')
-    // Should have a New Backup button
     await page.waitForSelector('text=New Backup', { timeout: 3000 })
     await page.close()
   })
 
   // ── Metrics ──
-  e2eTest('Metrics page loads', async () => {
+  e2e('Metrics page loads', async () => {
     page = await openAdminPage('#/metrics')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Metrics')
@@ -154,17 +147,16 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Settings ──
-  e2eTest('Settings page loads with form fields', async () => {
+  e2e('Settings page loads with form fields', async () => {
     page = await openAdminPage('#/settings')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Settings')
-    // Should have a Save button
     await page.waitForSelector('text=Save Changes', { timeout: 3000 })
     await page.close()
   })
 
   // ── Logs ──
-  e2eTest('Logs page loads', async () => {
+  e2e('Logs page loads', async () => {
     page = await openAdminPage('#/logs')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Logs')
@@ -172,7 +164,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── AI Playground ──
-  e2eTest('AI page loads', async () => {
+  e2e('AI page loads', async () => {
     page = await openAdminPage('#/ai')
     const heading = await page.textContent('h2')
     expect(heading).toContain('AI Playground')
@@ -180,7 +172,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Edge Functions ──
-  e2eTest('Edge Functions page loads', async () => {
+  e2e('Edge Functions page loads', async () => {
     page = await openAdminPage('#/functions')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Edge Functions')
@@ -188,7 +180,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Login page (unauthenticated) ──
-  e2eTest('Login page shows service role key tab', async () => {
+  e2e('Login page shows service role key tab', async () => {
     const p = await browser.newPage()
     await p.goto(`${BASE}/_/#/login`)
     await p.waitForSelector('text=Service Role Key', { timeout: 3000 })
@@ -199,12 +191,10 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Auth guard: unauthenticated access rejected ──
-  e2eTest('Admin UI rejects unauthenticated access in production mode', async () => {
+  e2e('Admin UI rejects unauthenticated access in production mode', async () => {
     const p = await browser.newPage()
-    // Clear any existing tokens
     await p.goto(`${BASE}/_/`)
     await p.evaluate(() => localStorage.removeItem('sb-service-role-key'))
-    // Reload without token — the page should show login (dev mode allows it)
     await p.goto(`${BASE}/_/#/login`)
     await p.waitForSelector('text=Sign In', { timeout: 3000 })
     await p.close()

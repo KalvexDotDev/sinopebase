@@ -158,7 +158,7 @@
     {
       "kind": "infrastructure-skip",
       "file": "tests/e2e/admin-ui.e2e.test.ts",
-      "line": 33,
+      "line": 55,
       "detail": "test skip is selected from ambient state",
       "disposition": "acknowledged"
     },

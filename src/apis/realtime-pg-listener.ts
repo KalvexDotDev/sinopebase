@@ -223,7 +223,7 @@ export async function attachRealtimeTriggers(
       FROM information_schema.tables
       WHERE table_schema = 'public'
         AND table_type = 'BASE TABLE'
-        AND table_name NOT LIKE '_%'
+        AND left(table_name, 1) <> '_'
         AND table_name NOT IN ('schema_migrations', 'migrations')
     `)
 
