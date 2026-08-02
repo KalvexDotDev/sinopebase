@@ -11,12 +11,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '../../src/core/app'
 import { createClient, type SinopebaseClient } from '../../src/sdk/client'
-import {
-  requireAnonKey,
-  requirePostgres,
-  requireServiceRoleKey,
-  reserveLoopbackPort,
-} from '../harness'
+import { requirePostgres, reserveLoopbackPort } from '../harness'
 import { uniqueId } from './setup'
 
 // ---------------------------------------------------------------------------
@@ -32,9 +27,8 @@ let serviceRoleKey: string
 
 beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
-  anonKey = requireAnonKey()
-  serviceRoleKey = requireServiceRoleKey()
-  // Start the Sinopebase server for integration testing with validated credentials
+  anonKey = 'pgrest-anon-key-min-32-chars!!!!!'
+  serviceRoleKey = 'pgrest-srvc-key-min-32-chars!!!!!'
   server = new Sinopebase({
     postgresUrl: requirePostgres(),
     port: portReservation.port,

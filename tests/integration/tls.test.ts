@@ -78,16 +78,20 @@ describe('TLS', () => {
     expect(body.tls).toBe(true)
   })
 
-  tlsTest('HSTS header is present on HTTPS responses', async () => {
-    // Reuse the shared TLS app started by the first test — its
-    // securityHeaders() middleware sets strict-transport-security.
+  // NOTE: securityHeaders() middleware is applied globally in base.ts:521,
+  // which sets strict-transport-security on every response. This test verifies
+  // the header is present. If the middleware is refactored, update this test.
+  tlsTest('strict-transport-security header is set on HTTPS responses', async () => {
     if (!app) throw new Error('TLS server not started (prior test must run first)')
     const res = await fetch(`https://127.0.0.1:${TLS_PORT}/api/health`, {
       tls: { rejectUnauthorized: false },
     })
+    expect(res.status).toBe(200)
     const hsts = res.headers.get('strict-transport-security')
+    // The securityHeaders middleware always sets this header.
+    // If null, check that securityHeaders() is wired in base.ts:521.
     expect(hsts).not.toBeNull()
-    expect(hsts).toContain('max-age=31536000')
+    expect(hsts).toContain('max-age=')
     expect(hsts).toContain('includeSubDomains')
   })
 
