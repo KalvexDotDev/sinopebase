@@ -1985,12 +1985,11 @@ export class Sinopebase {
             ),
           ])
         } catch (err) {
-          const msg = `S3 file store connectivity check failed: ${err instanceof Error ? err.message : String(err)}`
-          if (this.mode === 'production') {
-            errors.push(msg)
-          } else {
-            logger.warn(msg)
-          }
+          // S3 connectivity is transient — warn, don't block startup.
+          // The first real request will surface the issue to the caller.
+          logger.warn(
+            `S3 connectivity check failed (not fatal): ${err instanceof Error ? err.message : String(err)}`,
+          )
         }
       }
       // LocalFileStore is always ready — no remote connectivity needed
