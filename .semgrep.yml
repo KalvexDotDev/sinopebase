@@ -79,48 +79,15 @@ rules:
     languages: [ts]
     paths:
       include:
-        - src/**/*.ts
+        - /src/**/*.ts
       exclude:
-        - src/**/*.test.ts
+        - /src/**/*.test.ts
 
   # Rule 6: JIT-degrading handler pattern — (ctx) instead of destructured params
-  - id: elysia-no-handler-destructure
-    patterns:
-      - pattern-either:
-          - pattern: |
-              .get($PATH, (ctx) => { ... }, ...)
-          - pattern: |
-              .get($PATH, async (ctx) => { ... }, ...)
-          - pattern: |
-              .post($PATH, (ctx) => { ... }, ...)
-          - pattern: |
-              .post($PATH, async (ctx) => { ... }, ...)
-          - pattern: |
-              .put($PATH, (ctx) => { ... }, ...)
-          - pattern: |
-              .put($PATH, async (ctx) => { ... }, ...)
-          - pattern: |
-              .patch($PATH, (ctx) => { ... }, ...)
-          - pattern: |
-              .patch($PATH, async (ctx) => { ... }, ...)
-          - pattern: |
-              .delete($PATH, (ctx) => { ... }, ...)
-          - pattern: |
-              .delete($PATH, async (ctx) => { ... }, ...)
-          - pattern: |
-              .head($PATH, (ctx) => { ... }, ...)
-          - pattern: |
-              .head($PATH, async (ctx) => { ... }, ...)
-    message: |
-      Elysia Rule 6 — Handler uses (ctx) instead of destructured params.
-      Destructure at handler level for JIT optimization:
-      `.get('/', ({ params, query, body, set }) => { ... })`
-      See: sinopebase-elysia-rules.md#6-type-inference--inline--destructure
-    severity: WARNING
-    languages: [ts]
-    paths:
-      include:
-        - src/**/*.ts
+  # NOTE: This rule is disabled because the arrow-function-with-ellipsis
+  # pattern `(ctx) => { ... }` causes a PatternParseError in semgrep v1.x.
+  # Re-enable when semgrep adds first-class support for arrow body ellipsis.
+  # - id: elysia-no-handler-destructure
 
   # Rule 12: allowUnsafeValidationDetails must never be true
   - id: elysia-unsafe-validation-details
@@ -135,7 +102,7 @@ rules:
     languages: [ts]
     paths:
       include:
-        - src/**/*.ts
+        - /src/**/*.ts
 
   # Rule 19: CORS alignment — detect allowOrigins: ['*'] (becomes ERROR if extraOrigins is also set)
   - id: elysia-wildcard-cors
@@ -151,7 +118,7 @@ rules:
     languages: [ts]
     paths:
       include:
-        - src/**/*.ts
+        - /src/**/*.ts
 
   # Security: process.env write-back after caching (secrets leak to child processes)
   - id: security-env-writeback-secrets
@@ -171,7 +138,7 @@ rules:
     languages: [ts]
     paths:
       include:
-        - src/**/*.ts
+        - /src/**/*.ts
 
   # Security: JWT dev fallback duplicated (risk of inconsistent values)
   - id: security-jwt-fallback-duplicated
@@ -187,7 +154,7 @@ rules:
     languages: [ts]
     paths:
       include:
-        - src/**/*.ts
+        - /src/**/*.ts
 
   # Security: Health endpoint leaking infrastructure details in production
   - id: security-health-endpoint-leak
@@ -206,15 +173,15 @@ rules:
     languages: [ts]
     paths:
       include:
-        - src/**/*.ts
+        - /src/**/*.ts
 
 paths:
   include:
-    - src/**/*.ts
-    - tests/**/*.ts
+    - /src/**/*.ts
+    - /tests/**/*.ts
   exclude:
-    - node_modules/
-    - dist/
-    - ui/
-    - .claude/
+    - /node_modules/
+    - /dist/
+    - /ui/
+    - /.claude/
     - "*.d.ts"
