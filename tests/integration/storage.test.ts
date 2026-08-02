@@ -33,6 +33,9 @@ beforeAll(async () => {
     minioAccessKey: accessKey,
     minioSecretKey: secretKey,
     port: portReservation.port,
+    jwtSecret: 'storagetest-jwt-secret-min-32-chars!!',
+    serviceRoleKey: 'storagetest-service-key-min-32-chars!!!',
+    anonKey: 'storagetest-anon-key-min-32-chars!!!!',
   })
   await portReservation.release()
   await server.start()

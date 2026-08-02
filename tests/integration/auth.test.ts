@@ -17,13 +17,12 @@ let server: Sinopebase
 beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
   // Start the Sinopebase server for integration testing with validated credentials
-  const anonKey = requireAnonKey()
   server = new Sinopebase({
     postgresUrl: requirePostgres(),
     port: portReservation.port,
     jwtSecret: 'authtest-jwt-secret-min-32-chars!!',
     serviceRoleKey: 'authtest-service-key-min-32-chars!!!',
-    anonKey: anonKey,
+    anonKey: 'authtest-anon-key-min-32-chars!!!!',
   })
   await portReservation.release()
   await server.start()
