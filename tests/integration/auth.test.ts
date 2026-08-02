@@ -20,6 +20,9 @@ beforeAll(async () => {
   server = new Sinopebase({
     postgresUrl: requirePostgres(),
     port: portReservation.port,
+    jwtSecret: 'authtest-jwt-secret-min-32-chars!!',
+    serviceRoleKey: 'authtest-service-key-min-32-chars!!!',
+    anonKey: requireAnonKey(),
   })
   await portReservation.release()
   await server.start()

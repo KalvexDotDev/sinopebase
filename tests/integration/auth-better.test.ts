@@ -28,6 +28,9 @@ describe('Auth API (better-auth)', () => {
     app = new Sinopebase({
       port: portReservation.port,
       postgresUrl: requirePostgres(),
+      jwtSecret: 'authbt-jwt-secret-min-32-chars!!!',
+      serviceRoleKey: 'authbt-service-key-min-32-chars!!!!',
+      anonKey: 'authbt-anon-key-min-32-chars!!!!!!',
     })
     await portReservation.release()
     await app.start()

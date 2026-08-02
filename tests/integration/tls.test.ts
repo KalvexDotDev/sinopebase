@@ -81,6 +81,7 @@ describe('TLS', () => {
   tlsTest('HSTS header is present on HTTPS responses', async () => {
     // Reuse the shared TLS app started by the first test — its
     // securityHeaders() middleware sets strict-transport-security.
+    if (!app) throw new Error('TLS server not started (prior test must run first)')
     const res = await fetch(`https://127.0.0.1:${TLS_PORT}/api/health`, {
       tls: { rejectUnauthorized: false },
     })
