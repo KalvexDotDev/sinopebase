@@ -79,31 +79,15 @@ describe('TLS', () => {
   })
 
   tlsTest('HSTS header is present on HTTPS responses', async () => {
-    // Start a self-contained server so this test doesn't depend on the
-    // prior test's server still being up (CI ordering edge case).
-    // Port 0 lets the OS assign a free port — avoids CI port conflicts.
-    const hstsPort = 19876
-    const hstsApp = new Sinopebase({
-      port: hstsPort,
-      host: '127.0.0.1',
-      tls: { cert: CERT_PATH, key: KEY_PATH },
-      httpRedirectPort: 0, // don't bind port 80 (needs root on Linux)
-      jwtSecret: 'hsts-jwt-secret-min-32-chars!!!!',
-      serviceRoleKey: 'hsts-service-key-min-32-chars!!!!!',
-      anonKey: 'hsts-anon-key-min-32-chars!!!!!!!!',
+    // Reuse the shared TLS app started by the first test — its
+    // securityHeaders() middleware sets strict-transport-security.
+    const res = await fetch(`https://127.0.0.1:${TLS_PORT}/api/health`, {
+      tls: { rejectUnauthorized: false },
     })
-    await hstsApp.start()
-    try {
-      const res = await fetch(`https://127.0.0.1:${hstsPort}/api/health`, {
-        tls: { rejectUnauthorized: false },
-      })
-      const hsts = res.headers.get('strict-transport-security')
-      expect(hsts).not.toBeNull()
-      expect(hsts).toContain('max-age=31536000')
-      expect(hsts).toContain('includeSubDomains')
-    } finally {
-      await hstsApp.stop()
-    }
+    const hsts = res.headers.get('strict-transport-security')
+    expect(hsts).not.toBeNull()
+    expect(hsts).toContain('max-age=31536000')
+    expect(hsts).toContain('includeSubDomains')
   })
 
   tlsTest('HTTP→HTTPS redirect works', async () => {
