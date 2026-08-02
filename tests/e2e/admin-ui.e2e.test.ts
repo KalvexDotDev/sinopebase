@@ -16,6 +16,22 @@ import { chromium } from '@playwright/test'
 const BASE = 'http://127.0.0.1:8090'
 const SERVICE_KEY = process.env.SINOPEBASE_SERVICE_ROLE_KEY || 'test-service-role-key-32-chars!!'
 
+// Check if a browser and server are available for E2E
+let e2eAvailable = false
+try {
+  // Quick probe — can we reach the server and launch a browser?
+  const healthRes = await fetch(`${BASE}/api/health`)
+  if (healthRes.ok) {
+    const browser = await chromium.launch({ headless: true })
+    await browser.close()
+    e2eAvailable = true
+  }
+} catch {
+  // Server not running, or browser not available — skip E2E
+}
+
+const e2eTest = e2eAvailable ? test : test.skip
+
 describe('Admin UI E2E', () => {
   let browser: Browser
   let page: Page
@@ -51,7 +67,7 @@ describe('Admin UI E2E', () => {
   }
 
   // ── Dashboard ──
-  test('Dashboard loads and shows health info', async () => {
+  e2eTest('Dashboard loads and shows health info', async () => {
     page = await openAdminPage('#/')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Dashboard')
@@ -62,7 +78,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Table Editor ──
-  test('Table Editor shows table sidebar', async () => {
+  e2eTest('Table Editor shows table sidebar', async () => {
     page = await openAdminPage('#/tables')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Table Editor')
@@ -72,7 +88,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Auth Users ──
-  test('Auth Users page loads', async () => {
+  e2eTest('Auth Users page loads', async () => {
     page = await openAdminPage('#/auth')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Auth Users')
@@ -82,7 +98,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Storage ──
-  test('Storage page loads with bucket list', async () => {
+  e2eTest('Storage page loads with bucket list', async () => {
     page = await openAdminPage('#/storage')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Storage')
@@ -91,7 +107,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── RLS Policies ──
-  test('RLS Policies page loads', async () => {
+  e2eTest('RLS Policies page loads', async () => {
     page = await openAdminPage('#/policies')
     const heading = await page.textContent('h2')
     expect(heading).toContain('RLS Policies')
@@ -99,7 +115,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── API Docs ──
-  test('API Docs page loads', async () => {
+  e2eTest('API Docs page loads', async () => {
     page = await openAdminPage('#/api-docs')
     const heading = await page.textContent('h2')
     expect(heading).toContain('API Documentation')
@@ -107,7 +123,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Realtime Inspector ──
-  test('Realtime Inspector shows connection status', async () => {
+  e2eTest('Realtime Inspector shows connection status', async () => {
     page = await openAdminPage('#/realtime')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Realtime Inspector')
@@ -117,7 +133,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Backups ──
-  test('Backups page loads', async () => {
+  e2eTest('Backups page loads', async () => {
     page = await openAdminPage('#/backups')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Backups')
@@ -127,7 +143,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Metrics ──
-  test('Metrics page loads', async () => {
+  e2eTest('Metrics page loads', async () => {
     page = await openAdminPage('#/metrics')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Metrics')
@@ -135,7 +151,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Settings ──
-  test('Settings page loads with form fields', async () => {
+  e2eTest('Settings page loads with form fields', async () => {
     page = await openAdminPage('#/settings')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Settings')
@@ -145,7 +161,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Logs ──
-  test('Logs page loads', async () => {
+  e2eTest('Logs page loads', async () => {
     page = await openAdminPage('#/logs')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Logs')
@@ -153,7 +169,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── AI Playground ──
-  test('AI page loads', async () => {
+  e2eTest('AI page loads', async () => {
     page = await openAdminPage('#/ai')
     const heading = await page.textContent('h2')
     expect(heading).toContain('AI Playground')
@@ -161,7 +177,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Edge Functions ──
-  test('Edge Functions page loads', async () => {
+  e2eTest('Edge Functions page loads', async () => {
     page = await openAdminPage('#/functions')
     const heading = await page.textContent('h2')
     expect(heading).toContain('Edge Functions')
@@ -169,7 +185,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Login page (unauthenticated) ──
-  test('Login page shows service role key tab', async () => {
+  e2eTest('Login page shows service role key tab', async () => {
     const p = await browser.newPage()
     await p.goto(`${BASE}/_/#/login`)
     await p.waitForSelector('text=Service Role Key', { timeout: 3000 })
@@ -180,7 +196,7 @@ describe('Admin UI E2E', () => {
   })
 
   // ── Auth guard: unauthenticated access rejected ──
-  test('Admin UI rejects unauthenticated access in production mode', async () => {
+  e2eTest('Admin UI rejects unauthenticated access in production mode', async () => {
     const p = await browser.newPage()
     // Clear any existing tokens
     await p.goto(`${BASE}/_/`)

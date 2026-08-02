@@ -79,13 +79,28 @@ describe('TLS', () => {
   })
 
   tlsTest('HSTS header is present on HTTPS responses', async () => {
-    const res = await fetch(`https://127.0.0.1:${TLS_PORT}/api/health`, {
-      tls: { rejectUnauthorized: false },
+    // Start a self-contained server so this test doesn't depend on the
+    // prior test's server still being up (CI ordering edge case).
+    const hstsApp = new Sinopebase({
+      port: 9878,
+      host: '127.0.0.1',
+      tls: { cert: CERT_PATH, key: KEY_PATH },
+      jwtSecret: 'test-jwt-secret-32-chars-minimum!!',
+      serviceRoleKey: 'test-service-role-key-32-chars!!',
+      anonKey: 'test-anon-key-32-chars-minimum!!',
     })
-    const hsts = res.headers.get('strict-transport-security')
-    expect(hsts).not.toBeNull()
-    expect(hsts).toContain('max-age=31536000')
-    expect(hsts).toContain('includeSubDomains')
+    await hstsApp.start()
+    try {
+      const res = await fetch('https://127.0.0.1:9878/api/health', {
+        tls: { rejectUnauthorized: false },
+      })
+      const hsts = res.headers.get('strict-transport-security')
+      expect(hsts).not.toBeNull()
+      expect(hsts).toContain('max-age=31536000')
+      expect(hsts).toContain('includeSubDomains')
+    } finally {
+      await hstsApp.stop()
+    }
   })
 
   tlsTest('HTTP→HTTPS redirect works', async () => {

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "testRunIdEnvironment": "TEST_RUN_ID",
+  "suites": [
+    {
+      "id": "unit",
+      "kind": "unit",
+      "releaseRequired": false,
+      "include": ["src/**/*.test.ts"],
+      "exclude": [],
+      "infrastructure": [],
+      "onMissingInfrastructure": "skip",
+      "fallbackPolicy": "allow",
+      "isolation": {
+        "process": "shared",
+        "port": "none",
+        "namespace": "none",
+        "filesystem": "none"
+      }
+    },
+    {
+      "id": "component",
+      "kind": "component",
+      "releaseRequired": false,
+      "include": ["tests/**/*.test.ts", "cmd/**/*.test.ts", "mails/**/*.test.ts", "migrations/**/*.test.ts", "plugins/**/*.test.ts", "tmp/**/*.test.ts", "ui/**/*.test.ts"],
+      "exclude": [],
+      "infrastructure": [],
+      "onMissingInfrastructure": "skip",
+      "fallbackPolicy": "allow",
+      "isolation": {
+        "process": "per-file",
+        "port": "dynamic",
+        "namespace": "per-suite",
+        "filesystem": "temp-per-suite"
+      }
+    },
+    {
+      "id": "storage-contract",
+      "kind": "contract",
+      "releaseRequired": true,
+      "include": ["tests/**/storage.test.ts", "tests/**/file*.test.ts"],
+      "exclude": [],
+      "infrastructure": ["TEST_POSTGRES_URL"],
+      "onMissingInfrastructure": "fail",
+      "fallbackPolicy": "forbid",
+      "isolation": {
+        "process": "per-file",
+        "port": "dynamic",
+        "namespace": "per-suite",
+        "filesystem": "temp-per-suite"
+      }
+    },
+    {
+      "id": "postgres-rls-contract",
+      "kind": "contract",
+      "releaseRequired": true,
+      "include": ["src/core/db-postgres-rls.test.ts", "tests/**/rls*.test.ts", "tests/**/postgres*.test.ts"],
+      "exclude": [],
+      "infrastructure": ["TEST_POSTGRES_URL"],
+      "onMissingInfrastructure": "fail",
+      "fallbackPolicy": "forbid",
+      "isolation": {
+        "process": "per-file",
+        "port": "dynamic",
+        "namespace": "per-suite",
+        "filesystem": "temp-per-suite"
+      }
+    }
+  ]
+}
