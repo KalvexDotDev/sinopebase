@@ -82,8 +82,9 @@ describe('TLS', () => {
     // Start a self-contained server so this test doesn't depend on the
     // prior test's server still being up (CI ordering edge case).
     // Port 0 lets the OS assign a free port — avoids CI port conflicts.
+    const hstsPort = 19876
     const hstsApp = new Sinopebase({
-      port: 0,
+      port: hstsPort,
       host: '127.0.0.1',
       tls: { cert: CERT_PATH, key: KEY_PATH },
       httpRedirectPort: 0, // don't bind port 80 (needs root on Linux)
@@ -92,7 +93,6 @@ describe('TLS', () => {
       anonKey: 'hsts-anon-key-min-32-chars!!!!!!!!',
     })
     await hstsApp.start()
-    const hstsPort = hstsApp.getConfig().port ?? 0
     try {
       const res = await fetch(`https://127.0.0.1:${hstsPort}/api/health`, {
         tls: { rejectUnauthorized: false },
