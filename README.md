@@ -51,8 +51,8 @@ const { data: { user } } = await sb.auth.signInWithPassword({ email, password })
 
 You're building a product. You don't want to spend a week wiring up auth, database migrations, file uploads, and realtime channels for the 10th time. You want a backend that works, an API you already know, and the freedom to host it wherever you want.
 
-| | Sinopebase |
-|---|
+| Feature | Sinopebase |
+|---|---|
 | **Auth** | Email/password, OAuth (Google, GitHub, Discord, Apple, Microsoft), enterprise OIDC (Keycloak, Okta, Auth0, Entra ID) |
 | **Database** | PostgreSQL with Row-Level Security, migrations, real-time subscriptions |
 | **Storage** | S3-compatible (RustFS, R2, S3, any endpoint). Upload, download, signed URLs |
