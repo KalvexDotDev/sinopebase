@@ -252,7 +252,14 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
   }
   in(column: string, values: unknown[]): this {
     this.filters.push(
-      `${column}=in.(${values.map((v) => encodeURIComponent(String(v))).join(',')})`,
+      `${column}=in.(${values
+        .map((v) => {
+          const s = String(v)
+          // Values containing commas must be double-quoted so PostgREST
+          // treats them as a single value rather than splitting on the comma.
+          return s.includes(',') ? `%22${encodeURIComponent(s)}%22` : encodeURIComponent(s)
+        })
+        .join(',')})`,
     )
     return this
   }

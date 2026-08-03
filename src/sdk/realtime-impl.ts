@@ -7,9 +7,35 @@
 
 import type { RealtimeChannel, RealtimeClient } from './realtime'
 
+const HEARTBEAT_INTERVAL_MS = 30_000 // Phoenix standard: 30s
+
 export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeClient {
   const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${apiKey}`
   let socket: WebSocket | null = null
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+  function startHeartbeat(): void {
+    stopHeartbeat()
+    heartbeatTimer = setInterval(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            topic: 'phoenix',
+            event: 'heartbeat',
+            payload: {},
+            ref: Math.random().toString(36).slice(2),
+          }),
+        )
+      }
+    }, HEARTBEAT_INTERVAL_MS)
+  }
+
+  function stopHeartbeat(): void {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
+  }
 
   return {
     channel(topic: string): RealtimeChannel {
@@ -95,6 +121,7 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
 
               ws.onopen = () => {
                 clearTimeout(timeout)
+                startHeartbeat()
                 resolve()
               }
               ws.onerror = () => {
@@ -179,10 +206,12 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
     connect(): void {
       if (!socket || socket.readyState === WebSocket.CLOSED) {
         socket = new WebSocket(wsUrl)
+        startHeartbeat()
       }
     },
 
     disconnect(): void {
+      stopHeartbeat()
       socket?.close()
       socket = null
     },
