@@ -47,6 +47,9 @@ Sinopebase is a solo-founder project. Priorities are driven by production use �
 - Storage: `copy`/`move`/`exists`, `getBucket`/`updateBucket`/`deleteBucket`, `createSignedUrls`
 - Functions: `setAuth`
 
+**Deploy improvements:**
+- S3 migration bucket — push `.sql` files to your storage bucket, applied at startup. No need to fork the repo to change your schema.
+
 ## v0.9 — SDK: Completeness
 
 **Goal:** 80%+ coverage of prioritized SDK interfaces. A supabase-js user hits no missing methods in normal use. MFA, Passkey, Web3, and Admin APIs explicitly out of scope — they're Supabase Cloud features that don't map to better-auth.
