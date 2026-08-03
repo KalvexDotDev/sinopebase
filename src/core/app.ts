@@ -614,6 +614,7 @@ export class Sinopebase {
   private pendingServer: Elysia | null = null
   private _redirectServer: ReturnType<typeof Bun.serve> | null = null
   private _pgListener: import('../apis/realtime-pg-listener').PgRealtimeListener | null = null
+  private _realtimeHub: import('../apis/realtime').RealtimeHub<PostgresRequestContext> | null = null
   private _logPruneInterval: ReturnType<typeof setInterval> | null = null
   /** Unique process identifier for PG LISTEN/NOTIFY self-skip. */
   private processId: string = ''
@@ -825,7 +826,8 @@ export class Sinopebase {
       // Load file-based OAuth providers (from Admin UI), merge with code config.
       // File providers take precedence on same providerId.
       const { loadProviders: loadOAuthProviders } = await import('../apis/admin-oauth')
-      const fileProviders = await loadOAuthProviders(this.dataDir())
+      const secret = this.config.jwtSecret || process.env.JWT_SECRET || ''
+      const fileProviders = await loadOAuthProviders(this.dataDir(), secret)
       const codeProviders = this.config.oauthProviders ?? []
       const mergedProviders = [
         ...fileProviders,
@@ -955,6 +957,7 @@ export class Sinopebase {
         )
       },
     })
+    this._realtimeHub = realtime
 
     // ── PG LISTEN/NOTIFY listener for cross-process realtime fan-out (C1) ──
     this.processId = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
@@ -1420,9 +1423,14 @@ export class Sinopebase {
     // ── Admin OAuth Providers API — CRUD for OAuth/OIDC providers ──
     const { createAdminOAuthPlugin } = await import('../apis/admin-oauth')
     s5.use(
-      createAdminOAuthPlugin(this.dataDir(), isSuperuser, (providers) => {
-        logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
-      }),
+      createAdminOAuthPlugin(
+        this.dataDir(),
+        isSuperuser,
+        this.config.jwtSecret || process.env.JWT_SECRET || '',
+        (providers) => {
+          logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
+        },
+      ),
     )
 
     // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
@@ -1651,6 +1659,12 @@ export class Sinopebase {
         /* ignore */
       }
       this._pgListener = null
+    }
+
+    // Dispose the realtime hub (stops presence sweeper interval)
+    if (this._realtimeHub) {
+      this._realtimeHub.dispose()
+      this._realtimeHub = null
     }
 
     if (this._logPruneInterval) {
