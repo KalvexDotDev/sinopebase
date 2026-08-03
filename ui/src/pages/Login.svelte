@@ -28,14 +28,11 @@
   }
 
   // Check for OAuth providers on mount.
-  // OAuth login from the admin UI requires dev mode — in production the /_/ route
-  // is 401-guarded and there's no session-to-Bearer-token exchange path yet.
-  let devMode = $state(false)
+  // v0.7: OAuth works in production via session-exchange (B3). The callback
+  // redirects to /_/ with a better-auth session cookie, App.svelte calls
+  // /api/auth/exchange to get a Bearer token, and the user lands authenticated.
   $effect(() => {
-    fetch(window.location.origin + '/api/health').then(r => r.json()).then(d => {
-      devMode = d.mode === 'development'
-      if (devMode) checkOAuthProviders()
-    }).catch(() => {})
+    checkOAuthProviders()
   })
 
   async function handleSubmit(e: Event) {
@@ -83,8 +80,8 @@
   }
 
   function signInWithOAuth(provider: string) {
-    const callbackURL = window.location.origin + '/_/'
-    window.location.href = `${window.location.origin}/api/auth/sign-in/social?provider=${provider}&callbackURL=${encodeURIComponent(callbackURL)}`
+    // Use a relative callback URL — better-auth validates against trustedOrigins
+    window.location.href = `${window.location.origin}/api/auth/sign-in/social?provider=${provider}&callbackURL=${encodeURIComponent('/_/')}`
   }
 </script>
 
@@ -102,8 +99,8 @@
       </div>
     {/if}
 
-    <!-- OAuth provider buttons (dev mode only — awaiting session-exchange path for production) -->
-    {#if devMode && oauthProviders.length > 0}
+    <!-- OAuth provider buttons -->
+    {#if oauthProviders.length > 0}
       <div style="margin-bottom: 1.5rem;">
         {#each oauthProviders as provider (provider.id)}
           <button

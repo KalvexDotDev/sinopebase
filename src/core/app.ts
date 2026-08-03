@@ -1884,13 +1884,35 @@ export class Sinopebase {
       const isServiceRole = token ? Equal(token, this.cachedServiceRoleKey) : false
 
       if (!isServiceRole) {
-        if (this.mode === 'production') {
+        // H9-B3: Allow access if a valid better-auth session exists (OAuth users).
+        // The session is validated via a direct DB lookup — the SPA boot will then
+        // call /api/auth/exchange to obtain a Bearer token for API calls.
+        let hasSession = false
+        if (this.auth) {
+          // Check session cookie first (OAuth login sets this)
+          const cookieHeader = request.headers.get('cookie') ?? ''
+          const cookieMatch = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
+          const sessionToken = cookieMatch?.[1] ?? token
+          if (sessionToken) {
+            try {
+              const session = await lookupSessionByToken(
+                this.auth as unknown as Record<string, unknown>,
+                sessionToken,
+              )
+              hasSession = !!session
+            } catch {
+              hasSession = false
+            }
+          }
+        }
+
+        if (this.mode === 'production' && !hasSession) {
           set.status = 401
           set.headers['Content-Type'] = 'text/html'
           return `<!DOCTYPE html><html><body><h1>401 Unauthorized</h1><p>Service role key required to access the admin dashboard.</p></body></html>`
         }
         // Dev mode: allow with warning
-        if (token) {
+        if (token && !hasSession) {
           console.warn('[admin-ui] Non-service-role token used to access /_/ in dev mode')
         }
       }

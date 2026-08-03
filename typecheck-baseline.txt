@@ -23,15 +23,15 @@ src/apis/extensions.ts(92,21): error TS2339: Property 'Write' does not exist on 
 src/apis/extensions.ts(96,36): error TS2339: Property 'name' does not exist on type 'UIExtension'.
 src/apis/extensions.ts(97,20): error TS7053: Element implicitly has an 'any' type because expression of type '"path*"' can't be used to index type '{}'.
   Property 'path*' does not exist on type '{}'.
-src/apis/file.ts(415,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+src/apis/file.ts(82,26): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/apis/file.ts(92,23): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
   Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
-src/apis/file.ts(491,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
+src/apis/file.ts(104,23): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
   Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
-src/apis/file.ts(564,27): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.
-  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'URLSearchParams': size, append, delete, get, and 2 more.
-src/apis/postgrest.ts(580,3): error TS2322: Type 'ForeignKeyRelationship | undefined' is not assignable to type 'ForeignKeyRelationship'.
+src/apis/postgrest.ts(615,3): error TS2322: Type 'ForeignKeyRelationship | undefined' is not assignable to type 'ForeignKeyRelationship'.
   Type 'undefined' is not assignable to type 'ForeignKeyRelationship'.
-src/apis/postgrest.ts(690,15): error TS2322: Type 'undefined' is not assignable to type 'SingularResponse | null'.
+src/apis/postgrest.ts(725,15): error TS2322: Type 'undefined' is not assignable to type 'SingularResponse | null'.
 src/apis/realtime-postgres-changes.test.ts(29,5): error TS2322: Type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { realtime: { v1: { websocket: { ...; }; }; }; }, { ...; }, { ...; }>' is not assignable to type 'Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>'.
   Types of property 'onStart' are incompatible.
     Type '(handler: MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, { realtime: { v1: { websocket: { ...; }; }; }; }, { ...; }, { ...; }>>>) => Elysia<...>' is not assignable to type '(handler: MaybeArray<GracefulHandler<Elysia<"", { decorator: {}; store: {}; derive: {}; resolve: {}; }, { typebox: {}; error: {}; }, { schema: {}; standaloneSchema: {}; macro: {}; macroFn: {}; parser: {}; response: {}; }, {}, { derive: {}; resolve: {}; schema: {}; standaloneSchema: {}; response: {}; }, { ...; }>>>) ...'.
@@ -86,6 +86,7 @@ src/core/db-postgres-rls.test.ts(206,12): error TS18048: 'memberRows' is possibl
 src/core/db-postgres-rls.test.ts(207,12): error TS18048: 'anonRows' is possibly 'undefined'.
 src/core/db-postgres-rls.test.ts(208,12): error TS18048: 'serviceRows' is possibly 'undefined'.
 src/core/db-postgres.ts(9,1): error TS2578: Unused '@ts-expect-error' directive.
+src/core/db-postgres.ts(397,69): error TS2339: Property 'literal' does not exist on type 'Sql'.
 src/core/db_model.ts(114,14): error TS2420: Class 'BaseModel' incorrectly implements interface 'Model'.
   Property 'tableName' is missing in type 'BaseModel' but required in type 'Model'.
 src/core/db_table.ts(65,3): error TS2322: Type 'string | undefined' is not assignable to type 'string'.

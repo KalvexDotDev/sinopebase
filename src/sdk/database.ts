@@ -26,7 +26,7 @@ export type FilterOperator =
   | 'is'
   | 'in'
 // Note: cs, cd, sl, sr, nxl, nxr, adj, ov operators are deferred to v0.7.
-// Note: fts, plfts, phfts, wfts full-text search operators are deferred to v0.7.
+// Note: fts, plfts, phfts, wfts full-text search operators are deferred to v0.8+.
 
 export interface PostgrestClient<T extends Record<string, unknown>> {
   // Select
