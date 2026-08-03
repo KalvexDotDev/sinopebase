@@ -1,6 +1,6 @@
 # Roadmap
 
-Sinopebase is a solo-founder project. Priorities are driven by what sinope needs for ISO27001 compliance, plus what makes sinopebase useful to others who want a Supabase-compatible backend they own.
+Sinopebase is a solo-founder project. Priorities are driven by production use — features that ship are the ones we rely on ourselves, plus what makes sinopebase useful to anyone who wants a Supabase-compatible backend they own.
 
 ## Current — v0.6.2 (shipped 2026-08-01)
 
@@ -89,7 +89,7 @@ Compatibility and hardening got us to 1.0. Now we build things Supabase doesn't 
 
 ## Philosophy
 
-- **Sinope's needs come first.** Features sinope doesn't use may wait.
+- **We ship what we run in production.** Features get built when someone needs them — starting with our own deployment. If you need something sooner, PRs are welcome.
 - **If nobody uses it, we delete it.** Dead code is a liability.
 - **The SDK is a contract.** supabase-js users should need zero code changes to switch.
 - **1.0 is a security bar, not a feature count.** Production-readiness means proven recovery, signed artifacts, and hard fail-closed boundaries.
