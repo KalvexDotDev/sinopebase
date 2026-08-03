@@ -33,7 +33,7 @@ Sinopebase is a **Backend as a Service** — auth, database, storage, realtime, 
 
 ```ts
 // One import swap. That's it.
-import { createClient } from 'sinopebase'
+import { createClient } from '@sinopebase/sdk'
 // was: import { createClient } from '@supabase/supabase-js'
 
 const sb = createClient('http://localhost:8090', 'anon-key')
@@ -146,7 +146,7 @@ bun run compile                            # single binary at ./sinopebase
 Sinopebase implements the supabase-js API surface. Swap `@supabase/supabase-js` for `sinopebase`, change the URL — everything else stays the same.
 
 ```ts
-import { createClient } from 'sinopebase'
+import { createClient } from '@sinopebase/sdk'
 
 const sb = createClient('http://localhost:8090', 'your-anon-key')
 // or: createClient('https://your-service.railway.app', 'your-anon-key')
@@ -209,7 +209,7 @@ Complete admin dashboard at `/_/` — modern design, dark theme, single mint acc
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Your Frontend                         │
-│          import { createClient } from 'sinopebase'       │
+│          import { createClient } from '@sinopebase/sdk'       │
 └──────────────────────┬──────────────────────────────────┘
                        │ supabase-js compatible SDK
 ┌──────────────────────▼──────────────────────────────────┐

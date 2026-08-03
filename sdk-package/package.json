@@ -1,0 +1,30 @@
+{
+  "name": "@sinopebase/sdk",
+  "version": "0.6.2",
+  "description": "Sinopebase SDK — thin supabase-js compatible client for Sinopebase backends",
+  "type": "module",
+  "main": "./src/client.js",
+  "types": "./src/client.ts",
+  "exports": {
+    ".": {
+      "import": "./src/client.js",
+      "types": "./src/client.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "keywords": [
+    "sinopebase",
+    "supabase",
+    "baas",
+    "backend",
+    "sdk",
+    "client"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KalvexDotDev/sinopebase"
+  }
+}
