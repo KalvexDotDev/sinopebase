@@ -1,0 +1,67 @@
+# Compiled binary
+sinopebase.exe
+dist/
+
+# Screenshots and assets (large files)
+docs/assets/screenshots/
+docs/assets/logo.png
+
+# Test files
+tests/
+*.test.ts
+
+# Temp and debug
+tmp/
+wave0-*
+
+# CI / tooling
+.githooks/
+.github/
+.megalinter-reports/
+.semgrep.yml
+.semgrepignore
+.mega-linter.yml
+.jscpd.json
+.gitleaks.toml
+lefthook.yml
+typecheck-baseline.txt
+scripts/
+eslint.config.mjs
+biome.json
+
+# Docker / deploy
+Dockerfile
+docker-compose.yml
+docker-compose.prod.yml
+railway.toml
+
+# Environment
+.env.example
+.env.railway
+
+# UI source (built assets go in /ui/dist)
+ui/src/
+ui/index.html
+ui/svelte.config.js
+ui/vite.config.ts
+ui/bun.lock
+
+# Documentation (keep api/auth docs that users need)
+docs/assets/
+docs/releases/
+docs/compatibility/
+docs/development.md
+docs/getting-started.md
+docs/edge-functions.md
+docs/deployment.md
+
+# Mementos / project notes
+CLAUDE.md
+.memento-staging/
+.claude/
+
+# Lockfiles (npm users don't need bun.lock)
+bun.lock
+
+# Node modules should never be in the package
+node_modules/
