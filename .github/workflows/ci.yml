@@ -181,9 +181,17 @@ jobs:
           path: junit.xml
           reporter: java-junit
 
-  # ─── Stage 4: Container (needs Stage 2 + 3) ───────────────────────────
+  # ─── Stage 4: SDK package check + Container (needs Stage 2 + 3) ─────
+  sdk-check:
+    needs: [lint, typecheck, jscpd]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify SDK package is publishable
+        run: cd sdk-package && npm publish --dry-run
+
   docker:
-    needs: [semgrep, gitleaks, megalinter, test]
+    needs: [semgrep, gitleaks, megalinter, test, sdk-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

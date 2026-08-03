@@ -80,9 +80,29 @@ jobs:
             "https://api.github.com/user/packages/container/sinopebase/visibility" \
             -d '{"visibility":"public"}'
 
+  # ─── Publish SDK to npm ──────────────────────────────────────────
+  npm:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set SDK version from tag
+        run: |
+          TAG=${{ github.ref_name }}
+          VERSION=${TAG#v}
+          cd sdk-package
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Publish to npm
+        run: |
+          cd sdk-package
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_PUBLISH_KEY }}" > .npmrc
+          npm publish --access public
+
   # ─── Create release and attach binaries ────────────────────────────
   release:
-    needs: [build, docker]
+    needs: [build, docker, npm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
