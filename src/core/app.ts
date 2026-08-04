@@ -614,6 +614,7 @@ export class Sinopebase {
   private pendingServer: Elysia | null = null
   private _redirectServer: ReturnType<typeof Bun.serve> | null = null
   private _pgListener: import('../apis/realtime-pg-listener').PgRealtimeListener | null = null
+  private _realtimeHub: import('../apis/realtime').RealtimeHub<PostgresRequestContext> | null = null
   private _logPruneInterval: ReturnType<typeof setInterval> | null = null
   /** Unique process identifier for PG LISTEN/NOTIFY self-skip. */
   private processId: string = ''
@@ -825,7 +826,8 @@ export class Sinopebase {
       // Load file-based OAuth providers (from Admin UI), merge with code config.
       // File providers take precedence on same providerId.
       const { loadProviders: loadOAuthProviders } = await import('../apis/admin-oauth')
-      const fileProviders = await loadOAuthProviders(this.dataDir())
+      const secret = this.config.jwtSecret || process.env.JWT_SECRET || ''
+      const fileProviders = await loadOAuthProviders(this.dataDir(), secret)
       const codeProviders = this.config.oauthProviders ?? []
       const mergedProviders = [
         ...fileProviders,
@@ -955,6 +957,7 @@ export class Sinopebase {
         )
       },
     })
+    this._realtimeHub = realtime
 
     // ── PG LISTEN/NOTIFY listener for cross-process realtime fan-out (C1) ──
     this.processId = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)
@@ -1420,9 +1423,14 @@ export class Sinopebase {
     // ── Admin OAuth Providers API — CRUD for OAuth/OIDC providers ──
     const { createAdminOAuthPlugin } = await import('../apis/admin-oauth')
     s5.use(
-      createAdminOAuthPlugin(this.dataDir(), isSuperuser, (providers) => {
-        logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
-      }),
+      createAdminOAuthPlugin(
+        this.dataDir(),
+        isSuperuser,
+        this.config.jwtSecret || process.env.JWT_SECRET || '',
+        (providers) => {
+          logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
+        },
+      ),
     )
 
     // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
@@ -1653,6 +1661,12 @@ export class Sinopebase {
       this._pgListener = null
     }
 
+    // Dispose the realtime hub (stops presence sweeper interval)
+    if (this._realtimeHub) {
+      this._realtimeHub.dispose()
+      this._realtimeHub = null
+    }
+
     if (this._logPruneInterval) {
       clearInterval(this._logPruneInterval)
       this._logPruneInterval = null
@@ -1870,13 +1884,35 @@ export class Sinopebase {
       const isServiceRole = token ? Equal(token, this.cachedServiceRoleKey) : false
 
       if (!isServiceRole) {
-        if (this.mode === 'production') {
+        // H9-B3: Allow access if a valid better-auth session exists (OAuth users).
+        // The session is validated via a direct DB lookup — the SPA boot will then
+        // call /api/auth/exchange to obtain a Bearer token for API calls.
+        let hasSession = false
+        if (this.auth) {
+          // Check session cookie first (OAuth login sets this)
+          const cookieHeader = request.headers.get('cookie') ?? ''
+          const cookieMatch = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
+          const sessionToken = cookieMatch?.[1] ?? token
+          if (sessionToken) {
+            try {
+              const session = await lookupSessionByToken(
+                this.auth as unknown as Record<string, unknown>,
+                sessionToken,
+              )
+              hasSession = !!session
+            } catch {
+              hasSession = false
+            }
+          }
+        }
+
+        if (this.mode === 'production' && !hasSession) {
           set.status = 401
           set.headers['Content-Type'] = 'text/html'
           return `<!DOCTYPE html><html><body><h1>401 Unauthorized</h1><p>Service role key required to access the admin dashboard.</p></body></html>`
         }
         // Dev mode: allow with warning
-        if (token) {
+        if (token && !hasSession) {
           console.warn('[admin-ui] Non-service-role token used to access /_/ in dev mode')
         }
       }

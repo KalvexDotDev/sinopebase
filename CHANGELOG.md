@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.7.0 — 2026-08-03
+
+### Added
+- **OAuth clientSecret encryption at rest** — AES-256-GCM with HKDF key from `JWT_SECRET`, atomic writes, backward-compatible plaintext migration
+- **Issuer URL validation** — HTTPS-only, private/loopback IP blocking, `providerId` charset enforcement
+- **OAuth session exchange** — `POST /api/auth/exchange` converts better-auth session cookie to Bearer token, enabling production OAuth login for admin UI
+- **SDK `signInWithOAuth()`** — constructs provider URL with `redirectTo`, `scopes`, and `queryParams` support
+- **SDK heartbeat timer** — sends `phx_heartbeat` every 30s to prevent presence expiry
+- **Stateless signed URLs** — removed NonceStore replay detection, tokens are now reusable (Supabase-compatible)
+- **Storage content-type inference** — download responses use MIME types from file extension instead of `application/octet-stream`
+- **Storage Range support** — RFC 7233 `Range` header, `206 Partial Content` responses, `Accept-Ranges: bytes`
+- **PostgREST RPC endpoint** — `POST /rest/v1/rpc/:fn` for PostgreSQL function invocation
+
+### Changed
+- Admin UI OAuth login works in production (no longer dev-mode only)
+- Admin UI guard accepts valid better-auth sessions alongside service_role keys
+
+### Removed
+- 35 legacy PocketBase OAuth provider files (`src/tools/auth/*`) — zero external imports
+- Unused `apple_client_secret_create` form
+- NonceStore class and replay detection from signed URLs
+
+### Fixed
+- SDK `in()` comma-quoting — values containing commas are double-quoted
+- Presence hub disposal wired into `app.stopServer()` — prevents interval leak on restart
+- `_providersPath` module-level cache removed from admin-oauth
+
 ## v0.6.2 — 2026-08-01
 
 ### Added

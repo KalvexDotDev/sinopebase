@@ -63,7 +63,7 @@ export function createFunctionsClient(baseUrl: string, apiKey: string): Function
           return {
             data: null,
             error: {
-              message: json?.error || json?.message || `Function returned ${res.status}`,
+              message: (json?.error as string) || (json?.message as string) || `Function returned ${res.status}`,
               status: res.status,
             },
           }

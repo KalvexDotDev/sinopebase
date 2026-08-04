@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import { appendFile, readFile, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { extname, join } from 'node:path'
 import { Elysia } from 'elysia'
 import type { PostgresRequestContext } from '../core/db-postgres'
 import type { IFileStore } from '../tools/filesystem/store-interface'
@@ -20,6 +20,94 @@ interface ParsedUploadBody {
   data: ArrayBuffer
   contentType: string
   fields: Record<string, string>
+}
+
+// ---------------------------------------------------------------------------
+// Content-Type inference
+// ---------------------------------------------------------------------------
+
+/** Common file extension → MIME type mapping for content-type on download. */
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'application/javascript',
+  '.json': 'application/json',
+  '.xml': 'application/xml',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
+  '.tiff': 'image/tiff',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.avi': 'video/x-msvideo',
+  '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.zip': 'application/zip',
+  '.tar': 'application/x-tar',
+  '.gz': 'application/gzip',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.md': 'text/markdown',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+}
+
+function inferContentType(filename: string): string {
+  const ext = extname(filename).toLowerCase()
+  return MIME_TYPES[ext] ?? 'application/octet-stream'
+}
+
+// ---------------------------------------------------------------------------
+// Range support (RFC 7233)
+// ---------------------------------------------------------------------------
+
+interface ByteRange {
+  start: number
+  end: number
+}
+
+function parseByteRange(header: string, totalSize: number): ByteRange | null {
+  const match = /bytes=(\d+)-(\d*)/i.exec(header)
+  if (!match) return null
+  const start = parseInt(match[1], 10)
+  const endSpec = match[2]
+  if (start >= totalSize) return null
+  const end = endSpec ? Math.min(parseInt(endSpec, 10), totalSize - 1) : totalSize - 1
+  if (start > end) return null
+  return { start, end }
+}
+
+function rangeResponse(buffer: Buffer, range: ByteRange, contentType: string): Response {
+  const chunk = buffer.subarray(range.start, range.end + 1)
+  return new Response(chunk, {
+    status: 206,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(chunk.length),
+      'Content-Range': `bytes ${range.start}-${range.end}/${buffer.length}`,
+      'Accept-Ranges': 'bytes',
+    },
+  })
+}
+
+function fullResponse(buffer: Buffer, contentType: string): Response {
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(buffer.length),
+      'Accept-Ranges': 'bytes',
+    },
+  })
 }
 
 export interface StoragePluginOptions {
@@ -412,12 +500,13 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       const buffer = access
         ? await access.download(context, bucket, path, () => store.read(bucket, path))
         : await store.read(bucket, path)
-      return new Response(buffer, {
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': String(buffer.length),
-        },
-      })
+      const contentType = inferContentType(path)
+      const rangeHeader = request.headers.get('range')
+      if (rangeHeader) {
+        const range = parseByteRange(rangeHeader, buffer.length)
+        if (range) return rangeResponse(buffer, range, contentType)
+      }
+      return fullResponse(buffer, contentType)
     })
   })
 
@@ -488,12 +577,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       const buffer = await options.access.downloadPublic(bucket, path, () =>
         store.read(bucket, path),
       )
-      return new Response(buffer, {
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': String(buffer.length),
-        },
-      })
+      return fullResponse(buffer, inferContentType(path))
     })
   })
 
@@ -561,12 +645,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
         throw new StorageAccessError(403, '403', 'Token method mismatch: expected GET')
       }
       const buffer = await store.read(bucket, path)
-      return new Response(buffer, {
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': String(buffer.length),
-        },
-      })
+      return fullResponse(buffer, inferContentType(path))
     })
   })
 

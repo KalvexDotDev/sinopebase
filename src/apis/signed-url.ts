@@ -1,24 +1,25 @@
 /**
- * HMAC-signed storage URLs with replay protection and key rotation.
+ * HMAC-signed storage URLs — stateless, reusable tokens.
  *
  * Each token carries an HMAC-SHA256 signature over a base64url-encoded
- * JSON payload of {bucket, path, exp, kid, jti, method}.  The signing
- * key is derived per-bucket via HKDF from the JWT_SECRET master secret.
+ * JSON payload of {bucket, path, exp, kid, method}.  The signing key is
+ * derived per-bucket via HKDF from the JWT_SECRET master secret.
  *
  * Token format:
- *   <base64url({bucket,path,exp,kid,jti,method})>.<base64url(HMAC)>
+ *   <base64url({bucket,path,exp,kid,method})>.<base64url(HMAC)>
  *
  * No Bearer auth is needed when consuming the token — the HMAC signature
  * IS the authorization.
  *
  * Features:
  * - kid (key ID) for rotation support
- * - jti (nonce) for replay detection via NonceStore
  * - method claim ("GET" | "PUT") to scope tokens to specific operations
  * - Per-bucket key derivation via HKDF
+ * - Stateless verification — tokens are reusable within their expiry window
+ *   (Supabase-compatible: no server-side nonce / replay detection)
  */
 
-import { createHmac, hkdfSync, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 
 // ---------------------------------------------------------------------------
@@ -33,9 +34,6 @@ const DEFAULT_KEY_ID = 'sinopebase-v1'
 
 /** Set of known/trusted key IDs.  Rotate by adding new IDs and removing old. */
 const KNOWN_KEY_IDS = new Set<string>([DEFAULT_KEY_ID])
-
-/** Grace period past token expiry for which we retain nonces (milliseconds). */
-const NONCE_GRACE_MS = 5 * 60 * 1000
 
 // ---------------------------------------------------------------------------
 // Key derivation
@@ -77,58 +75,6 @@ function computeSignature(payloadB64: string, key: Buffer): string {
 }
 
 // ---------------------------------------------------------------------------
-// NonceStore — replay detection
-// ---------------------------------------------------------------------------
-
-/**
- * In-memory nonce store with TTL-based expiration.
- *
- * Tracks `jti` values seen during the token's lifetime plus a 5-minute
- * grace period to account for clock skew between the issuer and verifier.
- *
- * Export a singleton `nonceStore` — in production this should be backed
- * by a shared store (Redis / Postgres) when multiple replicas are used.
- */
-export class NonceStore {
-  private store = new Map<string, number>()
-
-  /**
-   * Check and consume a nonce.
-   *
-   * @returns `true` if the nonce is new (not seen before), `false` if it
-   *          has already been consumed (replay).
-   */
-  checkAndConsume(jti: string, exp: number): boolean {
-    this.evictExpired()
-    if (this.store.has(jti)) return false
-    const expireAt = exp * 1000 + NONCE_GRACE_MS
-    this.store.set(jti, expireAt)
-    return true
-  }
-
-  /** Clear all stored nonces — useful in tests. */
-  clear(): void {
-    this.store.clear()
-  }
-
-  /** Number of non-expired entries currently in the store. */
-  get size(): number {
-    this.evictExpired()
-    return this.store.size
-  }
-
-  private evictExpired(): void {
-    const now = Date.now()
-    for (const [jti, expireAt] of this.store) {
-      if (expireAt <= now) this.store.delete(jti)
-    }
-  }
-}
-
-/** Singleton nonce store used by `verifySignedUrl`. */
-export const nonceStore = new NonceStore()
-
-// ---------------------------------------------------------------------------
 // Token creation
 // ---------------------------------------------------------------------------
 
@@ -153,7 +99,6 @@ export function signUrl(
     path,
     exp,
     kid: DEFAULT_KEY_ID,
-    jti: randomUUID(),
     method,
   }
   const payloadB64 = base64urlEncode(Buffer.from(JSON.stringify(payload), 'utf-8'))
@@ -200,7 +145,7 @@ export interface VerifiedToken {
  * 4. `method` is "GET" or "PUT"
  * 5. `exp` is not past
  * 6. HMAC signature matches (per-bucket derived key)
- * 7. `jti` is not a replay (checked via NonceStore)
+ * 7. Token is stateless — reusable within expiry (no replay detection)
  *
  * @param token  The signed token string.
  * @returns      `{ bucket, path, method }` from the verified payload.
@@ -247,9 +192,6 @@ export function verifySignedUrl(token: string): VerifiedToken {
   if (typeof payload.kid !== 'string' || !payload.kid) {
     throw new SignedUrlError('Malformed payload')
   }
-  if (typeof payload.jti !== 'string' || !payload.jti) {
-    throw new SignedUrlError('Malformed payload')
-  }
   if (
     typeof payload.method !== 'string' ||
     (payload.method !== 'GET' && payload.method !== 'PUT')
@@ -281,11 +223,6 @@ export function verifySignedUrl(token: string): VerifiedToken {
 
   if (!timingSafeEqual(sigBuf, expectedBuf)) {
     throw new SignedUrlError('Invalid signature')
-  }
-
-  // --- Replay detection ---
-  if (!nonceStore.checkAndConsume(payload.jti, payload.exp)) {
-    throw new SignedUrlError('Token replayed')
   }
 
   return { bucket: payload.bucket, path: payload.path, method: payload.method }

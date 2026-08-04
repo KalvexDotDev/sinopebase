@@ -1,26 +1,19 @@
 /**
- * Tests for HMAC-signed storage URLs with replay protection.
+ * Tests for HMAC-signed storage URLs — stateless, reusable tokens.
  *
  * Covers:
  * - Pure function tests for signUrl / verifySignedUrl / uploadUrl
  * - HTTP endpoint tests for sign, download, and upload routes
  * - Tamper, expiry, and malformed token rejection
- * - Key ID rotation, method scoping, and replay detection
+ * - Key ID rotation, method scoping, and reusable token behaviour
  * - Timing-safe comparison via source inspection
  */
 
-import { beforeEach, describe, expect, it } from 'bun:test'
-import { createHmac, hkdfSync, randomUUID } from 'node:crypto'
+import { describe, expect, it } from 'bun:test'
+import { createHmac, hkdfSync } from 'node:crypto'
 import { Elysia } from 'elysia'
 import { createStoragePlugin } from '~/apis/file'
-import {
-  NonceStore,
-  nonceStore,
-  SignedUrlError,
-  signUrl,
-  uploadUrl,
-  verifySignedUrl,
-} from '~/apis/signed-url'
+import { SignedUrlError, signUrl, uploadUrl, verifySignedUrl } from '~/apis/signed-url'
 import type { Bucket, FileObject, IFileStore } from '~/tools/filesystem/store-interface'
 
 // ---------------------------------------------------------------------------
@@ -58,14 +51,13 @@ function craftToken(
   bucket: string,
   path: string,
   exp: number,
-  overrides?: Partial<{ kid: string; jti: string; method: string; secret: string }>,
+  overrides?: Partial<{ kid: string; method: string; secret: string }>,
 ): string {
   const payload = {
     bucket,
     path,
     exp,
     kid: overrides?.kid ?? 'sinopebase-v1',
-    jti: overrides?.jti ?? randomUUID(),
     method: overrides?.method ?? 'GET',
   }
   const payloadB64 = base64url(Buffer.from(JSON.stringify(payload), 'utf-8'))
@@ -126,10 +118,6 @@ function storageApp(store = new TestFileStore()) {
 // ---------------------------------------------------------------------------
 
 describe('signUrl / verifySignedUrl — pure functions', () => {
-  beforeEach(() => {
-    nonceStore.clear()
-  })
-
   it('signs and verifies a valid token', () => {
     const token = signUrl('my-bucket', 'path/to/file.pdf', 3600)
     const result = verifySignedUrl(token)
@@ -233,14 +221,12 @@ describe('signUrl / verifySignedUrl — pure functions', () => {
     expect(() => verifySignedUrl(token)).toThrow('Malformed payload')
   })
 
-  it('rejects a replayed token', () => {
+  it('allows reusing the same token (stateless — reusable within expiry)', () => {
     const token = signUrl('b', 'f', 3600)
     // First verification succeeds
-    const result = verifySignedUrl(token)
-    expect(result).toEqual({ bucket: 'b', path: 'f', method: 'GET' })
-    // Second verification of the same token must fail (replay)
-    expect(() => verifySignedUrl(token)).toThrow(SignedUrlError)
-    expect(() => verifySignedUrl(token)).toThrow('Token replayed')
+    expect(verifySignedUrl(token)).toEqual({ bucket: 'b', path: 'f', method: 'GET' })
+    // Second verification of the same token must also succeed (reusable)
+    expect(() => verifySignedUrl(token)).not.toThrow()
   })
 
   it('allows distinct tokens from the same bucket and path', () => {
@@ -256,10 +242,6 @@ describe('signUrl / verifySignedUrl — pure functions', () => {
 // ---------------------------------------------------------------------------
 
 describe('uploadUrl', () => {
-  beforeEach(() => {
-    nonceStore.clear()
-  })
-
   it('creates a PUT-scoped token', () => {
     const token = uploadUrl('bucket', 'path/file.bin', 3600)
     const result = verifySignedUrl(token)
@@ -269,7 +251,7 @@ describe('uploadUrl', () => {
   it('differs from a GET token for the same bucket and path', () => {
     const getToken = signUrl('bucket', 'path/file.bin', 3600)
     const putToken = uploadUrl('bucket', 'path/file.bin', 3600)
-    // Tokens must be different because the payloads differ (method + jti)
+    // Tokens must be different because the payloads differ (method)
     expect(getToken).not.toBe(putToken)
     // GET token must have method=GET
     expect(verifySignedUrl(getToken).method).toBe('GET')
@@ -284,57 +266,10 @@ describe('uploadUrl', () => {
 })
 
 // ---------------------------------------------------------------------------
-// NonceStore unit tests
-// ---------------------------------------------------------------------------
-
-describe('NonceStore', () => {
-  let store: NonceStore
-
-  beforeEach(() => {
-    store = new NonceStore()
-  })
-
-  it('returns true for a new nonce', () => {
-    expect(store.checkAndConsume('new-nonce', Math.floor(Date.now() / 1000) + 3600)).toBe(true)
-  })
-
-  it('returns false for a replayed nonce', () => {
-    const jti = 'replay-nonce'
-    expect(store.checkAndConsume(jti, Math.floor(Date.now() / 1000) + 3600)).toBe(true)
-    expect(store.checkAndConsume(jti, Math.floor(Date.now() / 1000) + 3600)).toBe(false)
-  })
-
-  it('allows distinct nonces', () => {
-    expect(store.checkAndConsume('a', Math.floor(Date.now() / 1000) + 3600)).toBe(true)
-    expect(store.checkAndConsume('b', Math.floor(Date.now() / 1000) + 3600)).toBe(true)
-  })
-
-  it('tracks size', () => {
-    expect(store.size).toBe(0)
-    store.checkAndConsume('a', Math.floor(Date.now() / 1000) + 3600)
-    expect(store.size).toBe(1)
-    store.checkAndConsume('b', Math.floor(Date.now() / 1000) + 3600)
-    expect(store.size).toBe(2)
-  })
-
-  it('clear removes all entries', () => {
-    store.checkAndConsume('a', Math.floor(Date.now() / 1000) + 3600)
-    store.checkAndConsume('b', Math.floor(Date.now() / 1000) + 3600)
-    expect(store.size).toBe(2)
-    store.clear()
-    expect(store.size).toBe(0)
-  })
-})
-
-// ---------------------------------------------------------------------------
 // HTTP endpoint tests
 // ---------------------------------------------------------------------------
 
 describe('POST /storage/v1/object/sign/:bucket/* — signed URL creation', () => {
-  beforeEach(() => {
-    nonceStore.clear()
-  })
-
   it('returns an HMAC-signed URL path', async () => {
     const { app } = storageApp()
     const response = await app.handle(
@@ -407,10 +342,6 @@ describe('POST /storage/v1/object/sign/:bucket/* — signed URL creation', () =>
 })
 
 describe('GET /storage/v1/object/signed/:token — file download via signed URL', () => {
-  beforeEach(() => {
-    nonceStore.clear()
-  })
-
   it('downloads a file with a valid token', async () => {
     const { app, store } = storageApp()
     store.files.set('evidence/report.pdf', Buffer.from('signed-download-content'))
@@ -504,10 +435,6 @@ describe('GET /storage/v1/object/signed/:token — file download via signed URL'
 })
 
 describe('PUT /storage/v1/object/signed/upload/:token — file upload via signed URL', () => {
-  beforeEach(() => {
-    nonceStore.clear()
-  })
-
   it('uploads a file with a valid PUT token', async () => {
     const { app, store } = storageApp()
     const token = uploadUrl('evidence', 'uploaded-file.pdf', 3600)

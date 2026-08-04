@@ -26,7 +26,7 @@ export type FilterOperator =
   | 'is'
   | 'in'
 // Note: cs, cd, sl, sr, nxl, nxr, adj, ov operators are deferred to v0.7.
-// Note: fts, plfts, phfts, wfts full-text search operators are deferred to v0.7.
+// Note: fts, plfts, phfts, wfts full-text search operators are deferred to v0.8+.
 
 export interface PostgrestClient<T extends Record<string, unknown>> {
   // Select
@@ -252,7 +252,14 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
   }
   in(column: string, values: unknown[]): this {
     this.filters.push(
-      `${column}=in.(${values.map((v) => encodeURIComponent(String(v))).join(',')})`,
+      `${column}=in.(${values
+        .map((v) => {
+          const s = String(v)
+          // Values containing commas must be double-quoted so PostgREST
+          // treats them as a single value rather than splitting on the comma.
+          return s.includes(',') ? `%22${encodeURIComponent(s)}%22` : encodeURIComponent(s)
+        })
+        .join(',')})`,
     )
     return this
   }
