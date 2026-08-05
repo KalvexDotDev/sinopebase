@@ -44,6 +44,24 @@ export function createAuthClient(baseUrl: string, apiKey: string): AuthClient {
       return authResponse(res)
     },
 
+    async signInWithOAuth(
+      credentials,
+    ): Promise<{ data: { url: string } | null; error: AuthError | null }> {
+      const { provider, options } = credentials
+      const redirectTo = options?.redirectTo ?? `${baseUrl}/_/`
+      const scopes = options?.scopes ?? ''
+      const queryParams = options?.queryParams ?? {}
+
+      const params = new URLSearchParams({ provider, callbackURL: redirectTo })
+      if (scopes) params.set('scopes', scopes)
+      for (const [k, v] of Object.entries(queryParams)) {
+        params.set(k, v)
+      }
+
+      const url = `${baseUrl}/api/auth/sign-in/social?${params.toString()}`
+      return { data: { url }, error: null }
+    },
+
     async signInWithPassword(credentials): Promise<AuthResponse> {
       const res = await request<Session | AuthResponse>(
         'POST',

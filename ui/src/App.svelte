@@ -16,10 +16,24 @@
   import Settings from './pages/Settings.svelte'
   import Logs from './pages/Logs.svelte'
   import { getCurrentRoute, navigate } from './lib/router'
-  import { getServiceRoleKey, clearTokens } from './lib/api'
+  import { getServiceRoleKey, getUserToken, clearTokens, exchangeSession } from './lib/api'
 
-  let authenticated = $state(getServiceRoleKey() !== null)
+  let authenticated = $state(getServiceRoleKey() !== null || getUserToken() !== null)
   let currentRoute = $state(getCurrentRoute())
+
+  // On boot, attempt to exchange a better-auth session cookie for a Bearer token.
+  // This completes the OAuth login callback — the browser was redirected to /_/
+  // with a session cookie set, and we need a Bearer token in localStorage for API calls.
+  $effect(() => {
+    if (!authenticated) {
+      exchangeSession().then((result) => {
+        if (result && 'data' in result && result.data?.session) {
+          authenticated = true
+          navigate('#/')
+        }
+      })
+    }
+  })
 
   $effect(() => {
     const handler = () => { currentRoute = getCurrentRoute() }

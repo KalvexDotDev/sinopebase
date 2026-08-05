@@ -341,6 +341,59 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
         })
         return { providers }
       })
+      // POST /api/auth/exchange — exchange better-auth session cookie for Bearer token
+      .post('/api/auth/exchange', async ({ request, set }) => {
+        // CSRF defense: require a custom header that cross-origin JS cannot set
+        // without a CORS preflight (which the server denies for non-trusted origins).
+        if (request.headers.get('x-requested-with') !== 'sinopebase-admin') {
+          set.status = 403
+          return { code: 403, message: 'CSRF protection: missing X-Requested-With header' }
+        }
+
+        // Extract the better-auth session cookie
+        const cookieHeader = request.headers.get('cookie') ?? ''
+        const match = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
+        const sessionToken = match?.[1]
+        if (!sessionToken) {
+          set.status = 401
+          return { code: 401, message: 'No active session' }
+        }
+
+        try {
+          const session = await lookupSessionByToken(
+            auth as unknown as Record<string, unknown>,
+            sessionToken,
+          )
+          if (!session) {
+            set.status = 401
+            return { code: 401, message: 'Session expired or invalid' }
+          }
+
+          // Return the session token itself as the Bearer token (same pattern as bridgeSignInResponse)
+          const now = Math.floor(Date.now() / 1000)
+          const expiresIn = ACCESS_TOKEN_TTL
+          return {
+            access_token: sessionToken,
+            token_type: 'bearer',
+            expires_in: expiresIn,
+            expires_at: now + expiresIn,
+            refresh_token: sessionToken,
+            user: {
+              id: session.id,
+              email: session.email,
+              role: session.role,
+              aud: 'authenticated',
+              app_metadata: {},
+              user_metadata: { name: session.name, image: session.image },
+              created_at: session.createdAt.toISOString(),
+              updated_at: session.updatedAt.toISOString(),
+            },
+          }
+        } catch {
+          set.status = 401
+          return { code: 401, message: 'Failed to validate session' }
+        }
+      })
       .post('/auth/v1/signup', async ({ body, set }) => {
         const { email, password } = body as { email: string; password: string }
         if (!email || !password) {

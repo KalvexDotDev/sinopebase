@@ -380,6 +380,29 @@ export class PostgresDatabase implements IDatabase {
   }
 
   /**
+   * Execute a PostgreSQL function (RPC).
+   *
+   * Calls `SELECT * FROM "fn"(args...)` with named parameters from the request body.
+   * Parameters are passed as `fn(key1 := value1, key2 := value2, ...)`.
+   */
+  async rpc(fn: string, params: Record<string, unknown>): Promise<Record<string, unknown>[]> {
+    const entries = Object.entries(params)
+    if (entries.length === 0) {
+      return (await sql`SELECT * FROM ${sql.raw(fn)}()`.execute(this.reader)) as unknown as Record<
+        string,
+        unknown
+      >[]
+    }
+    // Build `fn(arg1 := val1, arg2 := val2, ...)` using raw SQL
+    const args = entries.map(([k, v]) => sql`${sql.raw(k)} := ${sql.literal(JSON.stringify(v))}`)
+    const callExpr = sql`${sql.raw(fn)}(${sql.join(args, sql`, `)})`
+    return (await sql`SELECT * FROM ${callExpr}`.execute(this.reader)) as unknown as Record<
+      string,
+      unknown
+    >[]
+  }
+
+  /**
    * Return the public-schema, single-column foreign keys touching a table.
    * PostgREST uses this metadata to resolve both many-to-one and one-to-many
    * embedded resource selections.

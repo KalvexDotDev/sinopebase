@@ -53,6 +53,13 @@ export interface IDatabase {
   ): Promise<Record<string, unknown>[]>
   count(table: string, filters?: Filter[]): Promise<number>
 
+  /**
+   * Execute a PostgreSQL function (RPC).
+   * Returns the result set as rows. Function parameters are passed as the
+   * request body (JSON → SQL). Only supported on PostgreSQL.
+   */
+  rpc?(fn: string, params: Record<string, unknown>): Promise<Record<string, unknown>[]>
+
   /** Optional because the in-memory database has no schema metadata. */
   getForeignKeyRelationships?(table: string): Promise<ForeignKeyRelationship[]>
 }

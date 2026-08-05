@@ -14,6 +14,15 @@ export interface AuthClient {
 
   signInWithPassword(credentials: { email: string; password: string }): Promise<AuthResponse>
 
+  signInWithOAuth(credentials: {
+    provider: string
+    options?: {
+      redirectTo?: string
+      scopes?: string
+      queryParams?: Record<string, string>
+    }
+  }): Promise<{ data: { url: string } | null; error: AuthError | null }>
+
   signOut(options?: { scope?: 'local' | 'global' | 'others' }): Promise<{ error: AuthError | null }>
 
   getUser(): Promise<{ data: { user: User | null }; error: AuthError | null }>

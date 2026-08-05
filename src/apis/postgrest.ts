@@ -352,6 +352,41 @@ export function mountPostgrestRoutes(
     return deleted
   })
 
+  // ── RPC — Execute PostgreSQL functions ──
+  app.post('/rest/v1/rpc/:fn', async ({ params, body, request, set }) => {
+    if (!db.rpc) {
+      set.status = 501
+      return { code: 501, message: 'RPC is only supported on PostgreSQL.' }
+    }
+
+    const fn = params.fn as string
+    if (!fn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(fn)) {
+      set.status = 400
+      return { code: 400, message: 'Invalid function name.' }
+    }
+
+    // Guarded by `if (!db.rpc)` above — rpc is always available here
+    const rpcFn = db.rpc as (
+      fn: string,
+      params: Record<string, unknown>,
+    ) => Promise<Record<string, unknown>[]>
+    const input = (body ?? {}) as Record<string, unknown>
+    try {
+      const rows = await withRequestDatabase(db, request, resolveContext, (_requestDb) =>
+        rpcFn(fn, input),
+      )
+      return rows
+    } catch (err) {
+      const message = (err as Error).message
+      // PostgreSQL function-not-found
+      if (message.includes('function') && message.includes('does not exist')) {
+        set.status = 404
+        return { code: 404, message }
+      }
+      throw err
+    }
+  })
+
   return app
 }
 

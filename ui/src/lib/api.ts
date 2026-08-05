@@ -13,7 +13,7 @@ const BASE = window.location.origin
 
 // ── Token management ──
 
-function getUserToken(): string | null {
+export function getUserToken(): string | null {
   return localStorage.getItem('sb-access-token')
 }
 
@@ -92,6 +92,28 @@ export async function signIn(email: string, password: string) {
 
 export async function getUser() {
   return request('/auth/v1/user')
+}
+
+/**
+ * Exchange a better-auth session cookie for a Bearer token.
+ * Called on admin UI boot when no service role key or user token exists.
+ * The browser sends the session cookie automatically; the server validates
+ * it and returns the session token as a Bearer token for API calls.
+ */
+export async function exchangeSession() {
+  const res = await fetch(BASE + '/api/auth/exchange', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'sinopebase-admin',
+    },
+    credentials: 'include',
+  })
+  const json = (await res.json()) as any
+  if (!res.ok) return { error: { message: json.message || 'Exchange failed', status: res.status } }
+  const token = json.access_token
+  if (token) setUserToken(token)
+  return { data: { user: json.user, session: json }, error: null }
 }
 
 export async function signOut() {
