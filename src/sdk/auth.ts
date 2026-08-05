@@ -29,6 +29,33 @@ export interface AuthClient {
 
   refreshSession(): Promise<AuthResponse>
 
+  /** Get the current session (from cookie or stored token) */
+  getSession(): Promise<{
+    data: { session: Session | null; user: User | null }
+    error: AuthError | null
+  }>
+
+  /** Exchange an OAuth authorization code for a session (code already consumed by better-auth, reads cookie) */
+  exchangeCodeForSession(code: string): Promise<AuthResponse>
+
+  /** Update user attributes (email, password, metadata) */
+  updateUser(attributes: {
+    email?: string
+    password?: string
+    data?: Record<string, unknown>
+  }): Promise<{ data: { user: User | null }; error: AuthError | null }>
+
+  /** Send a password reset email */
+  // biome-ignore lint/complexity/noBannedTypes: supabase-js API contract uses {}
+  resetPasswordForEmail(email: string): Promise<{ data: {} | null; error: AuthError | null }>
+
+  /** Restore a session from stored tokens (no network call) */
+  setSession(session: {
+    access_token: string
+    refresh_token: string
+    user: User
+  }): Promise<AuthResponse>
+
   onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): {
     data: { subscription: { unsubscribe: () => void } }
   }

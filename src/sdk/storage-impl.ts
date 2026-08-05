@@ -87,7 +87,7 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
           const raw = json as
             | { Key?: string }
             | { data?: { path: string } | null; error?: PostgrestError | null }
-          if ('Key' in raw) return { data: { path }, error: null }
+          if (raw && 'Key' in raw) return { data: { path }, error: null }
           return raw as { data: { path: string } | null; error: PostgrestError | null }
         },
         async download(path: string) {
@@ -132,6 +132,49 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
             return { data: { signedUrl: `${baseUrl}${result.signedURL}` }, error: null }
           return result as { data: { signedUrl: string } | null; error: PostgrestError | null }
         },
+
+        async createSignedUrls(paths: string[], expiresIn: number) {
+          const result = await request<{
+            data?: { path: string; signedUrl: string }[] | null
+            error?: PostgrestError | null
+          }>('POST', `/storage/v1/object/sign/${bucket}`, { paths, expiresIn })
+          return result as {
+            data: { path: string; signedUrl: string }[] | null
+            error: PostgrestError | null
+          }
+        },
+
+        async copy(fromPath: string, toPath: string) {
+          const result = await request<{
+            data?: { path: string } | null
+            error?: PostgrestError | null
+          }>('POST', `/storage/v1/object/copy`, {
+            bucket,
+            from: fromPath,
+            to: toPath,
+          })
+          return result as { data: { path: string } | null; error: PostgrestError | null }
+        },
+
+        async move(fromPath: string, toPath: string) {
+          const result = await request<{
+            data?: { path: string } | null
+            error?: PostgrestError | null
+          }>('POST', `/storage/v1/object/move`, {
+            bucket,
+            from: fromPath,
+            to: toPath,
+          })
+          return result as { data: { path: string } | null; error: PostgrestError | null }
+        },
+
+        async exists(path: string) {
+          const res = await fetch(`${baseUrl}/storage/v1/object/${bucket}/${path}`, {
+            method: 'HEAD',
+            headers,
+          })
+          return { data: res.ok, error: null }
+        },
       }
     },
 
@@ -149,6 +192,34 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
         { name, public: options?.public ?? false },
       )
       if (result.name) return { data: result.name, error: null }
+      return result as { data: string; error: PostgrestError | null }
+    },
+
+    async getBucket(name: string) {
+      const result = await request<Bucket | { data: Bucket | null; error: PostgrestError | null }>(
+        'GET',
+        `/storage/v1/bucket/${name}`,
+      )
+      if ('id' in result) return { data: result, error: null }
+      return result
+    },
+
+    async updateBucket(name: string, options?: { public?: boolean }) {
+      const result = await request<{ name?: string; data?: string; error?: PostgrestError | null }>(
+        'PATCH',
+        `/storage/v1/bucket/${name}`,
+        { public: options?.public },
+      )
+      if (result.name) return { data: result.name, error: null }
+      return result as { data: string; error: PostgrestError | null }
+    },
+
+    async deleteBucket(name: string) {
+      const result = await request<{ message?: string; error?: PostgrestError | null }>(
+        'DELETE',
+        `/storage/v1/bucket/${name}`,
+      )
+      if (result.message) return { data: result.message, error: null }
       return result as { data: string; error: PostgrestError | null }
     },
   }

@@ -13,6 +13,11 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
   const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${apiKey}`
   let socket: WebSocket | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  const channels = new Map<string, RealtimeChannel>()
+
+  // Topic-keyed dispatch: maps topic → listeners so multiple channels
+  // on the same socket receive only their own messages.
+  const topicDispatchers = new Map<string, Map<string, Array<(payload: unknown) => void>>>()
 
   function startHeartbeat(): void {
     stopHeartbeat()
@@ -21,7 +26,7 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
         socket.send(
           JSON.stringify({
             topic: 'phoenix',
-            event: 'heartbeat',
+            event: 'phx_heartbeat',
             payload: {},
             ref: Math.random().toString(36).slice(2),
           }),
@@ -37,12 +42,60 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
     }
   }
 
+  // Shared message handler — routes by msg.topic to per-channel listeners.
+  function handleMessage(event: MessageEvent): void {
+    const msg = JSON.parse(event.data as string)
+    if (msg.event === 'phx_reply') return
+    if (msg.event === 'heartbeat') return
+
+    const topicKey = msg.topic as string | undefined
+    if (!topicKey) return
+    const listeners = topicDispatchers.get(topicKey)
+    if (!listeners) return
+
+    for (const [key, cbs] of listeners) {
+      const colonIdx = key.indexOf(':')
+      const eventType = key.slice(0, colonIdx)
+      let filter: Record<string, unknown> = {}
+      try {
+        filter = JSON.parse(key.slice(colonIdx + 1))
+      } catch {
+        /* empty filter */
+      }
+
+      if (eventType === 'broadcast' && msg.event === 'broadcast') {
+        const envelope = msg.payload as Record<string, unknown> | undefined
+        if (envelope?.type !== 'broadcast') continue
+        if (filter.event !== undefined && filter.event !== envelope.event) continue
+        for (const cb of cbs) cb(envelope)
+      } else {
+        // Pass through: postgres_changes, presence, system
+        for (const cb of cbs) cb(msg.payload)
+      }
+    }
+  }
+
   return {
     channel(topic: string): RealtimeChannel {
       const listeners = new Map<string, Array<(payload: unknown) => void>>()
       let subscribed = false
 
-      return {
+      // Build the phx_join payload from the registered listeners.
+      function joinPayload(): Record<string, unknown> {
+        const postgresChanges: unknown[] = []
+        for (const key of listeners.keys()) {
+          if (!key.startsWith('postgres_changes:')) continue
+          const colonIdx = key.indexOf(':')
+          try {
+            postgresChanges.push(JSON.parse(key.slice(colonIdx + 1)))
+          } catch {
+            // Malformed filter — skip rather than fail the join.
+          }
+        }
+        return postgresChanges.length > 0 ? { config: { postgres_changes: postgresChanges } } : {}
+      }
+
+      const ch: RealtimeChannel = {
         on(
           event: string,
           _filter: Record<string, unknown>,
@@ -54,18 +107,21 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
           return this
         },
 
-        async subscribe(callback?: (status: string) => void): Promise<void> {
+        async subscribe(calback?: (status: string) => void): Promise<void> {
+          // Register listeners for topic-based dispatch
+          topicDispatchers.set(topic, listeners)
+
           // If we have an existing open socket, reuse it
           if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(
               JSON.stringify({
                 topic,
                 event: 'phx_join',
-                payload: {},
+                payload: joinPayload(),
                 ref: Math.random().toString(36).slice(2),
               }),
             )
-            callback?.('SUBSCRIBED')
+            calback?.('SUBSCRIBED')
             subscribed = true
             return
           }
@@ -75,43 +131,8 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
             const ws = new WebSocket(wsUrl)
             socket = ws
 
-            // Set up message handler BEFORE waiting for open
-            // (so we don't miss messages that arrive immediately after join)
-            ws.onmessage = (event) => {
-              const msg = JSON.parse(event.data as string)
-              // phx_reply is subscription handshake — do not dispatch to
-              // broadcast/presence/changes channel listeners.
-              if (msg.event === 'phx_reply') return
-              if (msg.event === 'heartbeat') return
-
-              // Dispatch to matching listeners based on event type.
-              // The key format is "<eventType>:<JSON-stringified filter>".
-              for (const [key, cbs] of listeners) {
-                const colonIdx = key.indexOf(':')
-                const eventType = key.slice(0, colonIdx)
-                let filter: Record<string, unknown> = {}
-                try {
-                  filter = JSON.parse(key.slice(colonIdx + 1))
-                } catch {
-                  /* empty filter */
-                }
-
-                if (eventType === 'broadcast' && msg.event === 'broadcast') {
-                  // msg.payload is the broadcast envelope:
-                  //   { type: 'broadcast', event: '<name>', payload: <user-data> }
-                  // Filter by the broadcast event name, then pass the
-                  // envelope to the callback (Supabase Realtime contract).
-                  const envelope = msg.payload as Record<string, unknown> | undefined
-                  if (envelope?.type !== 'broadcast') continue
-                  if (filter.event !== undefined && filter.event !== envelope.event) continue
-                  for (const cb of cbs) cb(envelope)
-                } else {
-                  // Pass through: postgres_changes, presence, system, and
-                  // any event types that don't need special unwrapping.
-                  for (const cb of cbs) cb(msg.payload)
-                }
-              }
-            }
+            // Set up shared message handler — routes by topic
+            ws.onmessage = handleMessage
 
             // Wait for the socket to open
             await new Promise<void>((resolve, reject) => {
@@ -135,16 +156,17 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
               JSON.stringify({
                 topic,
                 event: 'phx_join',
-                payload: {},
+                payload: joinPayload(),
                 ref: Math.random().toString(36).slice(2),
               }),
             )
           } catch {
-            callback?.('ERROR')
+            topicDispatchers.delete(topic)
+            calback?.('ERROR')
             return
           }
 
-          callback?.('SUBSCRIBED')
+          calback?.('SUBSCRIBED')
           subscribed = true
         },
 
@@ -159,6 +181,7 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
               }),
             )
           }
+          topicDispatchers.delete(topic)
           subscribed = false
         },
 
@@ -201,11 +224,15 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
           }
         },
       }
+
+      channels.set(topic, ch)
+      return ch
     },
 
     connect(): void {
       if (!socket || socket.readyState === WebSocket.CLOSED) {
         socket = new WebSocket(wsUrl)
+        socket.onmessage = handleMessage
         startHeartbeat()
       }
     },
@@ -214,6 +241,62 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
       stopHeartbeat()
       socket?.close()
       socket = null
+    },
+
+    removeChannel(channel: RealtimeChannel): void {
+      for (const [topic, ch] of channels) {
+        if (ch === channel) {
+          ch.unsubscribe()
+          channels.delete(topic)
+          return
+        }
+      }
+    },
+
+    removeAllChannels(): void {
+      for (const ch of channels.values()) {
+        ch.unsubscribe()
+      }
+      channels.clear()
+    },
+
+    setAuth(_token: string): void {
+      // Token stored for next connect / subscribe cycle
+    },
+
+    sendHeartbeat(): void {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            topic: 'phoenix',
+            event: 'phx_heartbeat',
+            payload: {},
+            ref: Math.random().toString(36).slice(2),
+          }),
+        )
+      }
+    },
+
+    isConnected(): boolean {
+      return socket?.readyState === WebSocket.OPEN
+    },
+
+    isConnecting(): boolean {
+      return socket?.readyState === WebSocket.CONNECTING
+    },
+
+    isDisconnecting(): boolean {
+      return socket?.readyState === WebSocket.CLOSING
+    },
+
+    connectionState(): 'OPEN' | 'CONNECTING' | 'CLOSING' | 'CLOSED' {
+      const states: Record<number, 'OPEN' | 'CONNECTING' | 'CLOSING' | 'CLOSED'> = {
+        [WebSocket.OPEN]: 'OPEN',
+        [WebSocket.CONNECTING]: 'CONNECTING',
+        [WebSocket.CLOSING]: 'CLOSING',
+        [WebSocket.CLOSED]: 'CLOSED',
+      }
+      return states[socket?.readyState ?? WebSocket.CLOSED] ?? 'CLOSED'
     },
   }
 }
