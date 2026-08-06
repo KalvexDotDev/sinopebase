@@ -74,7 +74,7 @@ describe('Server E2E smoke', () => {
   test('auth session returns null without cookie', async () => {
     const res = await fetch(`${baseUrl}/auth/v1/session`)
     expect(res.status).toBe(200)
-    const json = (await res.json()) as Record<string, unknown>
+    const json = (await res.json()) as { data: { session: unknown; user: unknown } }
     expect(json.data.session).toBeNull()
   })
 
