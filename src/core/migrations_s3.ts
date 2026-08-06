@@ -12,6 +12,9 @@
 import type { S3FileStore } from '~/tools/filesystem/store-s3'
 import type { MigrationDB } from '../../migrations/types'
 
+// Re-exported so callers can reference S3FileStore via import('./migrations_s3').S3FileStore
+export type { S3FileStore }
+
 /** Regex matching `<digits>_<snake-case-name>.sql` migration filenames. */
 const SQL_MIGRATION_FILE_RE = /^(\d+)_([a-z0-9_]+)\.sql$/i
 
@@ -69,9 +72,16 @@ export async function loadSqlMigrationsFromS3(
     const migrationName = filename.replace(/\.sql$/i, '')
 
     try {
-      const sql = await store.read(bucket, key)
+      const raw = await store.read(bucket, key)
+      if (!raw) {
+        console.warn(`[migrations] Skipping empty SQL file "${filename}" from S3`)
+        continue
+      }
 
-      if (!sql || sql.trim().length === 0) {
+      // S3FileStore returns Buffer, LocalFileStore returns string — normalize
+      const sql: string =
+        typeof raw === 'string' ? raw : Buffer.from(raw as unknown as ArrayBuffer).toString('utf-8')
+      if (sql.trim().length === 0) {
         console.warn(`[migrations] Skipping empty SQL file "${filename}" from S3`)
         continue
       }
@@ -79,9 +89,7 @@ export async function loadSqlMigrationsFromS3(
       migrations.push({
         name: migrationName,
         up: async (db: MigrationDB) => {
-          const text =
-            typeof sql === 'string' ? sql : Buffer.from(sql as ArrayBuffer).toString('utf-8')
-          await db.raw(text)
+          await db.raw(sql)
         },
         // SQL files have no rollback — down is undefined.
       })

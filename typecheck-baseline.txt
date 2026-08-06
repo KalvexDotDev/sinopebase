@@ -67,7 +67,6 @@ src/core/app.ts(1477,38): error TS2345: Argument of type 'AuthInstance | undefin
   Type 'AuthInstance' is missing the following properties from type 'Auth<BetterAuthOptions>': handler, options, $ERROR_CODES, $context, $Infer
 src/core/app.ts(1496,26): error TS2345: Argument of type 'AuthInstance | undefined' is not assignable to parameter of type 'AuthInstance'.
   Type 'undefined' is not assignable to type 'AuthInstance'.
-src/core/app.ts(1785,59): error TS2694: Namespace '"D:/Projects/sinopebase/src/core/migrations_s3"' has no exported member 'S3FileStore'.
 src/core/auth_origin_model.ts(28,12): error TS4113: This member cannot have an 'override' modifier because it is not declared in the base class 'BaseModel'.
 src/core/base.ts(355,3): error TS4114: This member must have an 'override' modifier because it overrides a member in the base class 'Sinopebase'.
 src/core/base.ts(384,9): error TS4114: This member must have an 'override' modifier because it overrides a member in the base class 'Sinopebase'.
@@ -94,9 +93,6 @@ src/core/fields_list.ts(312,20): error TS2352: Conversion of type 'Record<string
   Type 'Record<string, unknown>' is missing the following properties from type 'Field': id, name, system, hidden, and 3 more.
 src/core/log_model.ts(23,12): error TS4113: This member cannot have an 'override' modifier because it is not declared in the base class 'BaseModel'.
 src/core/mfa_model.ts(31,12): error TS4113: This member cannot have an 'override' modifier because it is not declared in the base class 'BaseModel'.
-src/core/migrations_s3.ts(74,23): error TS2339: Property 'trim' does not exist on type 'Buffer<ArrayBufferLike>'.
-src/core/migrations_s3.ts(83,57): error TS2352: Conversion of type 'Buffer<ArrayBufferLike>' to type 'ArrayBuffer' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
-  Type 'Buffer<ArrayBufferLike>' is missing the following properties from type 'ArrayBuffer': maxByteLength, resizable, resize, detached, and 2 more.
 src/core/otp_model.ts(35,12): error TS4113: This member cannot have an 'override' modifier because it is not declared in the base class 'BaseModel'.
 src/core/postgres-role-bootstrap.test.ts(39,21): error TS2352: Conversion of type '{ connectionRole: string; }[]' to type 'R[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
   Type '{ connectionRole: string; }' is not comparable to type 'R'.
