@@ -162,9 +162,6 @@ jobs:
       - name: Wait for RustFS
         run: until wget -q --spider http://localhost:9000/health; do sleep 2; done
 
-      - name: Install Playwright browsers (E2E tests)
-        run: bunx playwright install --with-deps chromium
-
       - name: Run test suite (JUnit, PostgreSQL-backed)
         run: |
           export SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)
