@@ -35,8 +35,17 @@ describe('Server E2E smoke', () => {
   })
 
   test('health endpoint returns 200', async () => {
-    const res = await fetch(`${baseUrl}/api/health`)
-    expect(res.status).toBe(200)
+    // Retry — server logs "started" before the HTTP listener is ready
+    let res: Response | undefined
+    for (let i = 0; i < 10; i++) {
+      try {
+        res = await fetch(`${baseUrl}/api/health`)
+        break
+      } catch {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+    expect(res!.status).toBe(200)
   })
 
   test('admin UI loads at /_/', async () => {
