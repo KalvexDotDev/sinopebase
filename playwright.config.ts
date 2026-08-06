@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: '**/*.e2e.test.ts',
+  testMatch: '**/*.pw.ts',
   timeout: 15000,
   retries: 1,
   use: {
@@ -19,7 +19,7 @@ export default defineConfig({
   webServer: {
     command: `bun run cmd/serve.ts --port 9876 --host 127.0.0.1 --postgresUrl ${process.env.TEST_POSTGRES_URL || 'postgresql://sinopebase:sinopebase@localhost:5432/sinopebase'} --jwtSecret e2e-jwt-secret-min-32-chars!!!`,
     url: 'http://127.0.0.1:9876/api/health',
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 15000,
     env: {
       SINOPEBASE_SERVICE_ROLE_KEY: 'e2e-key-service-min-32-chars!!',
