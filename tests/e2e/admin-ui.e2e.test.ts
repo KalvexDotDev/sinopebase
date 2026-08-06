@@ -17,7 +17,11 @@ import { Sinopebase } from '~/core/app'
 let browserAvailable = false
 if (process.platform !== 'win32') {
   try {
-    const b = await chromium.launch({ headless: true, timeout: 10000 })
+    const b = await chromium.launch({
+      headless: true,
+      timeout: 10000,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
     await b.close()
     browserAvailable = true
   } catch {
@@ -35,7 +39,10 @@ describe('Admin UI E2E', () => {
   beforeAll(async () => {
     if (!browserAvailable) return
 
-    browser = await chromium.launch({ headless: true })
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
 
     // Start sinopebase server connected to local PG
     const pgUrl = process.env.TEST_POSTGRES_URL || process.env.POSTGRES_URL || ''
