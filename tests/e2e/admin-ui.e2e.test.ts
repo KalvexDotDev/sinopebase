@@ -40,8 +40,10 @@ describe('Admin UI E2E', () => {
     // Start sinopebase server connected to local PG
     const pgUrl = process.env.TEST_POSTGRES_URL || process.env.POSTGRES_URL || ''
     if (!pgUrl) throw new Error('E2E requires TEST_POSTGRES_URL or POSTGRES_URL')
+    // Use fixed port — port 0 (OS-assigned) can't be read back from getConfig()
+    const port = 9876
     app = new Sinopebase({
-      port: 0,
+      port,
       host: '127.0.0.1',
       postgresUrl: pgUrl,
       jwtSecret: 'e2e-jwt-secret-min-32-chars!!!',
@@ -49,7 +51,6 @@ describe('Admin UI E2E', () => {
       anonKey: 'e2ekey-anon-min-32-chars!!!!!!!',
     })
     await app.start()
-    const port = app.getConfig().port ?? 0
     baseUrl = `http://127.0.0.1:${port}`
   })
 
