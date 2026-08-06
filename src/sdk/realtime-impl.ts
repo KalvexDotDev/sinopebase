@@ -108,8 +108,19 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
         },
 
         async subscribe(calback?: (status: string) => void): Promise<void> {
-          // Register listeners for topic-based dispatch
-          topicDispatchers.set(topic, listeners)
+          // Register listeners for topic-based dispatch.
+          // Merge into existing listeners when multiple channels share a topic
+          // (e.g. one channel tracks presence, another observes it).
+          const existing = topicDispatchers.get(topic)
+          if (existing) {
+            for (const [key, cbs] of listeners) {
+              const merged = existing.get(key)
+              if (merged) merged.push(...cbs)
+              else existing.set(key, cbs)
+            }
+          } else {
+            topicDispatchers.set(topic, listeners)
+          }
 
           // If we have an existing open socket, reuse it
           if (socket && socket.readyState === WebSocket.OPEN) {
@@ -181,7 +192,16 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
               }),
             )
           }
-          topicDispatchers.delete(topic)
+          // Remove only this channel's listeners from the topic dispatcher.
+          // Multiple channels can share the same topic — we must not wipe the
+          // other channel's callbacks.
+          const existing = topicDispatchers.get(topic)
+          if (existing) {
+            for (const key of listeners.keys()) {
+              existing.delete(key)
+            }
+            if (existing.size === 0) topicDispatchers.delete(topic)
+          }
           subscribed = false
         },
 
