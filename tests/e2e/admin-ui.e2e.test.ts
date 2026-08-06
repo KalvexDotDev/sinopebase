@@ -10,16 +10,17 @@ import type { Browser, Page } from '@playwright/test'
 import { chromium } from '@playwright/test'
 import { Sinopebase } from '~/core/app'
 
-// Probe browser availability at module load. Playwright's headless Chromium
-// can hang at the OS level on Windows (process-spawn syscall blocks the JS
-// event loop, no Promise timeout can interrupt it). On CI (ubuntu-latest)
-// launch is near-instant. Skip on Windows, probe on other platforms.
+// Probe browser availability at module load. Bun + Playwright on Windows
+// cannot connect to Chromium headless shell — the process spawns but the
+// Playwright CDP connection never completes, blocking Bun's event loop
+// until the launch timeout expires. CI (ubuntu-latest) launches ~1s.
+// Skip probe on Windows to avoid the 30s hang.
 let browserAvailable = false
 if (process.platform !== 'win32') {
   try {
     const b = await chromium.launch({
       headless: true,
-      timeout: 10000,
+      timeout: 30000,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     })
     await b.close()
