@@ -12,7 +12,7 @@
     "test:watch": "bun test --watch",
     "test:harness": "bun test tests/harness/harness.test.ts",
     "test:taxonomy": "bun tests/harness/audit.ts",
-    "test:e2e": "bun test tests/e2e/admin-ui.e2e.test.ts",
+    "test:e2e": "npx playwright test",
     "screenshots": "bun run scripts/screenshots.ts",
     "benchmark": "bun run scripts/benchmark.ts",
     "test:tls": "bun test tests/integration/tls.test.ts",

@@ -163,7 +163,7 @@ jobs:
         run: until wget -q --spider http://localhost:9000/health; do sleep 2; done
 
       - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run test suite (JUnit, PostgreSQL-backed)
         run: |
