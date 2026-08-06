@@ -24,7 +24,7 @@ RUN cd ui && bun run build
 # Bun runtime and therefore needs no Bun installation in the final image.
 # --minify reduces binary size and attack surface; --sourcemap=external keeps
 # debugging symbols out of the binary while preserving them for crash forensics.
-RUN bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target bun
+RUN bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target bun --external nodemailer
 
 # Pin the Docker Official Image index digest for alpine:3.22. Alpine is kept
 # deliberately small; no shell packages, package manager cache, or DB clients
