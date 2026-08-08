@@ -60,8 +60,10 @@ export interface PostgrestFilterBuilder<T extends Record<string, unknown>> {
   is(column: string, value: null | boolean): this
   in(column: string, values: unknown[]): this
   contains(column: string, value: unknown): this
+  containedBy(column: string, value: unknown): this
   or(filters: string): this
-  // not() operator deferred to v0.7 — server-side support not yet implemented
+  not(column: string, operator: string, value: unknown): this
+  textSearch(column: string, query: string, options?: { type?: string; config?: string }): this
 
   // Modify return shape (for mutations: tells backend to return the modified rows)
   select(columns?: string): this
@@ -166,7 +168,21 @@ class PostgrestClientImpl<T extends Record<string, unknown>> implements Postgres
       },
       body: JSON.stringify(args ?? {}),
     })
-    const body = await res.json().catch(() => null)
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+    if (!res.ok) {
+      return {
+        data: null,
+        error: {
+          message: (body?.message as string) ?? res.statusText,
+          details: (body?.details as string) ?? '',
+          hint: (body?.hint as string) ?? '',
+          code: (body?.code as string) ?? String(res.status),
+        },
+        count: null,
+        status: res.status,
+        statusText: res.statusText,
+      }
+    }
     return {
       data: body as U,
       error: null,
@@ -192,7 +208,6 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
   private limitParam?: number
   private offsetParam?: number
   private rangeParam?: { from: number; to: number }
-  private wantSingle = false
   private wantMaybeSingle = false
 
   constructor(
@@ -271,7 +286,19 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
     this.filters.push(`or=(${encodeURIComponent(filters)})`)
     return this
   }
-  // not() operator deferred to v0.7 — server-side support not yet implemented
+  not(column: string, operator: string, value: unknown): this {
+    this.filters.push(`${column}=not.${operator}.${encodeURIComponent(String(value))}`)
+    return this
+  }
+  textSearch(column: string, query: string, options?: { type?: string; config?: string }): this {
+    const type = options?.type ?? 'fts'
+    this.filters.push(`${column}=${type}.${encodeURIComponent(query)}`)
+    return this
+  }
+  containedBy(column: string, value: unknown): this {
+    this.filters.push(`${column}=cd.${encodeURIComponent(JSON.stringify(value))}`)
+    return this
+  }
 
   // Modify return shape
   select(columns = '*'): this {
@@ -302,7 +329,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
     return this
   }
   single(): PromiseLike<{ data: T | null; error: PostgrestError | null }> {
-    this.wantSingle = true
+    this.wantMaybeSingle = false // force error on 0 rows and >1 rows
     return this.executeSingle()
   }
   maybeSingle(): PromiseLike<{ data: T | null; error: PostgrestError | null }> {
@@ -335,7 +362,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
       for (const filter of this.filters) {
         const [key, ...vals] = filter.split('=')
         if (key === undefined) continue
-        params.set(key, vals.join('='))
+        params.append(key, vals.join('='))
       }
       if (this.orderParams.length) params.set('order', this.orderParams.join(','))
       if (this.limitParam !== undefined) params.set('limit', String(this.limitParam))
@@ -356,6 +383,9 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
       }
       if (this.body && (this.method === 'POST' || this.method === 'PATCH')) {
         headers.Prefer = `${headers.Prefer ?? ''},return=representation`
+      }
+      if ((this.options as Record<string, unknown>).upsert) {
+        headers.Prefer = `${headers.Prefer ?? ''},resolution=merge-duplicates`
       }
 
       if (this.rangeParam) {
@@ -432,7 +462,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
         error: { message: 'No rows found', details: '', hint: '', code: 'PGRST116' },
       }
     }
-    if (result.data.length > 1 && this.wantSingle) {
+    if (result.data.length > 1) {
       return {
         data: null,
         error: { message: 'Multiple rows found', details: '', hint: '', code: 'PGRST116' },

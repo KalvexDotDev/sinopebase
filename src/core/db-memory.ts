@@ -18,6 +18,8 @@ export interface ParsedFilter {
   column: string
   operator: string
   value: unknown
+  /** When true, the match result is negated (NOT (...)). */
+  negate?: boolean
 }
 
 export interface SelectOptions {
@@ -232,6 +234,11 @@ export class MemoryDatabase {
   }
 
   private matchesFilter(row: Record<string, unknown>, filter: ParsedFilter): boolean {
+    const result = this.matchesFilterBase(row, filter)
+    return filter.negate ? !result : result
+  }
+
+  private matchesFilterBase(row: Record<string, unknown>, filter: ParsedFilter): boolean {
     const { column, operator, value } = filter
     const rowValue = row[column]
 
@@ -265,6 +272,17 @@ export class MemoryDatabase {
         const values = Array.isArray(value) ? value : parseInValue(String(value))
         return values.some((v) => this.compareEq(rowValue, v))
       }
+      case 'cs':
+        // JSONB containment: rowValue contains the filter value
+        return this.jsonContains(rowValue, value)
+      case 'cd':
+        // JSONB containment: rowValue is contained by the filter value
+        return this.jsonContains(value, rowValue)
+      case 'fts':
+      case 'plfts':
+      case 'phfts':
+      case 'wfts':
+        throw new Error('Full-text search is not supported in memory mode')
       case 'not': {
         throw new Error(`Unsupported filter operator: ${operator}`)
       }
@@ -311,6 +329,40 @@ export class MemoryDatabase {
     }
   }
 
+  /**
+   * Deep containment check for the cs/cd operators (PostgreSQL @> semantics).
+   * Returns true when `container` contains `item`:
+   *   - arrays: every element of `item` must be present in `container`
+   *   - objects: every key/value of `item` must exist in `container`
+   *   - scalars: equal values (or membership in an array container)
+   */
+  private jsonContains(container: unknown, item: unknown): boolean {
+    if (container === null || container === undefined) return false
+    if (item === null || item === undefined) return true
+
+    // Array containment: every element of `item` must be in `container`
+    if (Array.isArray(item)) {
+      if (!Array.isArray(container)) return false
+      return item.every((element) => this.jsonContains(container, element))
+    }
+
+    // Object containment: every key/value of `item` must exist in `container`
+    if (typeof item === 'object') {
+      if (typeof container !== 'object' || container === null) return false
+      const containerObj = container as Record<string, unknown>
+      return Object.entries(item).every(
+        ([itemKey, itemValue]) =>
+          itemKey in containerObj && this.jsonContains(containerObj[itemKey], itemValue),
+      )
+    }
+
+    // Scalar item: must be present in an array container, or equal to a scalar container
+    if (Array.isArray(container)) {
+      return container.some((element) => this.compareEq(element, item))
+    }
+    return this.compareEq(container, item)
+  }
+
   // -----------------------------------------------------------------------
   // Sorting
   // -----------------------------------------------------------------------
@@ -321,6 +373,7 @@ export class MemoryDatabase {
     // Apply sorts from last to first (stable multi-column sort)
     for (let i = orderParts.length - 1; i >= 0; i--) {
       const part = orderParts[i]?.trim()
+      if (!part) continue
       const segments = part.split('.')
       const column = segments[0]
       if (!column) continue

@@ -120,3 +120,6 @@ import { createPostgrestClient } from './database'
 import { createFunctionsClient } from './functions'
 import { createRealtimeClient } from './realtime-impl'
 import { createStorageClient } from './storage-impl'
+
+export type { CookieProvider } from './ssr'
+export { createBrowserClient, createServerClient } from './ssr'

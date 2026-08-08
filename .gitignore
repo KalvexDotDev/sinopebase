@@ -61,3 +61,8 @@ docs/releases/v0.4/
 .claude/
 docs/compatibility/
 functions/
+
+# Dev scratchpad
+tmp/
+sinopebase.exe
+scripts/screenshots.ts

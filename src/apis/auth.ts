@@ -240,6 +240,88 @@ export const authPlugin = new Elysia({ name: 'sinopebase-auth-fallback' })
     return {}
   })
 
+  .get('/auth/v1/session', async ({ headers }) => {
+    const authHeader = headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      return { data: { session: null, user: null }, error: null }
+    }
+    const token = authHeader.slice(7).trim()
+    if (!token) {
+      return { data: { session: null, user: null }, error: null }
+    }
+    try {
+      const payload = await verifyAccessToken(token)
+      const storedUser = authStore.findUserById(payload.sub)
+      if (!storedUser) {
+        return { data: { session: null, user: null }, error: null }
+      }
+      const user = authStore.toUser(storedUser)
+      const now2 = Math.floor(Date.now() / 1000)
+      const session = {
+        access_token: token,
+        token_type: 'bearer' as const,
+        expires_in: ACCESS_TOKEN_TTL,
+        expires_at: now2 + ACCESS_TOKEN_TTL,
+        refresh_token: token,
+        user,
+      }
+      return { data: { session, user }, error: null }
+    } catch {
+      return { data: { session: null, user: null }, error: null }
+    }
+  })
+  .patch('/auth/v1/user', async ({ headers, body, set }) => {
+    const authHeader = headers.authorization
+    if (!authHeader?.startsWith('Bearer ')) {
+      set.status = 401
+      return { message: 'Invalid authorization header' }
+    }
+    const token = authHeader.slice(7).trim()
+    let payload: { sub: string; email: string }
+    try {
+      payload = await verifyAccessToken(token)
+    } catch {
+      set.status = 401
+      return { message: 'Invalid authorization header' }
+    }
+    const storedUser = authStore.findUserById(payload.sub)
+    if (!storedUser) {
+      set.status = 401
+      return { message: 'Invalid token' }
+    }
+    const { email, password, data, currentPassword } = body as {
+      email?: string
+      password?: string
+      data?: Record<string, unknown>
+      currentPassword?: string
+    }
+    // Require current password to change password
+    if (password && !currentPassword) {
+      set.status = 400
+      return { message: 'currentPassword is required to change password' }
+    }
+    if (password && currentPassword) {
+      const valid = await Bun.password.verify(currentPassword, storedUser.passwordHash)
+      if (!valid) {
+        set.status = 400
+        return { message: 'Current password is incorrect' }
+      }
+      storedUser.passwordHash = await Bun.password.hash(password)
+    }
+    if (email) storedUser.email = email
+    if (data) storedUser.user_metadata = { ...(storedUser.user_metadata ?? {}), ...data }
+    const user = authStore.toUser(storedUser)
+    return userResponse(user)
+  })
+  .post('/auth/v1/reset-password', async ({ body }) => {
+    const { email } = body as { email?: string }
+    // In-memory mode: silently accept (no email sender configured)
+    // Return success even for missing email to prevent enumeration
+    if (!email) return {}
+    // Log the intent — actual email sending requires SMTP
+    console.info(`[auth] Password reset requested for ${email} (no-op in memory mode)`)
+    return {}
+  })
   .get('/auth/v1/user', async ({ headers, set }) => {
     const authHeader = headers.authorization
     if (!authHeader?.startsWith('Bearer ')) {
@@ -394,6 +476,31 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
           return { code: 401, message: 'Failed to validate session' }
         }
       })
+      // GET /auth/v1/session — read session from better-auth cookie (SSR support)
+      .get('/auth/v1/session', async ({ request }) => {
+        const cookieHeader = request.headers.get('cookie') ?? ''
+        const match = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
+        const sessionToken = match?.[1]
+        if (!sessionToken) {
+          return { data: { session: null, user: null }, error: null }
+        }
+        try {
+          const row = await lookupSessionByToken(
+            auth as unknown as Record<string, unknown>,
+            sessionToken,
+          )
+          if (!row) {
+            return { data: { session: null, user: null }, error: null }
+          }
+          const session = bridgeSignInResponse({ token: sessionToken, user: row })
+          if ('message' in session) {
+            return { data: { session: null, user: null }, error: null }
+          }
+          return { data: { session, user: session.user }, error: null }
+        } catch {
+          return { data: { session: null, user: null }, error: null }
+        }
+      })
       .post('/auth/v1/signup', async ({ body, set }) => {
         const { email, password } = body as { email: string; password: string }
         if (!email || !password) {
@@ -412,7 +519,7 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
           return errorResponse(err instanceof Error ? err.message : 'Signup failed', 400)
         }
       })
-      .post('/auth/v1/token', async ({ body, query, set }) => {
+      .post('/auth/v1/token', async ({ body, query, set, request }) => {
         const q = query as Record<string, string>
         const grantType = q.grant_type
         if (grantType === 'password') {
@@ -582,6 +689,42 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
             return errorResponse('Invalid refresh token', 400)
           }
         }
+        if (grantType === 'authorization_code') {
+          // OAuth callback: the code was already consumed by better-auth's
+          // /api/auth/callback handler. Just read the session cookie that
+          // better-auth set during the callback redirect.
+          try {
+            const cookieHeader = request.headers.get('cookie') ?? ''
+            const match = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
+            const sessionToken = match?.[1]
+            if (!sessionToken) {
+              set.status = 400
+              return errorResponse('Invalid authorization code', 400)
+            }
+            const row = await lookupSessionByToken(
+              auth as unknown as Record<string, unknown>,
+              sessionToken,
+            )
+            if (!row) {
+              set.status = 400
+              return errorResponse('Invalid authorization code', 400)
+            }
+            const result = bridgeSignInResponse({ token: sessionToken, user: row })
+            if ('message' in result) {
+              set.status = 400
+              return result
+            }
+            // Store refresh token entry so rotation works
+            await persistRefreshTokenOnSignIn(auth, {
+              token: sessionToken,
+              user: { id: result.user.id },
+            })
+            return result
+          } catch {
+            set.status = 400
+            return errorResponse('Invalid authorization code', 400)
+          }
+        }
         set.status = 400
         return errorResponse('Invalid grant type', 400)
       })
@@ -592,6 +735,101 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
           await auth.api
             .signOut({ headers: new Headers({ Authorization: `Bearer ${token}` }) })
             .catch(() => {})
+        }
+        return {}
+      })
+      .patch('/auth/v1/user', async ({ headers, body, set }) => {
+        const authHeader = headers.authorization
+        if (!authHeader?.startsWith('Bearer ')) {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+        const token = authHeader.slice(7).trim()
+        if (!token) {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+        try {
+          const row = await lookupSessionByToken(auth, token)
+          if (!row) {
+            set.status = 401
+            return { message: 'Invalid token' }
+          }
+          const { email, password, data, currentPassword } = body as {
+            email?: string
+            password?: string
+            data?: Record<string, unknown>
+            currentPassword?: string
+          }
+          // Require current password verification before changing password
+          // (better-auth freshness: prevents stolen session token from silently changing password)
+          if (password && !currentPassword) {
+            set.status = 400
+            return { message: 'currentPassword is required to change password' }
+          }
+          const typedDb = (auth as Record<string, unknown>).__db as RefreshTokenDb | undefined
+          try {
+            if (password && currentPassword) {
+              // Verify current password before allowing change
+              const userRows = await typedDb
+                ?.selectFrom('user')
+                .select(['password'])
+                .where('id', '=', row.id)
+                .execute()
+              const storedHash = (userRows?.[0] as Record<string, unknown> | undefined)?.password as
+                | string
+                | undefined
+              if (!storedHash || !(await Bun.password.verify(currentPassword, storedHash))) {
+                set.status = 400
+                return { message: 'Current password is incorrect' }
+              }
+              const hashedPassword = await Bun.password.hash(password)
+              if (typedDb?.updateTable) {
+                await typedDb
+                  .updateTable('user')
+                  .set({ password: hashedPassword, updatedAt: new Date() } as Record<
+                    string,
+                    unknown
+                  >)
+                  .where('id', '=', row.id)
+                  .execute()
+              }
+            }
+            if (typedDb?.updateTable) {
+              const updateData: Record<string, unknown> = { updatedAt: new Date() }
+              if (data) updateData.user_metadata = data
+              if (email) updateData.email = email
+              await typedDb.updateTable('user').set(updateData).where('id', '=', row.id).execute()
+            }
+            // Return updated user
+            const updated = await lookupSessionByToken(auth, token)
+            if (updated) {
+              return bridgeGetUserResponse({ user: updated, session: {} })
+            }
+            return bridgeGetUserResponse({ user: row, session: {} })
+          } catch {
+            // Fallback: return current user even if update partially failed
+            return bridgeGetUserResponse({ user: row, session: {} })
+          }
+        } catch {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+      })
+      .post('/auth/v1/reset-password', async ({ body }) => {
+        const { email } = body as { email?: string }
+        if (!email) {
+          // Return success even for missing email to prevent enumeration
+          return {}
+        }
+        // Trigger better-auth password reset
+        try {
+          const ba = auth as unknown as {
+            api?: { forgetPassword?: (args: { body: { email: string } }) => Promise<void> }
+          }
+          await ba.api?.forgetPassword?.({ body: { email } })
+        } catch {
+          // Swallow errors — always return success to prevent email enumeration
         }
         return {}
       })

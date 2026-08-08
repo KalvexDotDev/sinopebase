@@ -455,6 +455,12 @@ export class PostgresDatabase implements IDatabase {
   }
 
   private filterExpression(filter: Filter): RawBuilder<boolean> {
+    const expression = this.buildFilterExpression(filter)
+    if (!filter.negate) return expression
+    return sql<boolean>`NOT (${expression})`
+  }
+
+  private buildFilterExpression(filter: Filter): RawBuilder<boolean> {
     const column = sql.ref(filter.column)
 
     switch (filter.operator) {
@@ -494,6 +500,19 @@ export class PostgresDatabase implements IDatabase {
         if (values.length === 0) return sql<boolean>`FALSE`
         return sql<boolean>`${column} IN (${sql.join(values)})`
       }
+      case 'cs':
+        // JSONB containment: column contains the JSON value
+        return sql<boolean>`${column} @> ${sql.val(filter.value)}::jsonb`
+      case 'cd':
+        // JSONB containment: column is contained by the JSON value
+        return sql<boolean>`${column} <@ ${sql.val(filter.value)}::jsonb`
+      case 'fts':
+      case 'plfts':
+        return sql<boolean>`to_tsvector('english', ${column}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`
+      case 'phfts':
+        return sql<boolean>`to_tsvector('english', ${column}) @@ phraseto_tsquery('english', ${sql.val(filter.value)})`
+      case 'wfts':
+        return sql<boolean>`to_tsvector('english', ${column}) @@ websearch_to_tsquery('english', ${sql.val(filter.value)})`
       default:
         throw new Error(`Unsupported filter operator: ${filter.operator}`)
     }

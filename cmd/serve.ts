@@ -19,7 +19,7 @@
  *   --help, -h                Show this help message
  */
 
-import { Sinopebase, type AppConfig } from '~/core/app.ts'
+import { type AppConfig, Sinopebase } from '~/core/app.ts'
 
 // ---------------------------------------------------------------------------
 // Argument parser
@@ -42,19 +42,20 @@ interface ServeFlags {
  */
 function parseArgs(args: string[]): ServeFlags {
   const flags: ServeFlags = {
-    port: parseInt(process.env['PORT'] ?? '8090', 10),
-    host: process.env['HOST'] ?? '0.0.0.0',
-    dataDir: process.env['DATA_DIR'] ?? './pb_data',
-    postgresUrl: process.env['POSTGRES_URL'] ?? '',
-    jwtSecret: process.env['JWT_SECRET'] ?? '',
-    tlsCert: process.env['TLS_CERT'] ?? '',
-    tlsKey: process.env['TLS_KEY'] ?? '',
-    dev: process.env['DEV'] === 'true',
+    port: parseInt(process.env.PORT ?? '8090', 10),
+    host: process.env.HOST ?? '0.0.0.0',
+    dataDir: process.env.DATA_DIR ?? './pb_data',
+    postgresUrl: process.env.POSTGRES_URL ?? '',
+    jwtSecret: process.env.JWT_SECRET ?? '',
+    tlsCert: process.env.TLS_CERT ?? '',
+    tlsKey: process.env.TLS_KEY ?? '',
+    dev: process.env.DEV === 'true',
     help: false,
   }
 
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!
+    const arg = args[i]
+    if (arg === undefined) break
 
     switch (arg) {
       case '--port':
@@ -157,14 +158,25 @@ async function main(): Promise<void> {
     dataDir: flags.dataDir,
     postgresUrl: flags.postgresUrl || undefined,
     jwtSecret: flags.jwtSecret || undefined,
-    serviceRoleKey: process.env['SINOPEBASE_SERVICE_ROLE_KEY'] || undefined,
-    anonKey: process.env['SINOPEBASE_ANON_KEY'] || undefined,
+    serviceRoleKey: process.env.SINOPEBASE_SERVICE_ROLE_KEY || undefined,
+    anonKey: process.env.SINOPEBASE_ANON_KEY || undefined,
     tls,
-    minioEndpoint: process.env['S3_ENDPOINT'] || undefined,
-    minioAccessKey: process.env['S3_ACCESS_KEY'] || undefined,
-    minioSecretKey: process.env['S3_SECRET_KEY'] || undefined,
-    openaiApiKey: process.env['OPENAI_API_KEY'] || undefined,
-    mastraRequireAuth: process.env['MASTRA_REQUIRE_AUTH'] !== 'false',
+    minioEndpoint: process.env.S3_ENDPOINT || undefined,
+    minioAccessKey: process.env.S3_ACCESS_KEY || undefined,
+    minioSecretKey: process.env.S3_SECRET_KEY || undefined,
+    openaiApiKey: process.env.OPENAI_API_KEY || undefined,
+    mastraRequireAuth: process.env.MASTRA_REQUIRE_AUTH !== 'false',
+    smtp: {
+      enabled: process.env.SINOPEBASE_SMTP_ENABLED === 'true',
+      host: process.env.SINOPEBASE_SMTP_HOST || undefined,
+      port: process.env.SINOPEBASE_SMTP_PORT
+        ? parseInt(process.env.SINOPEBASE_SMTP_PORT, 10)
+        : undefined,
+      username: process.env.SINOPEBASE_SMTP_USERNAME || undefined,
+      password: process.env.SINOPEBASE_SMTP_PASSWORD || undefined,
+      fromAddress: process.env.SINOPEBASE_SMTP_FROM_ADDRESS || undefined,
+      fromName: process.env.SINOPEBASE_SMTP_FROM_NAME || undefined,
+    },
   } satisfies AppConfig)
 
   try {

@@ -3,7 +3,7 @@
 **Date:** 2026-08-02
 **Status:** Planned
 **Depends on:** v0.7
-**Estimated:** ~6 days
+**Estimated:** ~7 days
 
 ## Context
 
@@ -63,6 +63,17 @@ Methods that aren't blocking sinope but are commonly used and expected by supaba
 - [ ] **C2. `MIGRATIONS_REGION` / `MIGRATIONS_ENDPOINT` / `MIGRATIONS_ACCESS_KEY` / `MIGRATIONS_SECRET_KEY` env vars** — optional overrides for the migrations bucket. Default to the same S3 config as file storage (`RUSTFS_*`).
 - [ ] **C3. Reuse `loadSqlMigrationsFromDirectory` pattern** — already built for local `supabase/migrations/*.sql`. The S3 variant streams files from the bucket instead of reading from disk. Same validation, same tracking table.
 - [ ] **C4. Railway template docs** — document the migration flow: create a `migrations/` folder in your bucket, upload timestamped `.sql` files, redeploy.
+
+### Track D: Mailer — Wire SMTP + Email Verification (P1 — 1 day)
+
+**Current state:** Full PocketBase mailer ported (`src/tools/mailer/` — SMTPClient, Sendmail, html2Text) but never instantiated. Signup auto-logs-in without verification. Record-auth endpoints `console.info` tokens instead of emailing them. Email is the gap between "dev toy" and "real auth."
+
+- [ ] **D1. SMTP env vars** — `SINOPEBASE_SMTP_ENABLED`, `SINOPEBASE_SMTP_HOST`, `SINOPEBASE_SMTP_PORT`, `SINOPEBASE_SMTP_USERNAME`, `SINOPEBASE_SMTP_PASSWORD`, `SINOPEBASE_SMTP_FROM_ADDRESS`, `SINOPEBASE_SMTP_FROM_NAME`. Wired in `config.ts` with env fallback and merged into `AppSettings` (existing shape already matches). Env vars take precedence over `PATCH /api/settings` values.
+- [ ] **D1a. Settings UI** — add SMTP fields to `ui/src/pages/Settings.svelte`: toggle (`enabled`), host, port, username, password (masked), from address, from name. Read from `GET /api/settings`, write via `PATCH /api/settings`. Show env-var source when a value comes from the environment (read-only indicator).
+- [ ] **D2. Mailer instantiation** — construct `SMTPClient` in `app.serve()` when `smtp.enabled` is true. Pass it to the auth plugin and record-auth plugin. Fall back to console-only when disabled (current behavior).
+- [ ] **D3. Verification email on signup** — better-auth: add `emailVerification: { sendVerificationEmail: async ({ user, url }) => mailer.send(...) }` config. Memory-auth: call the mailer from `createUser` when configured. Enforce `emailVerified` check before issuing access tokens.
+- [ ] **D4. Wire record-auth endpoints** — replace `console.info(token)` in `request-verification`, `request-password-reset`, `request-email-change` with actual `mailer.send()` using email templates. Un-stub `confirm-verification` and `confirm-password-reset` (currently return 501).
+- [ ] **D5. Test email endpoint** — wire `/api/admin/test-email` to use the live SMTP client instead of throwing `'No email sender configured'`.
 
 ## Success Criteria
 

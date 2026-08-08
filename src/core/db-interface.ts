@@ -6,6 +6,8 @@ export interface Filter {
   column: string
   operator: string
   value: unknown
+  /** When true, the DB layer wraps the operator expression in NOT (...). */
+  negate?: boolean
 }
 
 export interface OrderBy {

@@ -542,12 +542,23 @@ import {
 import { generateRequestId, logger } from './logger'
 import { loadMigrationsFromDirectory, loadSqlMigrationsFromDirectory } from './migrations_loader'
 import { MigrationRunner } from './migrations_runner'
+import { loadSqlMigrationsFromS3 } from './migrations_s3'
 
 export interface AppConfig {
   /** PostgreSQL connection URL (empty string = use in-memory db) */
   postgresUrl?: string
   /** MinIO endpoint */
   minioEndpoint?: string
+  /** SMTP mailer configuration */
+  smtp?: {
+    enabled?: boolean
+    host?: string
+    port?: number
+    username?: string
+    password?: string
+    fromAddress?: string
+    fromName?: string
+  }
   /** MinIO access key */
   minioAccessKey?: string
   /** MinIO secret key */
@@ -914,6 +925,19 @@ export class Sinopebase {
       } else {
         logger.info('Storage', { type: 'local' })
       }
+    }
+
+    // ── Mailer (SMTP) ────────────────────────────────────────────────
+    if (this.config.smtp?.enabled && this.config.smtp?.host) {
+      const { SMTPClient } = await import('~/tools/mailer/smtp')
+      new SMTPClient({
+        host: this.config.smtp.host,
+        port: this.config.smtp.port ?? 587,
+        username: this.config.smtp.username,
+        password: this.config.smtp.password,
+        tls: this.config.smtp.port === 465,
+      })
+      logger.info('Mailer', { type: 'SMTP', host: this.config.smtp.host })
     }
 
     // Create required tables
@@ -1746,7 +1770,28 @@ export class Sinopebase {
     const supabaseMigrationsDir = resolve(import.meta.dir, '../../../supabase/migrations')
     const sqlDiscovered = await loadSqlMigrationsFromDirectory(supabaseMigrationsDir)
 
-    const allMigrations = [...discovered, ...sqlDiscovered]
+    // Load SQL migrations from S3 bucket when MIGRATIONS_BUCKET is configured.
+    // Railway template users upload .sql files to their storage bucket instead of
+    // forking the repo to add local migration files.
+    const s3MigrationsBucket = process.env.MIGRATIONS_BUCKET
+    let s3Discovered: Awaited<ReturnType<typeof loadSqlMigrationsFromS3>> = []
+    if (s3MigrationsBucket && this.fileStore?.list) {
+      try {
+        const s3Store = this.fileStore as unknown as {
+          list: (bucket: string, prefix: string) => Promise<{ name: string }[]>
+          read: (bucket: string, key: string) => Promise<unknown>
+        }
+        s3Discovered = await loadSqlMigrationsFromS3(
+          s3Store as unknown as import('./migrations_s3').S3FileStore,
+          s3MigrationsBucket,
+          process.env.MIGRATIONS_PREFIX ?? '',
+        )
+      } catch (err) {
+        logger.warn('S3 migrations', { error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    const allMigrations = [...discovered, ...sqlDiscovered, ...s3Discovered]
 
     // Sort all migrations by timestamp so interleaved TS + SQL files run in order.
     allMigrations.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))

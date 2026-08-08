@@ -990,7 +990,7 @@ const NON_FILTER_KEYS = new Set(['select', 'order', 'limit', 'offset', 'count', 
 export function parseFilterParam(
   key: string,
   rawValue: string,
-): { column: string; operator: string; value: string } | null {
+): { column: string; operator: string; value: string; negate?: boolean } | null {
   if (NON_FILTER_KEYS.has(key) || key === 'or') {
     return null
   }
@@ -998,12 +998,23 @@ export function parseFilterParam(
   const dotIndex = rawValue.indexOf('.')
   if (dotIndex === -1) return null
 
-  const operator = rawValue.slice(0, dotIndex)
-  const value = rawValue.slice(dotIndex + 1)
+  let operator = rawValue.slice(0, dotIndex)
+  let value = rawValue.slice(dotIndex + 1)
 
   if (!operator || value === undefined) return null
 
-  return { column: key, operator, value }
+  // Handle the `not.<operator>.<value>` prefix: strip it and set the negate
+  // flag so the DB layer can wrap the expression in NOT (...).
+  let negate = false
+  if (operator === 'not') {
+    const innerDot = value.indexOf('.')
+    if (innerDot === -1) return null
+    operator = value.slice(0, innerDot)
+    value = value.slice(innerDot + 1)
+    negate = true
+  }
+
+  return negate ? { column: key, operator, value, negate: true } : { column: key, operator, value }
 }
 
 /**
