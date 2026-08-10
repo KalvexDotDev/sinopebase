@@ -7,9 +7,10 @@ import { type AppConfig, Sinopebase } from '../../src/core/app'
 // Helpers
 // ---------------------------------------------------------------------------
 
-let nextPort = 41000
+// Use random high ports to avoid conflicts from previous test runs
+// leaving ports in TIME_WAIT.
 function getPort(): number {
-  return nextPort++
+  return 42000 + Math.floor(Math.random() * 10000)
 }
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -85,6 +86,26 @@ describe('secure boot — production mode', () => {
 // ---------------------------------------------------------------------------
 
 describe('secure boot — development mode', () => {
+  let prevPg: string | undefined
+  let prevS3: string | undefined
+
+  beforeAll(() => {
+    // These tests expect no PostgreSQL or S3 in the environment.
+    // Save and clear so the constructor's process.env fallback
+    // doesn't override the empty-string config.
+    prevPg = process.env.POSTGRES_URL
+    prevS3 = process.env.RUSTFS_ENDPOINT
+    delete process.env.POSTGRES_URL
+    delete process.env.RUSTFS_ENDPOINT
+  })
+
+  afterAll(() => {
+    if (prevPg !== undefined) process.env.POSTGRES_URL = prevPg
+    else delete process.env.POSTGRES_URL
+    if (prevS3 !== undefined) process.env.RUSTFS_ENDPOINT = prevS3
+    else delete process.env.RUSTFS_ENDPOINT
+  })
+
   it('starts with memory db when postgresUrl is empty', async () => {
     const app = new Sinopebase(makeConfig())
     await app.start()
