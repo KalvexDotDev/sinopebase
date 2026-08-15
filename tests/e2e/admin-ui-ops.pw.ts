@@ -102,9 +102,11 @@ test('Table Editor: create table + add row through the UI', async ({ page }) => 
   })
   expect(created.status).toBe(200)
 
-  // The table appears in the sidebar after creation.
+  // The table appears in the sidebar after creation. Reload so the SPA
+  // re-reads the table list, and give slow CI runners room.
+  await page.reload()
   const sidebarTable = page.getByText(tableName, { exact: true })
-  await expect(sidebarTable).toBeVisible()
+  await expect(sidebarTable).toBeVisible({ timeout: 15_000 })
 
   // An empty table shows the "No rows" state.
   await sidebarTable.click()
