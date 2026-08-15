@@ -38,7 +38,15 @@ const authHeaders = {
   Authorization: `Bearer ${ANON_KEY}`,
 }
 
+// CI jobs export RUSTFS_* for other suites — this suite must pin the LOCAL
+// store regardless of the ambient environment.
+const savedRustfsEnv: Record<string, string | undefined> = {}
+
 beforeAll(async () => {
+  for (const key of ['RUSTFS_ENDPOINT', 'RUSTFS_ACCESS_KEY', 'RUSTFS_SECRET_KEY']) {
+    savedRustfsEnv[key] = process.env[key]
+    delete process.env[key]
+  }
   // Unique bucket per run — no cross-run state, cleanup happens in afterAll.
   testBucket = `local-${uniqueId()}`
   dataDir = await mkdtemp(join(tmpdir(), 'sinope-storage-local-'))
@@ -59,6 +67,10 @@ beforeAll(async () => {
 afterAll(async () => {
   await server.stop()
   await rm(dataDir, { recursive: true, force: true })
+  for (const [key, value] of Object.entries(savedRustfsEnv)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
 })
 
 describe('storage-local: upload/download with MIME inference', () => {

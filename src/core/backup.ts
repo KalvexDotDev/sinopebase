@@ -133,7 +133,10 @@ export async function pgDump(connectionString: string, outputPath: string): Prom
   const exitCode = await proc.exitCode
 
   if (exitCode !== 0) {
-    throw new Error(`pg_dump failed (exit ${exitCode}): ${err || '(no stderr)'}`)
+    // Version mismatches (runner pg_dump older than the server) and other
+    // pg_dump failures fall back to the SQL-based export.
+    console.warn(`pg_dump failed (exit ${exitCode}): ${err || '(no stderr)'} — using SQL fallback`)
+    return sqlDump(connectionString, outputPath)
   }
 
   // Write the dump to disk

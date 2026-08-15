@@ -172,6 +172,20 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Run drop-functions suite (isolated process — parallel workers
+          in the main run share module state and can interfere with its
+          session-token tests)
+        run: |
+          export SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)
+          export SINOPEBASE_ANON_KEY=$(openssl rand -hex 32)
+          export JWT_SECRET=$(openssl rand -hex 32)
+          bun test tests/plugins/drop-functions/
+        env:
+          TEST_POSTGRES_URL: postgresql://sinopebase:sinopebase@localhost:5432/sinopebase
+          RUSTFS_ENDPOINT: http://localhost:9000
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
+
       - name: Run test suite (JUnit, PostgreSQL-backed)
         run: |
           export SINOPEBASE_SERVICE_ROLE_KEY=$(openssl rand -hex 32)

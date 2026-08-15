@@ -105,7 +105,8 @@ describe('rate limiting wiring', () => {
       expect(blocked.status).toBe(429)
 
       const body = await blocked.json()
-      expect(body).toHaveProperty('code', 429)
+      // ApiError codes serialize as strings across all paths.
+      expect(body).toHaveProperty('code', '429')
       expect(body).toHaveProperty('message')
     } finally {
       await app.stop()
