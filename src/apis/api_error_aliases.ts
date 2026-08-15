@@ -31,10 +31,10 @@ export class ApiError extends Error {
     this.data = data
   }
 
-  /** Serialise to the PocketBase wire format. */
+  /** Serialise to the PocketBase wire format. PostgREST error codes are strings. */
   toJSON(): Record<string, unknown> {
     return {
-      code: this.status,
+      code: String(this.status),
       message: this.message,
       data: this.data ?? null,
     }

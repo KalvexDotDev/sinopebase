@@ -58,6 +58,8 @@ export interface CreateAuthOptions {
   oauthProviders?: OAuthProviderConfig[]
   /** Additional trusted origins (e.g. production domain) */
   extraOrigins?: string[]
+  /** Deliver transactional email (password reset, verification). */
+  sendEmail?: (mail: { to: string; subject: string; text: string; html?: string }) => Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +270,34 @@ export async function createAuth(
 
   const allProviderIds = allProviders.map((p) => p.providerId)
 
+  // Transactional email through the host app's mailer. Each sender lives on
+  // the config section better-auth reads it from: reset under
+  // emailAndPassword, verification under emailVerification.
+  const sendEmail = options?.sendEmail
+  const emailSenders = sendEmail
+    ? {
+        sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
+          await sendEmail({
+            to: user.email,
+            subject: 'Sinopebase password reset',
+            text: `Reset your password: ${url}`,
+            html: `<p>Reset your password: <a href="${url}">${url}</a></p>`,
+          })
+        },
+      }
+    : {}
+  const verificationSender = sendEmail
+    ? {
+        sendVerificationEmail: async ({ user, url }: { user: { email: string }; url: string }) => {
+          await sendEmail({
+            to: user.email,
+            subject: 'Verify your email',
+            text: `Verify your email: ${url}`,
+          })
+        },
+      }
+    : {}
+
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
   const auth = betterAuth({
@@ -278,7 +308,10 @@ export async function createAuth(
         generateId: () => crypto.randomUUID(),
       },
     },
-    emailAndPassword: { enabled: true },
+    emailAndPassword: { enabled: true, ...emailSenders },
+    // Email verification flows are available only when a mailer can deliver
+    // them. requireEmailVerification stays off — signin is not blocked.
+    ...(sendEmail ? { emailVerification: { enabled: true, ...verificationSender } } : {}),
     secret,
     trustedOrigins,
     baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',

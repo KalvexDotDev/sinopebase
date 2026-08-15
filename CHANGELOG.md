@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (v0.8.1)
+
+### Added
+- **SDK root-level `rpc()`** — `client.rpc(fn, args, options)` matches the supabase-js contract: rows by default, single value with `{ get: true }`, status only with `{ head: true }`. Sends the signed-in session token so RLS resolves the user's role (previously `rpc()` hung only off `from()` and always used the API key).
+- **Anon RPC access** — `/rest/v1/rpc/*` POSTs with the anon key now reach PostgREST, matching Supabase (RLS policies still gate the data).
+- **Custom metric registration** — `app.metrics.registerMetric(name, help, 'counter' | 'gauge')` publishes consumer metrics on `/metrics` (Prometheus) and `/api/metrics` (JSON). Names are validated against the Prometheus metric-name pattern.
+- **SDK session-token auth for queries** — `from()` requests send the current session token instead of the hardcoded API key, so table queries honor RLS for signed-in users.
+
+### Fixed
+- **SDK package drift** — `sdk-package/src` (the npm publish source) had fallen behind `src/sdk`; synced so `@sinopebase/sdk` publishes the current client.
+- **Version fields** — repository and SDK package `package.json` versions were stale (0.6.2); aligned to 0.8.0 to match master content and the next release tag.
+
 ## v0.7.0 — 2026-08-03
 
 ### Added

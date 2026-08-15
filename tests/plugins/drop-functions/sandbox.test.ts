@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Sinopebase } from '~/core/app'
 
@@ -20,7 +21,8 @@ interface TestResponse {
 
 import { requirePostgres, reserveLoopbackPort } from '../../harness'
 
-const DEFAULT_FN_DIR = resolve('./functions')
+// Per-run temp dir — parallel suites must never share the functions directory.
+const DEFAULT_FN_DIR = resolve(tmpdir(), `sinopebase-drop-fn-sandbox-${process.pid}`)
 
 function writeTestFunction(name: string, source: string): void {
   mkdirSync(DEFAULT_FN_DIR, { recursive: true })
@@ -111,6 +113,7 @@ describe('DropFunctions — Sandbox execution', () => {
       jwtSecret: 'sandbox-test-jwt-secret-min-32-chars!',
       serviceRoleKey: 'sandbox-test-service-key-min-32-chars!!',
       anonKey: 'sandbox-test-anon-key-min-32-chars!!!',
+      functionsDir: DEFAULT_FN_DIR,
     })
     await portReservation.release()
 

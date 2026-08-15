@@ -35,18 +35,29 @@ export interface FunctionsClient {
     functionName: string,
     options?: FunctionInvokeOptions,
   ): Promise<FunctionResponse<T>>
+
+  /**
+   * Set a custom auth token for function invocations.
+   *
+   * When set, the token replaces the default API key in the Authorization header.
+   * Pass null to reset to the default API key.
+   */
+  setAuth(token: string | null): void
 }
 
 export function createFunctionsClient(baseUrl: string, apiKey: string): FunctionsClient {
+  let authToken: string | null = null
+
   return {
     async invoke<T = unknown>(
       functionName: string,
       options?: FunctionInvokeOptions,
     ): Promise<FunctionResponse<T>> {
       const method = options?.method ?? 'POST'
+      const token = authToken ?? apiKey
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${token}`,
         ...options?.headers,
       }
 
@@ -63,7 +74,10 @@ export function createFunctionsClient(baseUrl: string, apiKey: string): Function
           return {
             data: null,
             error: {
-              message: (json?.error as string) || (json?.message as string) || `Function returned ${res.status}`,
+              message:
+                (json?.error as string) ||
+                (json?.message as string) ||
+                `Function returned ${res.status}`,
               status: res.status,
             },
           }
@@ -81,6 +95,10 @@ export function createFunctionsClient(baseUrl: string, apiKey: string): Function
           },
         }
       }
+    },
+
+    setAuth(token: string | null): void {
+      authToken = token
     },
   }
 }

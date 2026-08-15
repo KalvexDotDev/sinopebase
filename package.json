@@ -1,6 +1,6 @@
 {
   "name": "sinopebase",
-  "version": "0.6.2",
+  "version": "0.8.1",
   "module": "cmd/serve.ts",
   "type": "module",
   "private": false,
@@ -75,6 +75,7 @@
     "js-yaml": "^5.2.3",
     "kysely": "^0.29.4",
     "minio": "^8.0.7",
+    "nodemailer": "^9.0.5",
     "pg": "^8.22.0",
     "randexp": "^0.5.3",
     "ws": "^8.21.2",

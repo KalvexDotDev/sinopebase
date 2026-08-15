@@ -16,10 +16,11 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { RealtimeHub } from '../../src/apis/realtime'
+import type { RealtimeHub } from '../../src/apis/realtime'
 import { Sinopebase } from '../../src/core/app'
 import { createClient } from '../../src/sdk/client'
 import { requirePostgres, reserveLoopbackPort } from '../harness'
+import { pollUntil } from './setup'
 
 let server: Sinopebase
 let origin: string
@@ -146,34 +147,41 @@ function waitForPresenceDiff(
   )
 }
 
-// ── Test socket double (for heartbeat sweeper test) ────────────────────────
+// ── Server-side presence introspection (for the heartbeat test) ────────────
+// The SDK swallows phx_reply frames, so the heartbeat round-trip is not
+// observable from the client. The server refreshes the lastHeartbeat of
+// presence entries on every phx_heartbeat — inspect those entries directly.
 
-class TestSocket {
-  readonly sent: unknown[] = []
-  readonly data: { query: { apikey: string } }
-  id?: string
-
-  constructor(apiKey: string) {
-    this.data = { query: { apikey: apiKey } }
-  }
-
-  send(data: unknown): void {
-    this.sent.push(data)
-  }
-  subscribe(_topic: string): void {}
-  unsubscribe(_topic: string): void {}
-  publish(_topic: string, _data: unknown): void {}
+interface PresenceEntrySnapshot {
+  lastHeartbeat: number
 }
 
-function findLastSent<T>(
-  socket: TestSocket,
-  predicate: (msg: PhoenixV2) => boolean,
-): T | undefined {
-  const parsed = socket.sent.map((raw) => JSON.parse(raw as string) as PhoenixV2)
-  for (let i = parsed.length - 1; i >= 0; i--) {
-    if (predicate(parsed[i] as PhoenixV2)) return parsed[i] as T
+function presenceEntry(
+  hub: RealtimeHub<unknown>,
+  topic: string,
+  key: string,
+): PresenceEntrySnapshot | undefined {
+  const byTopic = (
+    hub as unknown as {
+      presenceByTopic: Map<string, Array<{ key: string; lastHeartbeat: number }>>
+    }
+  ).presenceByTopic
+  return byTopic.get(topic)?.find((entry) => entry.key === key)
+}
+
+async function waitForPresenceEntry(
+  hub: RealtimeHub<unknown>,
+  topic: string,
+  key: string,
+  timeoutMs: number,
+): Promise<PresenceEntrySnapshot> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const entry = presenceEntry(hub, topic, key)
+    if (entry) return entry
+    await Bun.sleep(20)
   }
-  return undefined
+  throw new Error('Timed out waiting for presence entry')
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -326,75 +334,53 @@ describe('Realtime Presence', () => {
     }
   })
 
-  // SKIP in CI: requires 80s wall-clock time. Run manually with:
-  //   bun test -t "heartbeat" tests/integration/realtime-presence.test.ts
-  test.skip('heartbeat keeps presence alive past the 60s sweep timeout', {
-    timeout: 150_000,
-  }, async () => {
-    // Dedicated hub so the sweeper timing is fully contained in this test.
-    const hub = new RealtimeHub()
-    const topic = uniqueTopic('hb')
+  test('heartbeat round-trip: the server replies phx_reply ok', async () => {
+    const topic = uniqueTopic('hb-echo')
+    const { ws, messages, close } = await rawRealtimeSocket(origin, anonKey)
 
-    const a = new TestSocket(anonKey)
-    const b = new TestSocket(anonKey)
+    try {
+      await joinChannel(ws, messages, topic, '1', joinPayload({ key: 'user1' }, { online: true }))
 
-    // A joins with presence (auto-track user1); B joins as an observer.
-    await hub.handleMessage(
-      a,
-      JSON.stringify([
-        '1',
-        '1',
-        topic,
-        'phx_join',
-        joinPayload({ key: 'user1' }, { online: true }),
-      ]),
-    )
-    await hub.handleMessage(b, JSON.stringify(['1', '1', topic, 'phx_join', joinPayload()]))
-
-    // Sanity: A's join reply carries a presence_state object.
-    const joinReply = findLastSent<PhoenixV2>(a, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
-    expect(joinReply?.[4]).toMatchObject({ status: 'ok' })
-    const joinState = ((joinReply?.[4].response ?? {}) as Record<string, unknown>).presence_state
-    expect(joinState).toBeDefined()
-
-    // Wait 59s — still within the 60s presence timeout — then send a
-    // heartbeat to refresh the entry's lastHeartbeat before the sweeper
-    // (runs every 15s, removes entries older than 60s) can remove it.
-    await Bun.sleep(59_000)
-    await hub.handleMessage(a, JSON.stringify(['1', '2', topic, 'phx_heartbeat', {}]))
-    const hbReply = findLastSent<PhoenixV2>(a, (m) => isPhoenix(m, topic, 'phx_reply', '2'))
-    expect(hbReply?.[4]).toMatchObject({ status: 'ok' })
-
-    // Wait past the ~75s sweep tick. Without the heartbeat the entry would
-    // have been swept by now (60s timeout + 15s sweep interval); with the
-    // heartbeat its lastHeartbeat was refreshed to ~59s, so it survives.
-    await Bun.sleep(21_000)
-
-    // A fresh joiner must still see user1 in presence_state.
-    const c = new TestSocket(anonKey)
-    await hub.handleMessage(
-      c,
-      JSON.stringify(['1', '1', topic, 'phx_join', joinPayload({ key: 'c' }, { online: true })]),
-    )
-    const reply = findLastSent<PhoenixV2>(c, (m) => isPhoenix(m, topic, 'phx_reply', '1'))
-    expect(reply?.[4]).toMatchObject({ status: 'ok' })
-    const state = ((reply?.[4].response ?? {}) as Record<string, unknown>).presence_state as Record<
-      string,
-      unknown
-    >
-    expect(state.user1).toBeDefined()
-
-    // The sweeper must never have broadcast a leave for user1 to observers.
-    const swept = findLastSent<PhoenixV2>(
-      b,
-      (m) =>
-        isPhoenix(m, topic, 'presence_diff') &&
-        (m[4] as Record<string, unknown>)?.leaves !== undefined &&
-        Object.keys(((m[4] as Record<string, unknown>).leaves ?? {}) as Record<string, unknown>)
-          .length > 0,
-    )
-    expect(swept).toBeUndefined()
+      ws.send(JSON.stringify(['1', '2', 'phoenix', 'phx_heartbeat', {}]))
+      const reply = await waitForMessage<PhoenixV2>(messages, (m) =>
+        isPhoenix(m, 'phoenix', 'phx_reply', '2'),
+      )
+      expect(reply[4]).toEqual({ status: 'ok', response: {} })
+    } finally {
+      close()
+    }
   })
+
+  test('SDK client auto-heartbeat is processed by the server within ~35s', async () => {
+    const topic = uniqueTopic('hb-sdk')
+    const client = createClient(origin, anonKey)
+    // The SDK swallows phx_reply frames, so the heartbeat round-trip is not
+    // observable from the client. Inspect the server-side presence entries
+    // instead: phx_heartbeat refreshes their lastHeartbeat timestamps.
+    const hub = (server as unknown as { _realtimeHub?: RealtimeHub<unknown> })._realtimeHub
+    if (!hub) throw new Error('realtime hub not initialised')
+
+    try {
+      const channel = client.realtime.channel(topic)
+      await channel.subscribe(() => {})
+      channel.track('user1', { online: true })
+
+      // The server registers the presence entry at track time and refreshes
+      // its lastHeartbeat on every phx_heartbeat. The SDK client sends
+      // phx_heartbeat every 30s, so the first refresh lands within ~35s.
+      const initial = (await waitForPresenceEntry(hub, topic, 'user1', 5_000)).lastHeartbeat
+      await pollUntil(
+        () => {
+          const current = presenceEntry(hub, topic, 'user1')
+          return current !== undefined && current.lastHeartbeat > initial
+        },
+        500,
+        70,
+      )
+    } finally {
+      client.realtime.disconnect()
+    }
+  }, 45_000)
 
   test('SDK track/untrack delivers presence events over HTTP', async () => {
     const topic = uniqueTopic('sdk')

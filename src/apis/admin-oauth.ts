@@ -5,8 +5,10 @@
  * Changes take effect on server restart (better-auth config is startup-only).
  */
 
+import { lookup } from 'node:dns/promises'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import { Elysia } from 'elysia'
 import type { OAuthProviderConfig } from '~/tools/auth-better'
@@ -17,16 +19,6 @@ import { decryptClientSecret, encryptClientSecret } from '~/tools/security/oauth
 // ---------------------------------------------------------------------------
 
 const PROVIDER_ID_RE = /^[a-zA-Z0-9_-]+$/
-const ISSUER_HTTPS_RE = /^https:\/\//
-
-/** Private / loopback IP ranges and hostnames to reject for issuer URLs. */
-const BLOCKED_ISSUER_PATTERNS = [
-  /^https?:\/\/(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/, // IPv4 private
-  /^https?:\/\/\[?::1\]?/, // IPv6 loopback
-  /^https?:\/\/\[?fc00:/i, // IPv6 ULA
-  /^https?:\/\/localhost/i,
-  /^https?:\/\/0\.0\.0\.0/,
-]
 
 function validateProviderId(id: string): string | null {
   if (!id || id.length > 128) return 'providerId must be 1-128 characters.'
@@ -34,18 +26,71 @@ function validateProviderId(id: string): string | null {
   return null
 }
 
-function validateIssuer(issuer: string): string | null {
-  if (!issuer) return null // optional
-  // Must be https
-  if (!ISSUER_HTTPS_RE.test(issuer)) return 'Issuer must use HTTPS.'
-  // No private/loopback IPs
-  for (const pattern of BLOCKED_ISSUER_PATTERNS) {
-    if (pattern.test(issuer)) return 'Issuer must not be a private or loopback address.'
+/** True for loopback, private, link-local, and reserved addresses. */
+function isPrivateIp(ip: string): boolean {
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d) — extract and check the v4 part.
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)
+  if (mapped?.[1]) return isPrivateIp(mapped[1])
+  const v4Parts = ip.split('.').map((p) => Number(p))
+  if (v4Parts.length === 4 && v4Parts.every((p) => Number.isInteger(p) && p >= 0 && p <= 255)) {
+    const [a, b] = v4Parts
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    )
   }
+  const lower = ip.toLowerCase()
+  return (
+    lower === '::' ||
+    lower === '::1' ||
+    lower.startsWith('fe80') ||
+    lower.startsWith('fc') ||
+    lower.startsWith('fd')
+  )
+}
+
+async function validateIssuer(issuer: string): Promise<string | null> {
+  if (!issuer) return null // optional
+  let url: URL
   try {
-    new URL(issuer)
+    url = new URL(issuer)
   } catch {
     return 'Issuer must be a valid URL.'
+  }
+  if (url.protocol !== 'https:') return 'Issuer must use HTTPS.'
+  if (url.username || url.password) return 'Issuer must not include credentials.'
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  // Integer-form IPv4 (e.g. https://2130706433) — normalize and range-check.
+  if (/^\d+$/.test(host)) {
+    const n = Number(host)
+    if (n >= 0 && n <= 0xffffffff) {
+      const ip = `${n >>> 24}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`
+      if (isPrivateIp(ip)) return 'Issuer must not be a private or loopback address.'
+      return null
+    }
+  }
+  // Literal IPs — range-check directly, no DNS needed.
+  if (isIP(host)) {
+    return isPrivateIp(host) ? 'Issuer must not be a private or loopback address.' : null
+  }
+  // Private hostname conventions.
+  if (/localhost$/i.test(host) || host.endsWith('.local') || host.endsWith('.internal')) {
+    return 'Issuer must not be a private or loopback address.'
+  }
+  // Hostnames: resolve and reject only when resolution reveals a private or
+  // loopback address. Unresolvable names are allowed (internal-network IdPs).
+  try {
+    const addresses = await lookup(host, { all: true })
+    for (const { address } of addresses) {
+      if (isPrivateIp(address)) return 'Issuer must not be a private or loopback address.'
+    }
+  } catch {
+    /* unresolvable — allow */
   }
   return null
 }
@@ -188,7 +233,7 @@ export function createAdminOAuthPlugin(
 
     // Validate issuer if provided
     if (input.issuer) {
-      const issuerErr = validateIssuer(input.issuer)
+      const issuerErr = await validateIssuer(input.issuer)
       if (issuerErr) {
         set.status = 400
         return { code: 400, message: issuerErr }
@@ -242,7 +287,7 @@ export function createAdminOAuthPlugin(
 
     // Validate issuer if provided
     if (input.issuer) {
-      const issuerErr = validateIssuer(input.issuer)
+      const issuerErr = await validateIssuer(input.issuer)
       if (issuerErr) {
         set.status = 400
         return { code: 400, message: issuerErr }

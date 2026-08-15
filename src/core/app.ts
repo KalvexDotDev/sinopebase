@@ -508,6 +508,8 @@ import { resolve } from 'node:path'
 import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
 import { Cron } from '~/tools/cron/cron'
+import type { Mailer } from '~/tools/mailer/mailer'
+import { Message } from '~/tools/mailer/mailer'
 import type { MigrationDB } from '../../migrations/types'
 import {
   ApiError,
@@ -527,6 +529,7 @@ import { rateLimit, resetRateLimiters } from '../apis/middlewares_rate_limit'
 import { mountPostgrestRoutes } from '../apis/postgrest'
 import { createRealtimeHub, createRealtimeWebSocketHandler } from '../apis/realtime'
 import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
+import { MetricsPlugin } from '../plugins/metrics/plugin'
 import { createAuth, lookupSessionByToken } from '../tools/auth-better'
 import { LocalFileStore } from '../tools/filesystem/store'
 import type { IFileStore } from '../tools/filesystem/store-interface'
@@ -542,6 +545,45 @@ import {
 import { generateRequestId, logger } from './logger'
 import { loadMigrationsFromDirectory, loadSqlMigrationsFromDirectory } from './migrations_loader'
 import { MigrationRunner } from './migrations_runner'
+
+/**
+ * Build the file store for migrations from config.
+ *
+ * The main store is initialized after migrations run, so bucket migrations
+ * (MIGRATIONS_BUCKET) construct their own here — they only need list/read.
+ */
+function createMigrationsFileStore(config: AppConfig): IFileStore {
+  const s3Endpoint = config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
+  const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
+  const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
+  if (s3Endpoint && s3AccessKey && s3SecretKey) {
+    // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
+    // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
+    let host = s3Endpoint
+    let port = 9000
+    let useSSL = false
+    try {
+      const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
+      host = url.hostname
+      if (url.port) port = Number(url.port)
+      useSSL = url.protocol === 'https:'
+    } catch {
+      // Fallback: treat as bare host:port
+      const parts = s3Endpoint.split(':')
+      host = parts[0] ?? s3Endpoint
+      if (parts[1]) port = Number(parts[1])
+    }
+    return new S3FileStore({
+      endpoint: host,
+      port,
+      accessKey: s3AccessKey,
+      secretKey: s3SecretKey,
+      useSSL,
+    })
+  }
+  return new LocalFileStore(config.dataDir ?? './pb_data')
+}
+
 import { loadSqlMigrationsFromS3 } from './migrations_s3'
 
 export interface AppConfig {
@@ -550,6 +592,8 @@ export interface AppConfig {
   /** MinIO endpoint */
   minioEndpoint?: string
   /** SMTP mailer configuration */
+  /** Edge-functions source directory (default: './functions'). */
+  functionsDir?: string
   smtp?: {
     enabled?: boolean
     host?: string
@@ -627,6 +671,10 @@ export class Sinopebase {
   private _pgListener: import('../apis/realtime-pg-listener').PgRealtimeListener | null = null
   private _realtimeHub: import('../apis/realtime').RealtimeHub<PostgresRequestContext> | null = null
   private _logPruneInterval: ReturnType<typeof setInterval> | null = null
+  /** Metrics plugin instance — register consumer metrics via {@link MetricsPlugin.registerMetric}. */
+  public readonly metrics = new MetricsPlugin()
+  /** SMTP mailer — null when SMTP is not configured. Use `send()` to deliver mail. */
+  public mailer: Mailer | null = null
   /** Unique process identifier for PG LISTEN/NOTIFY self-skip. */
   private processId: string = ''
   private database: IDatabase | null = null
@@ -861,6 +909,7 @@ export class Sinopebase {
           jwtSecret: this.config.jwtSecret,
           oauthProviders: mergedProviders,
           extraOrigins: this.config.extraOrigins,
+          sendEmail: (mail) => this.sendMail(mail),
         })
         logger.info('Auth', {
           provider: 'better-auth',
@@ -889,48 +938,31 @@ export class Sinopebase {
       }
     }
 
+    // In-memory mode (no PostgreSQL) caches the keys too — the auth guard
+    // and storage routes require them regardless of database mode.
+    if (!this.cachedServiceRoleKey) {
+      this.cachedServiceRoleKey =
+        this.config.serviceRoleKey || process.env.SINOPEBASE_SERVICE_ROLE_KEY || ''
+    }
+    if (!this.cachedAnonKey) {
+      this.cachedAnonKey = this.config.anonKey || process.env.SINOPEBASE_ANON_KEY || ''
+    }
+
     // Initialize storage: RustFS/S3 or local fallback
-    const s3Endpoint = this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
-    const s3AccessKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
-    const s3SecretKey = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
-    if (s3Endpoint && s3AccessKey && s3SecretKey) {
-      // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
-      // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
-      let host = s3Endpoint
-      let port = 9000
-      let useSSL = false
-      try {
-        const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
-        host = url.hostname
-        if (url.port) port = Number(url.port)
-        useSSL = url.protocol === 'https:'
-      } catch {
-        // Fallback: treat as bare host:port
-        const parts = s3Endpoint.split(':')
-        host = parts[0] ?? s3Endpoint
-        if (parts[1]) port = Number(parts[1])
-      }
-      this.fileStore = new S3FileStore({
-        endpoint: host,
-        port,
-        accessKey: s3AccessKey,
-        secretKey: s3SecretKey,
-        useSSL,
-      })
+    this.fileStore = createMigrationsFileStore(this.config)
+    if (this.fileStore instanceof S3FileStore) {
       logger.info('Storage', { type: 'S3', endpoint: this.config.minioEndpoint })
+    } else if (this.mode === 'development') {
+      logger.warn('Using local file storage — no RUSTFS_ENDPOINT set.')
     } else {
-      this.fileStore = new LocalFileStore(this.config.dataDir ?? './pb_data')
-      if (this.mode === 'development') {
-        logger.warn('Using local file storage — no RUSTFS_ENDPOINT set.')
-      } else {
-        logger.info('Storage', { type: 'local' })
-      }
+      logger.info('Storage', { type: 'local' })
     }
 
     // ── Mailer (SMTP) ────────────────────────────────────────────────
+    this.mailer = null
     if (this.config.smtp?.enabled && this.config.smtp?.host) {
       const { SMTPClient } = await import('~/tools/mailer/smtp')
-      new SMTPClient({
+      this.mailer = new SMTPClient({
         host: this.config.smtp.host,
         port: this.config.smtp.port ?? 587,
         username: this.config.smtp.username,
@@ -1008,7 +1040,10 @@ export class Sinopebase {
     }
 
     // ── Request ID store (closed over by onRequest + onAfterResponse) ──
-    const requestMeta = new WeakMap<Request, { startTime: number; requestId: string }>()
+    const requestMeta = new WeakMap<
+      Request,
+      { startTime: number; requestId: string; auditServiceRole?: boolean }
+    >()
 
     // ── CORS origins aligned with better-auth trustedOrigins ──
     const trustedOrigins = [
@@ -1136,13 +1171,18 @@ export class Sinopebase {
           } catch {
             // best-effort — never crash on logging
           }
-          // Persist to _logs table if we have a database (fire-and-forget)
+          // Persist to _logs table if we have a database (fire-and-forget).
+          // service_role requests write the audit form of the entry so the
+          // trail is queryable by message = 'audit:service_role'.
           if (this.database instanceof PostgresDatabase) {
             const pool = this.database.getPool()
+            const message = meta.auditServiceRole
+              ? 'audit:service_role'
+              : `${request.method} ${pathname}`
             pool
               .query(`INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`, [
                 0,
-                `${request.method} ${pathname}`,
+                message,
                 JSON.stringify({
                   method: request.method,
                   path: pathname,
@@ -1170,6 +1210,10 @@ export class Sinopebase {
     )
 
     // ── Continue chain: routes, auth, realtime ──
+    // Metrics hooks attach first so every route registered below — including
+    // /api/health — is counted (Elysia composes hooks per route at
+    // registration time).
+    await this.metrics.register(server)
     const s1 = server
       .onRequest(async ({ request, set }) => {
         const url = new URL(request.url)
@@ -1234,14 +1278,20 @@ export class Sinopebase {
           const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
           // M11: timing-safe comparison for service role key
           if (Equal(token, this.cachedServiceRoleKey)) {
-            // H11: audit log for service_role operations
+            // H11: audit log for service_role operations. The request logger
+            // below persists ONE _logs entry per request — flag it as an
+            // audit entry instead of issuing a second DB write.
             logger.info('audit:service_role', { method: request.method, path: url.pathname })
+            const meta = requestMeta.get(request)
+            if (meta) meta.auditServiceRole = true
             postgrestContexts.set(request, { role: 'service_role' })
             return
           }
           if (
             Equal(token, this.cachedAnonKey) &&
             (url.pathname.startsWith('/storage/v1/') ||
+              // supabase parity: anon may POST RPC — policies gate the data.
+              (request.method === 'POST' && url.pathname.startsWith('/rest/v1/rpc/')) ||
               request.method === 'GET' ||
               request.method === 'HEAD')
           ) {
@@ -1295,6 +1345,7 @@ export class Sinopebase {
           this.database instanceof PostgresDatabase
             ? new PostgresStorageAccessPolicy(this.database)
             : undefined,
+        requireAccessPolicy: this.database instanceof PostgresDatabase,
         maxUploadSize: this.config.maxUploadSize,
       }),
     )
@@ -1473,17 +1524,19 @@ export class Sinopebase {
 
     // ── DropFunctions — Edge Functions plugin ──
     const { DropFunctionsPlugin } = await import('../plugins/drop-functions/plugin')
-    const dropFunctions = new DropFunctionsPlugin({ functionsDir: './functions' })
+    const dropFunctions = new DropFunctionsPlugin({
+      functionsDir: this.config.functionsDir ?? './functions',
+    })
     await dropFunctions.register(s6, this.auth ?? undefined)
-    const { MetricsPlugin } = await import('../plugins/metrics/plugin')
-    const s7 = await new MetricsPlugin().register(s6)
+    const s7 = s6
 
     // ── Log retention — prune old entries on startup and hourly ──
     const pruneLogs = async () => {
       if (this.database instanceof PostgresDatabase) {
         this.database
           .getPool()
-          .query(`DELETE FROM _logs WHERE created < now() - make_interval(days => 30)`)
+          // _logs.created is TEXT — cast before comparing against timestamptz.
+          .query(`DELETE FROM _logs WHERE created::timestamptz < now() - make_interval(days => 30)`)
           .catch(() => {})
       }
     }
@@ -1627,9 +1680,10 @@ export class Sinopebase {
   }
 
   /** Schedule a recurring backup using a cron expression. */
-  scheduleBackup(cronExpression: string): void {
+  scheduleBackup(cronExpression: string, options?: { intervalMs?: number }): void {
     this.cancelScheduledBackup()
     const cron = new Cron()
+    if (options?.intervalMs) cron.setInterval(options.intervalMs)
     cron.add('backup', cronExpression, () => {
       const backupName = `scheduled-${new Date().toISOString().replace(/[:.]/g, '-')}`
       this.createBackup(backupName).catch((err) => {
@@ -1741,6 +1795,25 @@ export class Sinopebase {
     return { ...this.config }
   }
 
+  /** Deliver a transactional email through the configured SMTP mailer. */
+  private async sendMail(mail: {
+    to: string
+    subject: string
+    text: string
+    html?: string
+  }): Promise<void> {
+    if (!this.mailer) {
+      logger.warn('Mailer', { event: 'send-skipped', to: mail.to, reason: 'SMTP not configured' })
+      return
+    }
+    const message = new Message()
+    message.to = [{ name: '', address: mail.to }]
+    message.subject = mail.subject
+    message.text = mail.text
+    message.html = mail.html ?? ''
+    await this.mailer.send(message)
+  }
+
   /**
    * Apply pending system migrations (PocketBase pattern: migrate on startup).
    *
@@ -1775,11 +1848,14 @@ export class Sinopebase {
     // forking the repo to add local migration files.
     const s3MigrationsBucket = process.env.MIGRATIONS_BUCKET
     let s3Discovered: Awaited<ReturnType<typeof loadSqlMigrationsFromS3>> = []
-    if (s3MigrationsBucket && this.fileStore?.list) {
+    if (s3MigrationsBucket) {
       try {
-        const s3Store = this.fileStore as unknown as {
-          list: (bucket: string, prefix: string) => Promise<{ name: string }[]>
-          read: (bucket: string, key: string) => Promise<unknown>
+        // The main store is initialized after migrations, so build one here.
+        const s3Store = createMigrationsFileStore(this.config)
+        if (!(s3Store instanceof S3FileStore)) {
+          logger.warn('S3 migrations', {
+            error: `MIGRATIONS_BUCKET is set but the store resolved to the local filesystem — check RUSTFS_ENDPOINT/RUSTFS_ACCESS_KEY/RUSTFS_SECRET_KEY`,
+          })
         }
         s3Discovered = await loadSqlMigrationsFromS3(
           s3Store as unknown as import('./migrations_s3').S3FileStore,

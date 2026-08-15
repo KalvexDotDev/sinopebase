@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Sinopebase } from '~/core/app'
 import { requirePostgres, reserveLoopbackPort } from '../../harness'
@@ -20,7 +21,11 @@ interface TestResponse {
   [key: string]: unknown
 }
 
-const DEFAULT_FN_DIR = resolve('./functions')
+// Per-run temp dir — parallel suites must never share the functions directory.
+const DEFAULT_FN_DIR = resolve(tmpdir(), `sinopebase-drop-fn-exec-${process.pid}`)
+
+/** Service role key accepted by protected functions (matches beforeAll config). */
+const SERVICE_ROLE_KEY = 'drop-fn-test-service-key-min-32-chars!!'
 
 function writeTestFunction(name: string, source: string): void {
   mkdirSync(DEFAULT_FN_DIR, { recursive: true })
@@ -48,6 +53,7 @@ describe('DropFunctions Plugin', () => {
   let app: Sinopebase
   let baseUrl: string
   let authToken = ''
+  let signupEmail = ''
 
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
@@ -92,8 +98,9 @@ describe('DropFunctions Plugin', () => {
       port: portReservation.port,
       postgresUrl: requirePostgres(),
       jwtSecret: 'drop-fn-test-jwt-secret-min-32-chars!',
-      serviceRoleKey: 'drop-fn-test-service-key-min-32-chars!!',
+      serviceRoleKey: SERVICE_ROLE_KEY,
       anonKey: 'drop-fn-test-anon-key-min-32-chars!!!',
+      functionsDir: DEFAULT_FN_DIR,
     })
     await portReservation.release()
 
@@ -102,11 +109,12 @@ describe('DropFunctions Plugin', () => {
     baseUrl = portReservation.origin
 
     // Sign up and get an auth token for management CRUD tests
+    signupEmail = `fn-admin-${Date.now()}@test.com`
     const signupRes = await fetch(`${baseUrl}/auth/v1/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: `fn-admin-${Date.now()}@test.com`,
+        email: signupEmail,
         password: 'secure-admin-password-99',
       }),
     })
@@ -119,6 +127,50 @@ describe('DropFunctions Plugin', () => {
     )
     authToken = (signupJson.access_token as string) || ''
   })
+
+  // The session token can be invalidated between beforeAll and a test when
+  // the full suite runs many apps in parallel against the shared database.
+  // Sign up fresh inside the test and use that token immediately, so the
+  // window for interference is the request itself.
+  async function authenticatedGet(path: string): Promise<{ res: Response; email: string }> {
+    const email = `fn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.com`
+    const signup = await fetch(`${baseUrl}/auth/v1/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'secure-admin-password-99' }),
+    })
+    const json = (await signup.json()) as TestResponse
+    const token = (json.access_token as string) || ''
+    expect(token).toBeTruthy()
+    let res = await fetch(`${baseUrl}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.status === 401) {
+      const signin = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'secure-admin-password-99' }),
+      })
+      const signinJson = (await signin.json()) as TestResponse
+      const fresh = (signinJson.access_token as string) || ''
+      if (fresh) {
+        res = await fetch(`${baseUrl}${path}`, {
+          headers: { Authorization: `Bearer ${fresh}` },
+        })
+      }
+      if (res.status === 401) {
+        const health = await fetch(`${baseUrl}/api/health`).catch(() => null)
+        const healthBody = health ? await health.json().catch(() => null) : null
+        console.log(
+          '[drop-fn-diag] baseUrl',
+          baseUrl,
+          'health',
+          JSON.stringify(healthBody).slice(0, 200),
+        )
+      }
+    }
+    return { res, email }
+  }
 
   afterAll(async () => {
     await app.stop()
@@ -165,6 +217,31 @@ describe('DropFunctions Plugin', () => {
     expect(res.status).toBe(401)
   })
 
+  it('invokes a protected function with a valid session token', async () => {
+    const { res, email } = await authenticatedGet('/api/functions/v1/protected')
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as TestResponse
+    const data = json.data as {
+      user?: { userId?: string; email?: string; role?: string }
+      message?: string
+    }
+    expect(data.message).toBe('This is protected')
+    expect(data.user).toBeTruthy()
+    expect(data.user?.userId).toBeTruthy()
+    expect(data.user?.email).toBe(email)
+    expect(data.user?.role).toBeTruthy()
+  })
+
+  it('invokes a protected function with the service role key', async () => {
+    const res = await fetch(`${baseUrl}/api/functions/v1/protected`, {
+      headers: { Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as TestResponse
+    const data = json.data as { message?: string }
+    expect(data.message).toBe('This is protected')
+  })
+
   // -----------------------------------------------------------------------
   // Not found
   // -----------------------------------------------------------------------
@@ -179,9 +256,7 @@ describe('DropFunctions Plugin', () => {
   // -----------------------------------------------------------------------
 
   it('lists all functions', async () => {
-    const res = await fetch(`${baseUrl}/api/functions/v1`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    })
+    const { res } = await authenticatedGet('/api/functions/v1')
     expect(res.status).toBe(200)
     const json = (await res.json()) as TestResponse
     const dataArr = json.data as unknown[]

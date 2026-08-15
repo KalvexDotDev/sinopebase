@@ -9,9 +9,10 @@
  */
 
 import type { AuthClient } from './auth'
-import type { PostgrestClient } from './database'
+import type { JsonValue, PostgrestClient, RpcOptions } from './database'
 import type { FunctionsClient } from './functions'
 import type { RealtimeClient } from './realtime'
+import type { CookieProvider } from './ssr'
 import type { StorageClient } from './storage'
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,23 @@ export interface SinopebaseClient {
     table: string,
   ): PostgrestClient<T>
 
+  /**
+   * Execute a PostgreSQL function — supabase-js `rpc()` contract.
+   * Rows by default, a single value with `{ get: true }`, status only with
+   * `{ head: true }`. Sends the signed-in session token when available so
+   * RLS resolves the user's role.
+   */
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args?: Record<string, JsonValue>,
+    options?: RpcOptions & { get?: false },
+  ): Promise<PostgrestResponse<T[]>>
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args: Record<string, JsonValue> | undefined,
+    options: RpcOptions & { get: true },
+  ): Promise<PostgrestSingleResponse<T>>
+
   /** Auth client (Supabase GoTrue-compatible) */
   auth: AuthClient
 
@@ -77,8 +95,12 @@ export interface SinopebaseClient {
  * const { data } = await sinopebase.from('todos').select('*')
  * ```
  */
-export function createClient(url: string, key: string): SinopebaseClient {
-  return new SinopebaseClientImpl(url, key)
+export function createClient(
+  url: string,
+  key: string,
+  options?: { cookies?: CookieProvider },
+): SinopebaseClient {
+  return new SinopebaseClientImpl(url, key, options?.cookies)
 }
 
 // ---------------------------------------------------------------------------
@@ -94,11 +116,11 @@ class SinopebaseClientImpl implements SinopebaseClient {
   public readonly realtime: RealtimeClient
   public readonly functions: FunctionsClient
 
-  constructor(url: string, key: string) {
+  constructor(url: string, key: string, cookies?: CookieProvider) {
     this.supabaseUrl = url.replace(/\/$/, '')
     this.supabaseKey = key
 
-    this.auth = createAuthClient(this.supabaseUrl, this.supabaseKey)
+    this.auth = createAuthClient(this.supabaseUrl, this.supabaseKey, cookies)
     this.storage = createStorageClient(this.supabaseUrl, this.supabaseKey)
     this.realtime = createRealtimeClient(this.supabaseUrl, this.supabaseKey)
     this.functions = createFunctionsClient(this.supabaseUrl, this.supabaseKey)
@@ -107,7 +129,34 @@ class SinopebaseClientImpl implements SinopebaseClient {
   from<T extends Record<string, unknown> = Record<string, unknown>>(
     table: string,
   ): PostgrestClient<T> {
-    return createPostgrestClient<T>(this.supabaseUrl, this.supabaseKey, table)
+    return createPostgrestClient<T>(this.supabaseUrl, this.supabaseKey, table, () =>
+      this.auth.getAccessToken(),
+    )
+  }
+
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args?: Record<string, JsonValue>,
+    options?: RpcOptions & { get?: false },
+  ): Promise<PostgrestResponse<T[]>>
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args: Record<string, JsonValue> | undefined,
+    options: RpcOptions & { get: true },
+  ): Promise<PostgrestSingleResponse<T>>
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args?: Record<string, JsonValue>,
+    options?: RpcOptions,
+  ): Promise<PostgrestResponse<T[]> | PostgrestSingleResponse<T>> {
+    return postgrestRpc(
+      this.supabaseUrl,
+      this.supabaseKey,
+      () => this.auth.getAccessToken(),
+      fn,
+      args,
+      options,
+    )
   }
 }
 
@@ -116,7 +165,10 @@ class SinopebaseClientImpl implements SinopebaseClient {
 // ---------------------------------------------------------------------------
 
 import { createAuthClient } from './auth-impl'
-import { createPostgrestClient } from './database'
+import { createPostgrestClient, postgrestRpc } from './database'
 import { createFunctionsClient } from './functions'
 import { createRealtimeClient } from './realtime-impl'
 import { createStorageClient } from './storage-impl'
+
+export type { CookieProvider } from './ssr'
+export { createBrowserClient, createServerClient } from './ssr'

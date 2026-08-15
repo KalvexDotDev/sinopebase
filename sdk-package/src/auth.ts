@@ -14,11 +14,50 @@ export interface AuthClient {
 
   signInWithPassword(credentials: { email: string; password: string }): Promise<AuthResponse>
 
+  signInWithOAuth(credentials: {
+    provider: string
+    options?: {
+      redirectTo?: string
+      scopes?: string
+      queryParams?: Record<string, string>
+    }
+  }): Promise<{ data: { url: string } | null; error: AuthError | null }>
+
   signOut(options?: { scope?: 'local' | 'global' | 'others' }): Promise<{ error: AuthError | null }>
 
   getUser(): Promise<{ data: { user: User | null }; error: AuthError | null }>
 
   refreshSession(): Promise<AuthResponse>
+
+  /** Get the current session (from cookie or stored token) */
+  getSession(): Promise<{
+    data: { session: Session | null; user: User | null }
+    error: AuthError | null
+  }>
+
+  /**
+   * Access token for database requests. Returns the in-memory session token
+   * when signed in. With an SSR cookie provider, probes the cookie session
+   * once per client instance. Null when signed out.
+   */
+  getAccessToken(): Promise<string | null>
+
+  /** Exchange an OAuth authorization code for a session (code already consumed by better-auth, reads cookie) */
+  exchangeCodeForSession(code: string): Promise<AuthResponse>
+
+  /** Update user attributes (email, password, metadata) */
+  updateUser(attributes: {
+    email?: string
+    password?: string
+    data?: Record<string, unknown>
+  }): Promise<{ data: { user: User | null }; error: AuthError | null }>
+
+  /** Send a password reset email */
+  // biome-ignore lint/complexity/noBannedTypes: supabase-js API contract uses {}
+  resetPasswordForEmail(email: string): Promise<{ data: {} | null; error: AuthError | null }>
+
+  /** Restore a session from tokens — verified against the backend, which supplies the user. */
+  setSession(session: { access_token: string; refresh_token: string }): Promise<AuthResponse>
 
   onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): {
     data: { subscription: { unsubscribe: () => void } }

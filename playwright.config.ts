@@ -24,9 +24,8 @@ export default defineConfig({
     env: {
       SINOPEBASE_SERVICE_ROLE_KEY: 'e2e-key-service-min-32-chars!!',
       SINOPEBASE_ANON_KEY: 'e2e-key-anon-min-32-chars!!!!!',
-      RUSTFS_ENDPOINT: process.env.RUSTFS_ENDPOINT || 'http://localhost:9000',
-      RUSTFS_ACCESS_KEY: process.env.RUSTFS_ACCESS_KEY || 'rustfsadmin',
-      RUSTFS_SECRET_KEY: process.env.RUSTFS_SECRET_KEY || 'rustfsadmin',
+      // No RUSTFS_* env vars: storage falls back to the local file store
+      // (pb_data/) so e2e runs do not need a local S3/RustFS instance.
     },
   },
 })
