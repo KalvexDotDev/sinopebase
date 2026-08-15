@@ -510,6 +510,7 @@ import { Elysia } from 'elysia'
 import { Cron } from '~/tools/cron/cron'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
+import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
 import type { MigrationDB } from '../../migrations/types'
 import {
   ApiError,
@@ -1918,11 +1919,29 @@ export class Sinopebase {
       const existingRoles = new Set(result.rows.map((r: { rolname: string }) => r.rolname))
       const missing = expectedRoles.filter((r) => !existingRoles.has(r))
       if (missing.length > 0) {
+        // Production databases provisioned before the migration may never
+        // have applied it (observed on Railway). The migration is idempotent
+        // — apply it at startup instead of running with weaker roles.
         logger.warn(
-          `Missing PostgreSQL roles: ${missing.join(', ')}. ` +
-            'Run the 1779000000_least_privilege_roles migration. ' +
-            'Pool will fall back to the connection role until roles are created.',
+          `Missing PostgreSQL roles: ${missing.join(', ')} — applying the least-privilege migration at startup.`,
         )
+        await applyLeastPrivilegeRoles({
+          raw: async (sqlText: string) => {
+            await pool.query(sqlText)
+          },
+        })
+        const healed = await client.query(
+          `SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])`,
+          [expectedRoles],
+        )
+        const healedRoles = new Set(healed.rows.map((r: { rolname: string }) => r.rolname))
+        if (healedRoles.size < expectedRoles.length) {
+          throw new Error(
+            `PostgreSQL role bootstrap failed — still missing: ${expectedRoles.filter((r) => !healedRoles.has(r)).join(', ')}`,
+          )
+        }
+        existingRoles.clear()
+        for (const role of healedRoles) existingRoles.add(role)
       }
 
       logger.info('Schema validation', {

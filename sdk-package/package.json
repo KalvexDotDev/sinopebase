@@ -1,7 +1,7 @@
 {
   "name": "@sinopebase/sdk",
-  "version": "0.8.1",
-  "description": "Sinopebase SDK — thin supabase-js compatible client for Sinopebase backends",
+  "version": "0.8.2",
+  "description": "Sinopebase SDK \u2014 thin supabase-js compatible client for Sinopebase backends",
   "type": "module",
   "main": "./src/client.js",
   "types": "./src/client.ts",

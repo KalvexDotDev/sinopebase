@@ -26,6 +26,7 @@ import { Pool } from 'pg'
 import YAML from 'yaml'
 import { Sinopebase } from '~/core/app'
 import { Cron } from '~/tools/cron/cron'
+import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
 import { requirePostgres, reserveLoopbackPort } from '../harness'
 
 const SERVICE_ROLE_KEY = 'ops-maintenance-srvc-key-32-chars!!!!!'
@@ -214,6 +215,33 @@ describe('Audit logging for service_role', () => {
     )
     expect(auditRows.some((row) => (row.data ?? '').includes(path))).toBe(true)
   }, 30_000)
+})
+
+// ---------------------------------------------------------------------------
+// 2b. Least-privilege role heal at startup
+// ---------------------------------------------------------------------------
+
+describe('Least-privilege role heal', () => {
+  it('applies the least-privilege migration idempotently (the startup heal path)', async () => {
+    // ponytail: the heal fires when roles are MISSING at startup; on the
+    // shared dev database the roles own grants on real tables and cannot be
+    // dropped to simulate that. The heal calls this exact migration, so its
+    // idempotent re-application is the mechanism under test.
+    const adminPool = new Pool({ connectionString: requirePostgres() })
+    try {
+      await applyLeastPrivilegeRoles({
+        raw: async (sqlText: string) => {
+          await adminPool.query(sqlText)
+        },
+      })
+      const { rows } = await adminPool.query(
+        `SELECT rolname FROM pg_roles WHERE rolname IN ('sinopebase_app', 'sinopebase_admin', 'anon', 'authenticated', 'service_role')`,
+      )
+      expect(rows.length).toBe(5)
+    } finally {
+      await adminPool.end()
+    }
+  }, 60_000)
 })
 
 // ---------------------------------------------------------------------------
