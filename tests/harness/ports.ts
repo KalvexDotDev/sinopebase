@@ -68,6 +68,12 @@ function preferredPort(): number {
  * so the release-to-bind window cannot hand the same port to another test
  * file running in a parallel worker.
  */
+// Ports this process has ever handed out. On macOS `exclusive: true` is a
+// no-op and Bun's SO_REUSEADDR lets a second listener bind a port our own
+// server already holds — so reservations must skip anything handed out
+// before, or two apps end up sharing one port.
+const heldPorts = new Set<number>()
+
 export async function reserveLoopbackPort(): Promise<TestPortReservation> {
   let lastError: Error | null = null
 
@@ -76,6 +82,7 @@ export async function reserveLoopbackPort(): Promise<TestPortReservation> {
   for (let offset = 0; offset < 20; offset++) {
     const candidate = base + offset * 7
     if (candidate > 40_000) break
+    if (heldPorts.has(candidate)) continue
     const server = createServer()
     server.unref()
 
@@ -88,6 +95,7 @@ export async function reserveLoopbackPort(): Promise<TestPortReservation> {
           resolve()
         })
       })
+      heldPorts.add(candidate)
       return new LoopbackPortReservation(candidate, server)
     } catch (error) {
       lastError = error as Error
@@ -113,5 +121,6 @@ export async function reserveLoopbackPort(): Promise<TestPortReservation> {
     throw new Error('The OS did not assign a numeric loopback test port')
   }
   if (lastError) console.warn('[harness] preferred port range exhausted', lastError.message)
+  heldPorts.add(address.port)
   return new LoopbackPortReservation(address.port, server)
 }
