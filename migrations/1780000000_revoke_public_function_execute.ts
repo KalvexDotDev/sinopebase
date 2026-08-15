@@ -18,7 +18,33 @@ import type { MigrationDB } from './types.ts'
 
 export async function up(db: MigrationDB): Promise<void> {
   await db.raw(`
-    REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+    DO $$
+    DECLARE
+      fn_row record;
+    BEGIN
+      -- Revoke PUBLIC EXECUTE per function. On managed Postgres the runtime
+      -- role may not own every function (e.g. postgres-owned objects), so a
+      -- single REVOKE ALL statement can abort startup. Revoke what we can
+      -- and warn about the rest instead of failing the migration.
+      FOR fn_row IN
+        SELECT p.oid, p.proname
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+      LOOP
+        BEGIN
+          EXECUTE format(
+            'REVOKE EXECUTE ON FUNCTION public.%I(%s) FROM PUBLIC',
+            fn_row.proname,
+            pg_get_function_identity_arguments(fn_row.oid)
+          );
+        EXCEPTION WHEN insufficient_privilege THEN
+          RAISE WARNING 'sinopebase: cannot revoke EXECUTE on public.% — grant EXECUTE explicitly to limit access',
+            fn_row.proname;
+        END;
+      END LOOP;
+    END
+    $$;
 
     CREATE OR REPLACE FUNCTION sinopebase_revoke_fn_execute()
     RETURNS event_trigger LANGUAGE plpgsql AS $$
