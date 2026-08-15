@@ -255,6 +255,11 @@ jobs:
         run: until wget -q --spider http://localhost:9000/health; do sleep 2; done
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+      - name: Build admin UI (served from ui/dist, which is gitignored)
+        run: |
+          cd ui
+          bun install --frozen-lockfile
+          bun run build
       - name: Run Playwright E2E suite
         run: bun run test:e2e
         env:
