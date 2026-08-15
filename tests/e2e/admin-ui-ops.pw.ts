@@ -127,12 +127,15 @@ test('Table Editor: create table + add row through the UI', async ({ page }) => 
 
   // ── Add a second row through the "Add Row" modal ──
   await page.getByRole('button', { name: '+ Add Row' }).click()
+  // Column metadata loads after the table's rows render — slow CI runners
+  // need room before the inputs exist.
+  await expect(page.getByPlaceholder('null').nth(0)).toBeVisible({ timeout: 15_000 })
   await page.getByPlaceholder('null').nth(0).fill(rowId2)
   await page.getByPlaceholder('null').nth(1).fill(rowTitle2)
   await page.getByRole('button', { name: 'Add Row', exact: true }).click()
 
   // The new row renders in the data table.
-  await expect(page.getByText(rowTitle2, { exact: true })).toBeVisible()
+  await expect(page.getByText(rowTitle2, { exact: true })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText(rowId2, { exact: true })).toBeVisible()
 
   // ── Cross-check through the REST API ──
