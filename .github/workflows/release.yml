@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -92,7 +93,7 @@ jobs:
           TAG=${{ github.ref_name }}
           VERSION=${TAG#v}
           cd sdk-package
-          npm version "$VERSION" --no-git-tag-version
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish to npm
         run: |
