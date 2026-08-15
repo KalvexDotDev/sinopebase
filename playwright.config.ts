@@ -24,8 +24,12 @@ export default defineConfig({
     env: {
       SINOPEBASE_SERVICE_ROLE_KEY: 'e2e-key-service-min-32-chars!!',
       SINOPEBASE_ANON_KEY: 'e2e-key-anon-min-32-chars!!!!!',
-      // No RUSTFS_* env vars: storage falls back to the local file store
-      // (pb_data/) so e2e runs do not need a local S3/RustFS instance.
+      // Explicitly empty: CI jobs export RUSTFS_* for the bun suite, and the
+      // inherited values would flip this server to S3 mode. Storage falls
+      // back to the local file store (pb_data/) for the browser suite.
+      RUSTFS_ENDPOINT: '',
+      RUSTFS_ACCESS_KEY: '',
+      RUSTFS_SECRET_KEY: '',
     },
   },
 })

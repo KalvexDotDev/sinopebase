@@ -1,12 +1,19 @@
 <script lang="ts">
-  let { variant = 'ghost', size = 'md', onclick, disabled = false, children }: {
+  let {
+    variant = 'ghost',
+    size = 'md',
+    onclick,
+    disabled = false,
+    children,
+    ...rest
+  }: {
     variant?: 'primary' | 'ghost' | 'danger' | 'icon'
     size?: 'sm' | 'md'
     onclick?: (e: MouseEvent) => void
     disabled?: boolean
     children?: any
+    [key: string]: unknown
   } = $props()
-  const { children: _c, onclick: _o, ...rest } = $props()
 
   const cls = $derived(`btn-${variant}`)
 </script>

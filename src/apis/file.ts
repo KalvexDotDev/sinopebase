@@ -278,10 +278,11 @@ async function resolveStorageAccess(options: StoragePluginOptions, request: Requ
   if (options.access && (await options.access.isAvailable())) {
     return { context, access: options.access }
   }
-  // No usable policy. Local-store dev mode: rely on the auth guard's role.
-  // PostgreSQL deployments: fail closed — the policy is the authorization
-  // boundary and its absence must never degrade to unrestricted access.
-  if (options.requireAccessPolicy && context.role !== 'service_role') {
+  // No usable policy. Default (and bare-plugin usage) fails closed — the
+  // policy is the authorization boundary and its absence must never degrade
+  // to unrestricted access. Only the app's explicit local-store dev mode
+  // (requireAccessPolicy: false) relies on the auth guard's role.
+  if ((options.requireAccessPolicy ?? true) && context.role !== 'service_role') {
     throw new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')
   }
   return { context, access: undefined }
