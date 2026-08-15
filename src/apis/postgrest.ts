@@ -14,9 +14,9 @@
 import type { Elysia } from 'elysia'
 import type { ForeignKeyRelationship, IDatabase, OrderBy } from '../core/db-interface'
 import type { ParsedFilter } from '../core/db-memory'
-import { PostgresDatabase, type PostgresRequestContext } from '../core/db-postgres'
+import { PostgresDatabase, type PostgresRequestContext, RPC_IDENTIFIER } from '../core/db-postgres'
 import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
-import { InternalServerError } from './api_error_aliases'
+import { BadRequestError, InternalServerError } from './api_error_aliases'
 import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
 
 // ---------------------------------------------------------------------------
@@ -207,17 +207,30 @@ export function mountPostgrestRoutes(
       typeof r === 'object' && r !== null ? (r as Record<string, unknown>) : {},
     )
 
-    const inserted = await withRequestDatabase(db, request, resolveContext, async (requestDb) => {
-      const results: Record<string, unknown>[] = []
-      for (const row of sanitized) {
-        if (prefer.resolution === 'merge-duplicates') {
-          results.push(await requestDb.upsert(table, row))
-        } else {
-          results.push(await requestDb.insert(table, row))
+    let inserted: Record<string, unknown>[]
+    try {
+      inserted = await withRequestDatabase(db, request, resolveContext, async (requestDb) => {
+        const results: Record<string, unknown>[] = []
+        for (const row of sanitized) {
+          if (prefer.resolution === 'merge-duplicates') {
+            results.push(await requestDb.upsert(table, row))
+          } else {
+            results.push(await requestDb.insert(table, row))
+          }
         }
+        return results
+      })
+    } catch (err) {
+      // PostgREST contract: unique violation is 409, not a masked 500.
+      if (
+        err instanceof Error &&
+        (err.message.includes('23505') || err.message.includes('duplicate key'))
+      ) {
+        set.status = 409
+        return { code: '23505', message: err.message, details: '', hint: '' }
       }
-      return results
-    })
+      throw err
+    }
 
     if (changes) {
       for (const row of inserted) {
@@ -360,20 +373,27 @@ export function mountPostgrestRoutes(
     }
 
     const fn = params.fn as string
-    if (!fn || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(fn)) {
+    if (!fn || !RPC_IDENTIFIER.test(fn)) {
       set.status = 400
       return { code: 400, message: 'Invalid function name.' }
     }
 
-    // Guarded by `if (!db.rpc)` above — rpc is always available here
-    const rpcFn = db.rpc as (
-      fn: string,
-      params: Record<string, unknown>,
-    ) => Promise<Record<string, unknown>[]>
     const input = (body ?? {}) as Record<string, unknown>
+    if (typeof body === 'object' && body !== null) {
+      for (const key of Object.keys(input)) {
+        if (!RPC_IDENTIFIER.test(key)) {
+          set.status = 400
+          return { code: 400, message: `Invalid RPC argument name "${key}".` }
+        }
+      }
+    }
+
+    // Guarded by `if (!db.rpc)` above — rpc is always available here.
+    // Call through the scoped request database so the method keeps `this`
+    // (bound to the transaction connection carrying the RLS role).
     try {
-      const rows = await withRequestDatabase(db, request, resolveContext, (_requestDb) =>
-        rpcFn(fn, input),
+      const rows = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
+        (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input),
       )
       return rows
     } catch (err) {
@@ -602,12 +622,13 @@ async function resolveRelationship(
     .sort((left, right) => right.score - left.score)
 
   if (candidates.length === 0) {
-    throw new InternalServerError(
+    // A bad embed selector is a request error (PostgREST: PGRST204), not a 500.
+    throw new BadRequestError(
       `No foreign-key relationship from ${table} matches ${selection.selector}`,
     )
   }
   if (candidates.length > 1 && candidates[0]?.score === candidates[1]?.score) {
-    throw new InternalServerError(
+    throw new BadRequestError(
       `Foreign-key relationship from ${table} to ${selection.selector} is ambiguous`,
     )
   }
@@ -827,9 +848,15 @@ function parseOrQueryParams(query: Record<string, string>): ParsedFilter[][] {
 
   for (const [key, rawValue] of Object.entries(query)) {
     if (key === 'or') {
-      // The SDK URL-encodes the comma separator; URLSearchParams may
-      // double-encode it, so we decode once more before parsing.
-      const decoded = decodeURIComponent(rawValue)
+      // Elysia already decoded the query value once (tolerantly). A strict
+      // second decode throws URIError on wildcard patterns like %foo%, so
+      // decode tolerantly and fall back to the raw value on failure.
+      let decoded = rawValue
+      try {
+        decoded = decodeURIComponent(rawValue)
+      } catch {
+        // Already decoded — use as-is.
+      }
       const groups = parseOrFilters(decoded)
       allOrGroups.push(...groups)
     }

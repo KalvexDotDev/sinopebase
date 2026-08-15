@@ -10,7 +10,10 @@ import type { RealtimeChannel, RealtimeClient } from './realtime'
 const HEARTBEAT_INTERVAL_MS = 30_000 // Phoenix standard: 30s
 
 export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeClient {
-  const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${apiKey}`
+  let authToken = apiKey
+  function wsUrl(): string {
+    return `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${encodeURIComponent(authToken)}`
+  }
   let socket: WebSocket | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   const channels = new Map<string, RealtimeChannel>()
@@ -110,16 +113,20 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
         async subscribe(calback?: (status: string) => void): Promise<void> {
           // Register listeners for topic-based dispatch.
           // Merge into existing listeners when multiple channels share a topic
-          // (e.g. one channel tracks presence, another observes it).
-          const existing = topicDispatchers.get(topic)
-          if (existing) {
-            for (const [key, cbs] of listeners) {
-              const merged = existing.get(key)
-              if (merged) merged.push(...cbs)
-              else existing.set(key, cbs)
+          // (e.g. one channel tracks presence, another observes it). Copies,
+          // never shared references — unsubscribe() of one channel must not
+          // mutate another channel's callback lists.
+          if (!subscribed) {
+            const existing = topicDispatchers.get(topic)
+            if (existing) {
+              for (const [key, cbs] of listeners) {
+                const merged = existing.get(key)
+                if (merged) merged.push(...cbs)
+                else existing.set(key, [...cbs])
+              }
+            } else {
+              topicDispatchers.set(topic, new Map(listeners))
             }
-          } else {
-            topicDispatchers.set(topic, listeners)
           }
 
           // If we have an existing open socket, reuse it
@@ -139,7 +146,7 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
 
           // Create new socket and wait for it to open
           try {
-            const ws = new WebSocket(wsUrl)
+            const ws = new WebSocket(wsUrl())
             socket = ws
 
             // Set up shared message handler — routes by topic
@@ -245,13 +252,15 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
         },
       }
 
-      channels.set(topic, ch)
+      // First channel per topic wins — overwriting would orphan the earlier
+      // channel from removeChannel() and leak its listeners.
+      if (!channels.has(topic)) channels.set(topic, ch)
       return ch
     },
 
     connect(): void {
       if (!socket || socket.readyState === WebSocket.CLOSED) {
-        socket = new WebSocket(wsUrl)
+        socket = new WebSocket(wsUrl())
         socket.onmessage = handleMessage
         startHeartbeat()
       }
@@ -280,8 +289,17 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
       channels.clear()
     },
 
-    setAuth(_token: string): void {
-      // Token stored for next connect / subscribe cycle
+    setAuth(token: string | null): void {
+      authToken = token ?? apiKey
+      // Drop the live socket so the old credentials stop working immediately.
+      // Channels re-join when subscribe() is called again.
+      if (
+        socket &&
+        (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+      ) {
+        stopHeartbeat()
+        socket.close()
+      }
     },
 
     sendHeartbeat(): void {

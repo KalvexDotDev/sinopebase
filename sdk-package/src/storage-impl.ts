@@ -15,6 +15,25 @@ import type {
   UploadOptions,
 } from './storage'
 
+// Bucket names are single path segments. Anything else would let a
+// credentialed caller traverse out of /storage/v1/ (e.g. ../rest/v1/...).
+const BUCKET_NAME = /^[a-zA-Z0-9._-]+$/
+
+/** Returns null when the bucket name could traverse outside /storage/v1/. */
+export function validateBucketName(name: string): string | null {
+  if (name === '.' || name === '..') return null
+  return BUCKET_NAME.test(name) ? name : null
+}
+
+function invalidBucketError(name: string): PostgrestError {
+  return {
+    message: `Invalid bucket name "${name}"`,
+    details: '',
+    hint: '',
+    code: 'INVALID_BUCKET',
+  }
+}
+
 export function createStorageClient(baseUrl: string, apiKey: string): StorageClient {
   const headers = {
     apikey: apiKey,
@@ -59,6 +78,9 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
 
   return {
     from(bucket: string): StorageBucket {
+      if (validateBucketName(bucket) === null) {
+        throw new Error(`Invalid bucket name "${bucket}"`)
+      }
       return {
         async upload(path: string, file: Blob | Buffer, options?: UploadOptions) {
           const form = new FormData()
@@ -87,7 +109,7 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
           const raw = json as
             | { Key?: string }
             | { data?: { path: string } | null; error?: PostgrestError | null }
-          if ('Key' in raw) return { data: { path }, error: null }
+          if (raw && 'Key' in raw) return { data: { path }, error: null }
           return raw as { data: { path: string } | null; error: PostgrestError | null }
         },
         async download(path: string) {
@@ -132,6 +154,55 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
             return { data: { signedUrl: `${baseUrl}${result.signedURL}` }, error: null }
           return result as { data: { signedUrl: string } | null; error: PostgrestError | null }
         },
+
+        async createSignedUrls(paths: string[], expiresIn: number) {
+          const result = await request<{
+            data?: { path: string; signedUrl: string }[] | null
+            error?: PostgrestError | null
+          }>('POST', `/storage/v1/object/sign/${bucket}`, { paths, expiresIn })
+          return result as {
+            data: { path: string; signedUrl: string }[] | null
+            error: PostgrestError | null
+          }
+        },
+
+        async copy(fromPath: string, toPath: string) {
+          const result = await request<{
+            data?: { path: string } | null
+            error?: PostgrestError | null
+          }>('POST', `/storage/v1/object/copy`, {
+            bucket,
+            from: fromPath,
+            to: toPath,
+          })
+          return result as { data: { path: string } | null; error: PostgrestError | null }
+        },
+
+        async move(fromPath: string, toPath: string) {
+          const result = await request<{
+            data?: { path: string } | null
+            error?: PostgrestError | null
+          }>('POST', `/storage/v1/object/move`, {
+            bucket,
+            from: fromPath,
+            to: toPath,
+          })
+          return result as { data: { path: string } | null; error: PostgrestError | null }
+        },
+
+        async exists(path: string) {
+          const res = await fetch(`${baseUrl}/storage/v1/object/${bucket}/${path}`, {
+            method: 'HEAD',
+            headers,
+          })
+          if (res.ok) return { data: true, error: null }
+          // Only 404 means "not found" — auth and server failures must not fail open.
+          if (res.status === 404) return { data: false, error: null }
+          return {
+            data: null,
+            error: { message: res.statusText, details: '', hint: '', code: String(res.status) },
+          }
+        },
       }
     },
 
@@ -143,12 +214,44 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
     },
 
     async createBucket(name: string, options?: { public?: boolean }) {
+      if (validateBucketName(name) === null) return { data: null, error: invalidBucketError(name) }
       const result = await request<{ name?: string; data?: string; error?: PostgrestError | null }>(
         'POST',
         '/storage/v1/bucket',
         { name, public: options?.public ?? false },
       )
       if (result.name) return { data: result.name, error: null }
+      return result as { data: string; error: PostgrestError | null }
+    },
+
+    async getBucket(name: string) {
+      if (validateBucketName(name) === null) return { data: null, error: invalidBucketError(name) }
+      const result = await request<Bucket | { data: Bucket | null; error: PostgrestError | null }>(
+        'GET',
+        `/storage/v1/bucket/${name}`,
+      )
+      if ('id' in result) return { data: result, error: null }
+      return result
+    },
+
+    async updateBucket(name: string, options?: { public?: boolean }) {
+      if (validateBucketName(name) === null) return { data: null, error: invalidBucketError(name) }
+      const result = await request<{ name?: string; data?: string; error?: PostgrestError | null }>(
+        'PATCH',
+        `/storage/v1/bucket/${name}`,
+        { public: options?.public },
+      )
+      if (result.name) return { data: result.name, error: null }
+      return result as { data: string; error: PostgrestError | null }
+    },
+
+    async deleteBucket(name: string) {
+      if (validateBucketName(name) === null) return { data: null, error: invalidBucketError(name) }
+      const result = await request<{ message?: string; error?: PostgrestError | null }>(
+        'DELETE',
+        `/storage/v1/bucket/${name}`,
+      )
+      if (result.message) return { data: result.message, error: null }
       return result as { data: string; error: PostgrestError | null }
     },
   }

@@ -45,6 +45,19 @@ function sessionResponse(
   }
 }
 
+/** Copy better-auth set-cookie headers onto the Elysia response. */
+function forwardSessionCookies(
+  headers: Headers,
+  set: { headers: Record<string, string | string[]> },
+): void {
+  // Headers.entries() comma-joins multiple Set-Cookie headers into one
+  // string, which browsers mis-parse at the Expires comma. getSetCookie()
+  // preserves each cookie separately.
+  const setCookies = headers.getSetCookie()
+  if (setCookies.length === 1) set.headers['set-cookie'] = setCookies[0] as string
+  else if (setCookies.length > 1) set.headers['set-cookie'] = setCookies
+}
+
 function errorResponse(message: string, status: number) {
   return { message, status }
 }
@@ -364,7 +377,8 @@ interface BetterAuthInstance {
     signUpEmail(args: { body: { email: string; password: string; name: string } }): Promise<void>
     signInEmail(args: {
       body: { email: string; password: string }
-    }): Promise<BetterAuthSignInResult>
+      returnHeaders: true
+    }): Promise<{ headers: Headers; response: BetterAuthSignInResult }>
     signOut(args: { headers: Headers }): Promise<void>
     getSession(args: { headers: Headers }): Promise<BetterAuthGetSessionResult | null>
   }
@@ -408,12 +422,8 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
 
   return (
     new Elysia({ name: 'sinopebase-auth' })
-      // Mount better-auth's own handler for /api/auth/* endpoints
-      .mount(
-        '/api/auth',
-        (auth as unknown as { handler: (req: Request) => Promise<Response> }).handler,
-      )
-      // List configured OAuth providers for the admin UI login page
+      // List configured OAuth providers for the admin UI login page.
+      // Must be registered before the better-auth catch-all below.
       .get('/api/auth/oauth-providers', () => {
         const providers = (oauthProviderIds ?? []).map((id) => {
           const meta = PROVIDER_LABELS[id]
@@ -422,6 +432,60 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
             : { id, label: id.charAt(0).toUpperCase() + id.slice(1), color: '#666' }
         })
         return { providers }
+      })
+      // better-auth's sign-in/social is POST-only, but supabase-js's
+      // signInWithOAuth contract hands the browser a URL to navigate to.
+      // Accept GET here and proxy better-auth's POST internally.
+      .get('/api/auth/sign-in/social', async ({ query, set }) => {
+        const q = query as Record<string, string>
+        const body: Record<string, string> = { provider: q.provider ?? '' }
+        if (q.callbackURL) body.callbackURL = q.callbackURL
+        const upstream = await (
+          auth as unknown as { handler: (req: Request) => Promise<Response> }
+        ).handler(
+          new Request('http://internal/api/auth/sign-in/social', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+        )
+        set.status = upstream.status
+        for (const [key, value] of upstream.headers) {
+          if (key.toLowerCase() !== 'content-length' && key.toLowerCase() !== 'set-cookie') {
+            set.headers[key] = value
+          }
+        }
+        forwardSessionCookies(upstream.headers, set)
+        return upstream.json().catch(() => null)
+      })
+      // better-auth's own handler for /api/auth/* endpoints. The original
+      // request is passed unchanged — Elysia's .mount() strips the path
+      // prefix, which made every better-auth route 404 because its router
+      // matches against the full basePath (/api/auth).
+      .all('/api/auth', ({ request }) =>
+        (auth as unknown as { handler: (req: Request) => Promise<Response> }).handler(request),
+      )
+      .all('/api/auth/*', async ({ request, set }) => {
+        const upstream = await (
+          auth as unknown as { handler: (req: Request) => Promise<Response> }
+        ).handler(request)
+        // Unresolvable OIDC issuers crash better-auth's discovery fetch with
+        // an empty 500 — surface a defined error instead.
+        if (upstream.status >= 500 && new URL(request.url).pathname.includes('sign-in/social')) {
+          set.status = 400
+          return {
+            code: 'INVALID_OAUTH_CONFIGURATION',
+            message: 'OAuth provider configuration is invalid or unreachable.',
+          }
+        }
+        set.status = upstream.status
+        for (const [key, value] of upstream.headers) {
+          if (key.toLowerCase() !== 'content-length' && key.toLowerCase() !== 'set-cookie') {
+            set.headers[key] = value
+          }
+        }
+        forwardSessionCookies(upstream.headers, set)
+        return upstream.body ? upstream.json().catch(() => null) : null
       })
       // POST /api/auth/exchange — exchange better-auth session cookie for Bearer token
       .post('/api/auth/exchange', async ({ request, set }) => {
@@ -508,9 +572,16 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
           return errorResponse('Email and password are required', 400)
         }
         try {
-          // Sign up via better-auth, then sign in to get a session token
+          // Sign up via better-auth, then sign in to get a session token.
+          // returnHeaders captures better-auth's session cookie so
+          // cookie-based flows (session exchange, admin UI login) work.
           await auth.api.signUpEmail({ body: { email, password, name: '' } })
-          const signInResult = await auth.api.signInEmail({ body: { email, password } })
+          const signIn = await auth.api.signInEmail({
+            body: { email, password },
+            returnHeaders: true,
+          })
+          forwardSessionCookies(signIn.headers, set)
+          const signInResult = signIn.response
           // Store initial refresh token entry for rotation tracking
           await persistRefreshTokenOnSignIn(auth, signInResult)
           return bridgeSignInResponse(signInResult)
@@ -529,7 +600,12 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
             return errorResponse('Invalid login credentials', 400)
           }
           try {
-            const result = await auth.api.signInEmail({ body: { email, password } })
+            const signIn = await auth.api.signInEmail({
+              body: { email, password },
+              returnHeaders: true,
+            })
+            forwardSessionCookies(signIn.headers, set)
+            const result = signIn.response
             // Store initial refresh token entry for rotation tracking
             await persistRefreshTokenOnSignIn(auth, result)
             return bridgeSignInResponse(result)
@@ -732,7 +808,14 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
         const authHeader = headers.authorization
         if (authHeader?.startsWith('Bearer ')) {
           const token = authHeader.slice(7).trim()
-          await auth.api
+          const api = auth.api as unknown as {
+            signOut: (args: { headers: Headers }) => Promise<void>
+            revokeSession: (args: { body: { token: string } }) => Promise<void>
+          }
+          // Revoke the session server-side — signOut alone is cookie-keyed
+          // and does not invalidate Bearer sessions.
+          await api.revokeSession({ body: { token } }).catch(() => {})
+          await api
             .signOut({ headers: new Headers({ Authorization: `Bearer ${token}` }) })
             .catch(() => {})
         }
@@ -825,9 +908,9 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
         // Trigger better-auth password reset
         try {
           const ba = auth as unknown as {
-            api?: { forgetPassword?: (args: { body: { email: string } }) => Promise<void> }
+            api?: { requestPasswordReset?: (args: { body: { email: string } }) => Promise<void> }
           }
-          await ba.api?.forgetPassword?.({ body: { email } })
+          await ba.api?.requestPasswordReset?.({ body: { email } })
         } catch {
           // Swallow errors — always return success to prevent email enumeration
         }

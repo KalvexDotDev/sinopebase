@@ -12,7 +12,8 @@ export interface RealtimeClient {
   removeChannel(channel: RealtimeChannel): void
   removeAllChannels(): void
   /** Refresh the WebSocket auth token without reconnecting */
-  setAuth(token: string): void
+  /** Replace the auth token. Null restores the API key. Drops the live socket. */
+  setAuth(token: string | null): void
   /** Send a heartbeat manually (auto-heartbeat still runs) */
   sendHeartbeat(): void
   /** Whether the WebSocket is currently open */

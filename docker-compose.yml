@@ -14,6 +14,7 @@ services:
   # PostgreSQL 18 — local dev database, mirrors Railway Sinope-PG-Prod
   postgres:
     image: postgres:18.4-alpine
+    command: "postgres -c max_connections=300"
     container_name: sinopebase-pg
     environment:
       POSTGRES_USER: sinopebase
@@ -28,6 +29,15 @@ services:
       interval: 2s
       timeout: 3s
       retries: 10
+
+  # Mailpit — local SMTP test server with a REST API for received mail
+  # SMTP: localhost:1025 (no auth), API: http://localhost:8025/api/v1
+  mail:
+    image: axllent/mailpit:latest
+    container_name: sinopebase-mail
+    ports:
+      - '1025:1025'
+      - '8025:8025'
 
   # RustFS — S3-compatible object storage, mirrors Railway Buckets
   rustfs:

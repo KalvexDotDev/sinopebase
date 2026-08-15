@@ -9,6 +9,21 @@ export interface RealtimeClient {
   channel(topic: string): RealtimeChannel
   connect(): void
   disconnect(): void
+  removeChannel(channel: RealtimeChannel): void
+  removeAllChannels(): void
+  /** Refresh the WebSocket auth token without reconnecting */
+  /** Replace the auth token. Null restores the API key. Drops the live socket. */
+  setAuth(token: string | null): void
+  /** Send a heartbeat manually (auto-heartbeat still runs) */
+  sendHeartbeat(): void
+  /** Whether the WebSocket is currently open */
+  isConnected(): boolean
+  /** Whether the WebSocket is connecting */
+  isConnecting(): boolean
+  /** Whether the WebSocket is closing */
+  isDisconnecting(): boolean
+  /** Raw connection state string */
+  connectionState(): 'OPEN' | 'CONNECTING' | 'CLOSING' | 'CLOSED'
 }
 
 export interface RealtimeChannel {

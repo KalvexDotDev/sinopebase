@@ -21,6 +21,9 @@ import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
 export type { Filter, OrderBy } from './db-interface'
 
+/** Trust boundary: RPC function and argument names must be plain identifiers. */
+export const RPC_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
 export interface PostgresConfig {
   postgresUrl: string
   /** Optional read replica URL — SELECT queries route here when configured */
@@ -386,20 +389,30 @@ export class PostgresDatabase implements IDatabase {
    * Parameters are passed as `fn(key1 := value1, key2 := value2, ...)`.
    */
   async rpc(fn: string, params: Record<string, unknown>): Promise<Record<string, unknown>[]> {
-    const entries = Object.entries(params)
-    if (entries.length === 0) {
-      return (await sql`SELECT * FROM ${sql.raw(fn)}()`.execute(this.reader)) as unknown as Record<
-        string,
-        unknown
-      >[]
+    if (!RPC_IDENTIFIER.test(fn)) {
+      throw new Error(`Invalid RPC function name "${fn}"`)
     }
-    // Build `fn(arg1 := val1, arg2 := val2, ...)` using raw SQL
-    const args = entries.map(([k, v]) => sql`${sql.raw(k)} := ${sql.literal(JSON.stringify(v))}`)
-    const callExpr = sql`${sql.raw(fn)}(${sql.join(args, sql`, `)})`
-    return (await sql`SELECT * FROM ${callExpr}`.execute(this.reader)) as unknown as Record<
-      string,
-      unknown
-    >[]
+    const entries = Object.entries(params)
+    for (const [key] of entries) {
+      if (!RPC_IDENTIFIER.test(key)) {
+        throw new Error(`Invalid RPC argument name "${key}"`)
+      }
+    }
+    // ponytail: functions resolve in the public schema only — blocks pg_catalog
+    // built-ins reachable through the unqualified search path. Per-function
+    // allowlists if a consumer needs to expose other schemas.
+    const fnRef = sql.ref(`public.${fn}`)
+    if (entries.length === 0) {
+      const result = await sql`SELECT * FROM ${fnRef}()`.execute(this.reader)
+      return result.rows as unknown as Record<string, unknown>[]
+    }
+    // `fn("arg" := value, ...)` — identifiers validated and quoted, values bound
+    // as parameters (node-postgres serializes objects for json/jsonb args).
+    const args = entries.map(([k, v]) => sql`${sql.ref(k)} := ${v}`)
+    const result = await sql`SELECT * FROM ${fnRef}(${sql.join(args, sql`, `)})`.execute(
+      this.reader,
+    )
+    return result.rows as unknown as Record<string, unknown>[]
   }
 
   /**

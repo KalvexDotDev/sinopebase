@@ -24,9 +24,12 @@ export default defineConfig({
     env: {
       SINOPEBASE_SERVICE_ROLE_KEY: 'e2e-key-service-min-32-chars!!',
       SINOPEBASE_ANON_KEY: 'e2e-key-anon-min-32-chars!!!!!',
-      RUSTFS_ENDPOINT: process.env.RUSTFS_ENDPOINT || 'http://localhost:9000',
-      RUSTFS_ACCESS_KEY: process.env.RUSTFS_ACCESS_KEY || 'rustfsadmin',
-      RUSTFS_SECRET_KEY: process.env.RUSTFS_SECRET_KEY || 'rustfsadmin',
+      // Explicitly empty: CI jobs export RUSTFS_* for the bun suite, and the
+      // inherited values would flip this server to S3 mode. Storage falls
+      // back to the local file store (pb_data/) for the browser suite.
+      RUSTFS_ENDPOINT: '',
+      RUSTFS_ACCESS_KEY: '',
+      RUSTFS_SECRET_KEY: '',
     },
   },
 })

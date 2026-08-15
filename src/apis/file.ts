@@ -113,6 +113,12 @@ function fullResponse(buffer: Buffer, contentType: string): Response {
 export interface StoragePluginOptions {
   resolveContext?: (request: Request) => PostgresRequestContext | undefined
   access?: StorageAccessPolicy
+  /**
+   * When true (PostgreSQL deployments), a missing/unavailable access policy
+   * denies non-service_role requests instead of falling back to permissive
+   * local-store semantics.
+   */
+  requireAccessPolicy?: boolean
   /** Maximum size for uploaded files in bytes (default 100 MB). */
   maxUploadSize?: number
 }
@@ -272,8 +278,14 @@ async function resolveStorageAccess(options: StoragePluginOptions, request: Requ
   if (options.access && (await options.access.isAvailable())) {
     return { context, access: options.access }
   }
-  if (context.role === 'service_role') return { context, access: undefined }
-  throw new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')
+  // No usable policy. Default (and bare-plugin usage) fails closed — the
+  // policy is the authorization boundary and its absence must never degrade
+  // to unrestricted access. Only the app's explicit local-store dev mode
+  // (requireAccessPolicy: false) relies on the auth guard's role.
+  if ((options.requireAccessPolicy ?? true) && context.role !== 'service_role') {
+    throw new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')
+  }
+  return { context, access: undefined }
 }
 
 async function storageOperation<T>(
@@ -289,6 +301,47 @@ async function storageOperation<T>(
         : new StorageAccessError(500, '500', 'Storage operation failed')
     set.status = failure.status
     return { statusCode: failure.code, error: failure.code, message: failure.message }
+  }
+}
+
+// Bucket names are single path segments — prevents traversal out of the
+// storage root via ../ in names supplied by direct HTTP callers.
+const BUCKET_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/
+
+function isValidBucketName(name: string): boolean {
+  return name !== '.' && name !== '..' && BUCKET_NAME_PATTERN.test(name)
+}
+
+/** Map a missing-source read error to a 404; rethrow anything else. */
+function missingObjectError(error: unknown): Error {
+  if (error instanceof Error && (error as { code?: string }).code === 'ENOENT') {
+    return new StorageAccessError(404, '404', 'Object not found')
+  }
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+/** Supabase contract: copying/moving onto an existing object is a 400. */
+async function existsOrThrow(
+  access: StorageAccessPolicy | undefined,
+  context: PostgresRequestContext,
+  store: IFileStore,
+  bucket: string,
+  path: string,
+): Promise<void> {
+  let exists = false
+  try {
+    if (access) {
+      await access.download(context, bucket, path, () => store.read(bucket, path))
+    } else {
+      await store.read(bucket, path)
+    }
+    exists = true
+  } catch (error) {
+    const mapped = missingObjectError(error)
+    if (!(mapped instanceof StorageAccessError) || mapped.status !== 404) throw mapped
+  }
+  if (exists) {
+    throw new StorageAccessError(400, '400', 'The destination object already exists')
   }
 }
 
@@ -323,6 +376,18 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
         data: null,
         error: {
           message: 'Bucket name is required',
+          details: '',
+          hint: '',
+          code: '400',
+        },
+      }
+    }
+    if (!isValidBucketName(name)) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Invalid bucket name',
           details: '',
           hint: '',
           code: '400',
@@ -375,6 +440,18 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
         },
       }
     }
+    if (!isValidBucketName(bucket)) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Invalid bucket name',
+          details: '',
+          hint: '',
+          code: '400',
+        },
+      }
+    }
     const b = (body ?? {}) as Record<string, unknown>
     const prefix = b.prefix as string | undefined
     return storageOperation(set, async () => {
@@ -392,6 +469,18 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     async ({ body, params, request, set }) => {
       const bucket = params.bucket
       const path = params['*']
+      if (bucket && !isValidBucketName(bucket)) {
+        set.status = 400
+        return {
+          data: null,
+          error: {
+            message: 'Invalid bucket name',
+            details: '',
+            hint: '',
+            code: '400',
+          },
+        }
+      }
       if (!bucket || !path) {
         set.status = 400
         return {
@@ -499,7 +588,19 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       const { context, access } = await resolveStorageAccess(options, request)
       const buffer = access
         ? await access.download(context, bucket, path, () => store.read(bucket, path))
-        : await store.read(bucket, path)
+        : await store.read(bucket, path).catch((error: unknown) => {
+            // Missing object is a 404, not a masked 500. Also serves the
+            // SDK exists() HEAD request (Elysia maps HEAD to this route).
+            // Only ENOENT means missing — store outages must stay 500s.
+            if (
+              error instanceof Error &&
+              'code' in error &&
+              (error as { code?: string }).code === 'ENOENT'
+            ) {
+              throw new StorageAccessError(404, '404', 'Object not found')
+            }
+            throw error
+          })
       const contentType = inferContentType(path)
       const rangeHeader = request.headers.get('range')
       if (rangeHeader) {
@@ -558,6 +659,18 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
   app.get('/storage/v1/object/public/:bucket/*', async ({ params, set }) => {
     const bucket = params.bucket
     const path = params['*']
+    if (bucket && !isValidBucketName(bucket)) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Invalid bucket name',
+          details: '',
+          hint: '',
+          code: '400',
+        },
+      }
+    }
     if (!bucket || !path) {
       set.status = 400
       return {
@@ -581,10 +694,144 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     })
   })
 
+  // HEAD /storage/v1/object/:bucket/* is served by Elysia's automatic
+  // HEAD → GET mapping through the download route above, which returns
+  // 404 for missing objects.
+
+  // POST /storage/v1/object/copy — Copy an object within a bucket
+  app.post('/storage/v1/object/copy', async ({ body, request, set }) => {
+    const { bucket, from, to } = (body ?? {}) as { bucket?: string; from?: string; to?: string }
+    if (!bucket || !from || !to || !isValidBucketName(bucket)) {
+      set.status = 400
+      return {
+        data: null,
+        error: { message: 'bucket, from, and to are required', details: '', hint: '', code: '400' },
+      }
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      // Supabase contract: copying onto an existing object is a 400.
+      await existsOrThrow(access, context, store, bucket, to)
+      // ponytail: Buffer → ArrayBuffer cast — Buffer is a Uint8Array view.
+      const buffer = access
+        ? await access.download(context, bucket, from, () => store.read(bucket, from))
+        : await store.read(bucket, from).catch((error: unknown) => {
+            throw missingObjectError(error)
+          })
+      if (access) {
+        await access.upload(
+          context,
+          {
+            bucket,
+            path: to,
+            data: buffer as unknown as ArrayBuffer,
+            contentType: inferContentType(to),
+            upsert: false,
+          },
+          () => store.save(bucket, to, buffer as unknown as ArrayBuffer),
+        )
+      } else {
+        await store.save(bucket, to, buffer as unknown as ArrayBuffer)
+      }
+      return { data: { path: to }, error: null }
+    })
+  })
+
+  // POST /storage/v1/object/move — Move an object within a bucket
+  app.post('/storage/v1/object/move', async ({ body, request, set }) => {
+    const { bucket, from, to } = (body ?? {}) as { bucket?: string; from?: string; to?: string }
+    if (!bucket || !from || !to || !isValidBucketName(bucket)) {
+      set.status = 400
+      return {
+        data: null,
+        error: { message: 'bucket, from, and to are required', details: '', hint: '', code: '400' },
+      }
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      await existsOrThrow(access, context, store, bucket, to)
+      const buffer = access
+        ? await access.download(context, bucket, from, () => store.read(bucket, from))
+        : await store.read(bucket, from).catch((error: unknown) => {
+            throw missingObjectError(error)
+          })
+      if (access) {
+        await access.upload(
+          context,
+          {
+            bucket,
+            path: to,
+            data: buffer as unknown as ArrayBuffer,
+            contentType: inferContentType(to),
+            upsert: false,
+          },
+          () => store.save(bucket, to, buffer as unknown as ArrayBuffer),
+        )
+        await access.remove(context, bucket, [from], () => store.delete(bucket, [from]))
+      } else {
+        await store.save(bucket, to, buffer as unknown as ArrayBuffer)
+        await store.delete(bucket, [from])
+      }
+      return { data: { path: to }, error: null }
+    })
+  })
+
+  // POST /storage/v1/object/sign/:bucket — Batch sign (SDK createSignedUrls).
+  // The SDK posts { paths, expiresIn } without a path segment.
+  app.post('/storage/v1/object/sign/:bucket', async ({ params, body, request, set }) => {
+    const bucket = params.bucket
+    if (!bucket || !isValidBucketName(bucket)) {
+      set.status = 400
+      return {
+        data: null,
+        error: { message: 'Invalid bucket name', details: '', hint: '', code: '400' },
+      }
+    }
+    const b = (body ?? {}) as Record<string, unknown>
+    const rawPaths = b.paths
+    const rawExpiresIn = b.expiresIn
+    if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
+      set.status = 400
+      return {
+        data: null,
+        error: { message: 'paths must be a non-empty array', details: '', hint: '', code: '400' },
+      }
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      const expiresInSec =
+        typeof rawExpiresIn === 'number'
+          ? rawExpiresIn
+          : typeof rawExpiresIn === 'string'
+            ? parseInt(rawExpiresIn, 10) || 3600
+            : 3600
+      const results: { path: string; signedUrl: string }[] = []
+      for (const rawPath of rawPaths) {
+        const path = String(rawPath)
+        if (access) await access.authorizeSignedUrl(context, bucket, path)
+        const token = signUrl(bucket, path, expiresInSec, 'GET')
+        results.push({ path, signedUrl: `/storage/v1/object/signed/${token}` })
+      }
+      return { data: results, error: null }
+    })
+  })
+
   // POST /storage/v1/object/sign/:bucket/* — Create HMAC-signed URL
   app.post('/storage/v1/object/sign/:bucket/*', async ({ params, body, request, set }) => {
     const bucket = params.bucket
     const path = params['*']
+    if (bucket && !isValidBucketName(bucket)) {
+      set.status = 400
+      return {
+        data: null,
+        error: {
+          message: 'Invalid bucket name',
+          details: '',
+          hint: '',
+          code: '400',
+        },
+      }
+    }
     if (!bucket || !path) {
       set.status = 400
       return {

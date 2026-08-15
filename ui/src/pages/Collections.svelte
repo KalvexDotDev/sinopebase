@@ -305,7 +305,7 @@
     {/each}
     {#if addError}<div style="color: var(--danger); font-size: 13px;">{addError}</div>{/if}
     <div class="flex gap-sm" style="margin-top: var(--space-md);">
-      <Button variant="primary" size="md" disabled={addSubmitting}>{addSubmitting ? 'Adding…' : 'Add Row'}</Button>
+      <Button variant="primary" size="md" disabled={addSubmitting} onclick={() => doAdd()}>{addSubmitting ? 'Adding…' : 'Add Row'}</Button>
       <Button variant="ghost" size="md" onclick={closeAdd}>Cancel</Button>
     </div>
   </form>
@@ -348,7 +348,7 @@
     {#if createError}<div style="color: var(--danger); font-size: 13px;">{createError}</div>{/if}
     {#if createOk}<div style="color: var(--lichen); font-size: 13px;">{createOk}</div>{/if}
     <div class="flex gap-sm" style="margin-top: var(--space-md);">
-      <Button variant="primary" size="md" disabled={createSubmitting}>
+      <Button variant="primary" size="md" disabled={createSubmitting} onclick={() => doCreateTable()}>
         {createSubmitting ? 'Creating…' : 'Create Table'}
       </Button>
       <Button variant="ghost" size="md" onclick={() => { showCreateTable = false }}>Cancel</Button>

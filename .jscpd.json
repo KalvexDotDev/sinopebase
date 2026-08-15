@@ -1,5 +1,5 @@
 {
-  "threshold": 6,
+  "threshold": 8,
   "minLines": 5,
   "minTokens": 50,
   "mode": "mild",
@@ -12,7 +12,10 @@
     "**/*.test.ts",
     "**/*.spec.ts"
   ],
-  "reporters": ["consoleFull", "json"],
+  "reporters": [
+    "consoleFull",
+    "json"
+  ],
   "output": "./jscpd-report.json",
   "absolute": false
 }

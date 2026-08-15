@@ -35,6 +35,13 @@ export interface AuthClient {
     error: AuthError | null
   }>
 
+  /**
+   * Access token for database requests. Returns the in-memory session token
+   * when signed in. With an SSR cookie provider, probes the cookie session
+   * once per client instance. Null when signed out.
+   */
+  getAccessToken(): Promise<string | null>
+
   /** Exchange an OAuth authorization code for a session (code already consumed by better-auth, reads cookie) */
   exchangeCodeForSession(code: string): Promise<AuthResponse>
 
@@ -49,12 +56,8 @@ export interface AuthClient {
   // biome-ignore lint/complexity/noBannedTypes: supabase-js API contract uses {}
   resetPasswordForEmail(email: string): Promise<{ data: {} | null; error: AuthError | null }>
 
-  /** Restore a session from stored tokens (no network call) */
-  setSession(session: {
-    access_token: string
-    refresh_token: string
-    user: User
-  }): Promise<AuthResponse>
+  /** Restore a session from tokens — verified against the backend, which supplies the user. */
+  setSession(session: { access_token: string; refresh_token: string }): Promise<AuthResponse>
 
   onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void): {
     data: { subscription: { unsubscribe: () => void } }

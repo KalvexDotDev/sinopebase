@@ -61,7 +61,44 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) 
         Math.max(1, parseInt(q.perPage ?? q.per_page ?? '30', 10) || 30),
       )
 
-      const rows = await selectRows(db, '_logs')
+      // Postgres path: order and page in SQL — sorting 30k+ mixed-format
+      // TEXT timestamps in JS does not order correctly.
+      const pool = (
+        db as unknown as {
+          getPool?: () => {
+            query: (
+              sqlText: string,
+              params: unknown[],
+            ) => Promise<{ rows: Record<string, unknown>[] }>
+          }
+        }
+      ).getPool?.()
+      let rows: Record<string, unknown>[]
+      let totalItems: number
+      if (pool) {
+        try {
+          const countResult = await pool.query(`SELECT count(*)::int AS n FROM _logs`, [])
+          totalItems = Number(countResult.rows[0]?.n ?? 0)
+          const pageResult = await pool.query(
+            // created is TEXT in mixed historical formats — cast for ordering.
+            `SELECT * FROM _logs ORDER BY created::timestamptz DESC LIMIT $1 OFFSET $2`,
+            [perPage, (page - 1) * perPage],
+          )
+          rows = pageResult.rows
+        } catch {
+          // One malformed created value would 400 the whole endpoint —
+          // fall back to the in-memory path.
+          rows = await selectRows(db, '_logs')
+          rows.sort((a, b) => (String(b.created ?? '') > String(a.created ?? '') ? 1 : -1))
+          totalItems = rows.length
+          rows = rows.slice((page - 1) * perPage, (page - 1) * perPage + perPage)
+        }
+      } else {
+        rows = await selectRows(db, '_logs')
+        rows.sort((a, b) => (String(b.created ?? '') > String(a.created ?? '') ? 1 : -1))
+        totalItems = rows.length
+        rows = rows.slice((page - 1) * perPage, (page - 1) * perPage + perPage)
+      }
 
       const logs = rows.map((r) => ({
         id: String(r.id ?? ''),
@@ -72,20 +109,14 @@ export function createLogsPlugin(db: IDatabase, isSuperuser: (request: Request) 
         updated: String(r.updated ?? ''),
       }))
 
-      // Sort newest first
-      logs.sort((a, b) => (b.created > a.created ? 1 : -1))
-
-      const totalItems = logs.length
       const totalPages = Math.ceil(totalItems / perPage)
-      const start = (page - 1) * perPage
-      const items = logs.slice(start, start + perPage)
 
       return {
         page,
         perPage,
         totalItems,
         totalPages,
-        items,
+        items: logs,
       }
     } catch (err) {
       set.status = 400

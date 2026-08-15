@@ -13,7 +13,13 @@ export interface StorageClient {
   createBucket(
     name: string,
     options?: { public?: boolean },
-  ): Promise<{ data: string; error: PostgrestError | null }>
+  ): Promise<{ data: string | null; error: PostgrestError | null }>
+  getBucket(name: string): Promise<{ data: Bucket | null; error: PostgrestError | null }>
+  updateBucket(
+    name: string,
+    options?: { public?: boolean },
+  ): Promise<{ data: string | null; error: PostgrestError | null }>
+  deleteBucket(name: string): Promise<{ data: string | null; error: PostgrestError | null }>
 }
 
 export interface StorageBucket {
@@ -35,6 +41,19 @@ export interface StorageBucket {
     path: string,
     expiresIn: number,
   ): Promise<{ data: { signedUrl: string } | null; error: PostgrestError | null }>
+  createSignedUrls(
+    paths: string[],
+    expiresIn: number,
+  ): Promise<{ data: { path: string; signedUrl: string }[] | null; error: PostgrestError | null }>
+  copy(
+    fromPath: string,
+    toPath: string,
+  ): Promise<{ data: { path: string } | null; error: PostgrestError | null }>
+  move(
+    fromPath: string,
+    toPath: string,
+  ): Promise<{ data: { path: string } | null; error: PostgrestError | null }>
+  exists(path: string): Promise<{ data: boolean; error: PostgrestError | null }>
 }
 
 export interface Bucket {

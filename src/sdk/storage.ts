@@ -13,13 +13,13 @@ export interface StorageClient {
   createBucket(
     name: string,
     options?: { public?: boolean },
-  ): Promise<{ data: string; error: PostgrestError | null }>
+  ): Promise<{ data: string | null; error: PostgrestError | null }>
   getBucket(name: string): Promise<{ data: Bucket | null; error: PostgrestError | null }>
   updateBucket(
     name: string,
     options?: { public?: boolean },
-  ): Promise<{ data: string; error: PostgrestError | null }>
-  deleteBucket(name: string): Promise<{ data: string; error: PostgrestError | null }>
+  ): Promise<{ data: string | null; error: PostgrestError | null }>
+  deleteBucket(name: string): Promise<{ data: string | null; error: PostgrestError | null }>
 }
 
 export interface StorageBucket {

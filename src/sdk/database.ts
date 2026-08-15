@@ -8,11 +8,30 @@
  * Backend: core/record_query.go, core/collection_query.go
  */
 
-import type { PostgrestError, PostgrestResponse } from './client'
+import type { PostgrestError, PostgrestResponse, PostgrestSingleResponse } from './client'
 
 // ---------------------------------------------------------------------------
 // Filter types
 // ---------------------------------------------------------------------------
+
+/** JSON-safe value — RPC arguments must serialize to JSON. */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
+export interface RpcOptions {
+  /** Skip body parsing — return status only (supabase-js `head`). */
+  head?: boolean
+  /** Return a single value instead of a row array (supabase-js `get`). */
+  get?: boolean
+}
+
+// Table names are one path segment — rejects traversal out of /rest/v1/.
+const TABLE_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
 export type FilterOperator =
   | 'eq'
@@ -43,8 +62,17 @@ export interface PostgrestClient<T extends Record<string, unknown>> {
   update(values: Partial<T>): PostgrestFilterBuilder<T>
   delete(): PostgrestFilterBuilder<T>
 
-  // RPC
-  rpc<U = unknown>(fn: string, args?: Record<string, unknown>): PromiseLike<PostgrestResponse<U>>
+  // RPC — supabase-js contract: rows by default, single value with `get: true`
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args?: Record<string, JsonValue>,
+    options?: RpcOptions & { get?: false },
+  ): PromiseLike<PostgrestResponse<T[]>>
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args: Record<string, JsonValue> | undefined,
+    options: RpcOptions & { get: true },
+  ): PromiseLike<PostgrestSingleResponse<T>>
 }
 
 export interface PostgrestFilterBuilder<T extends Record<string, unknown>> {
@@ -91,19 +119,27 @@ export function createPostgrestClient<T extends Record<string, unknown>>(
   baseUrl: string,
   apiKey: string,
   table: string,
+  getAccessToken: () => Promise<string | null> = async () => null,
 ): PostgrestClient<T> {
-  return new PostgrestClientImpl<T>(baseUrl, apiKey, table)
+  return new PostgrestClientImpl<T>(baseUrl, apiKey, table, getAccessToken)
 }
 
 class PostgrestClientImpl<T extends Record<string, unknown>> implements PostgrestClient<T> {
   private baseUrl: string
   private apiKey: string
   private table: string
+  private getAccessToken: () => Promise<string | null>
 
-  constructor(baseUrl: string, apiKey: string, table: string) {
+  constructor(
+    baseUrl: string,
+    apiKey: string,
+    table: string,
+    getAccessToken: () => Promise<string | null>,
+  ) {
     this.baseUrl = baseUrl
     this.apiKey = apiKey
     this.table = table
+    this.getAccessToken = getAccessToken
   }
 
   select(columns = '*', options = {}): PostgrestFilterBuilder<T> {
@@ -115,6 +151,7 @@ class PostgrestClientImpl<T extends Record<string, unknown>> implements Postgres
       undefined,
       columns,
       options,
+      this.getAccessToken,
     )
   }
 
@@ -127,6 +164,7 @@ class PostgrestClientImpl<T extends Record<string, unknown>> implements Postgres
       values,
       '*',
       options as Record<string, unknown>,
+      this.getAccessToken,
     )
   }
 
@@ -139,6 +177,7 @@ class PostgrestClientImpl<T extends Record<string, unknown>> implements Postgres
       values,
       '*',
       {},
+      this.getAccessToken,
     )
   }
 
@@ -151,46 +190,150 @@ class PostgrestClientImpl<T extends Record<string, unknown>> implements Postgres
       undefined,
       undefined,
       {},
+      this.getAccessToken,
     )
   }
 
-  async rpc<U = unknown>(
+  rpc<T = Record<string, JsonValue>>(
     fn: string,
-    args?: Record<string, unknown>,
-  ): Promise<PostgrestResponse<U>> {
-    const url = `${this.baseUrl}/rest/v1/rpc/${fn}`
-    const res = await fetch(url, {
+    args?: Record<string, JsonValue>,
+    options?: RpcOptions & { get?: false },
+  ): Promise<PostgrestResponse<T[]>>
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args: Record<string, JsonValue> | undefined,
+    options: RpcOptions & { get: true },
+  ): Promise<PostgrestSingleResponse<T>>
+  rpc<T = Record<string, JsonValue>>(
+    fn: string,
+    args?: Record<string, JsonValue>,
+    options?: RpcOptions,
+  ): Promise<PostgrestResponse<T[]> | PostgrestSingleResponse<T>> {
+    return postgrestRpc(this.baseUrl, this.apiKey, this.getAccessToken, fn, args, options)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RPC — shared by SinopebaseClient.rpc and PostgrestClient.rpc
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a PostgreSQL function (supabase-js `rpc()` contract).
+ *
+ * Default: rows as an array. `{ get: true }`: a single value. `{ head: true }`:
+ * status only. Sends the current session token when signed in, otherwise the
+ * API key, so the backend resolves the correct RLS role.
+ */
+export async function postgrestRpc<T = Record<string, JsonValue>>(
+  baseUrl: string,
+  apiKey: string,
+  getAccessToken: () => Promise<string | null>,
+  fn: string,
+  args?: Record<string, JsonValue>,
+  options: RpcOptions = {},
+): Promise<PostgrestResponse<T[]> | PostgrestSingleResponse<T>> {
+  const token = (await getAccessToken()) ?? apiKey
+  try {
+    const res = await fetch(`${baseUrl}/rest/v1/rpc/${encodeURIComponent(fn)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: this.apiKey,
-        Authorization: `Bearer ${this.apiKey}`,
+        apikey: apiKey,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(args ?? {}),
     })
-    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+
+    if (options.head) {
+      return {
+        data: null,
+        error: res.ok
+          ? null
+          : { message: res.statusText, details: '', hint: '', code: String(res.status) },
+        count: null,
+        status: res.status,
+        statusText: res.statusText,
+      }
+    }
+
+    // Network boundary — the response shape is unknown until checked.
+    const body: unknown = await res.json().catch(() => null)
+
     if (!res.ok) {
       return {
         data: null,
         error: {
-          message: (body?.message as string) ?? res.statusText,
-          details: (body?.details as string) ?? '',
-          hint: (body?.hint as string) ?? '',
-          code: (body?.code as string) ?? String(res.status),
+          message: readErrorField(body, 'message') ?? res.statusText,
+          details: readErrorField(body, 'details') ?? '',
+          hint: readErrorField(body, 'hint') ?? '',
+          code: readErrorField(body, 'code') ?? String(res.status),
         },
         count: null,
         status: res.status,
         statusText: res.statusText,
       }
     }
+
+    if (options.get) {
+      // PostgREST contract: a scalar was requested — zero or multiple rows
+      // is an error (406 PGRST116), never a silent array.
+      if (Array.isArray(body) && body.length !== 1) {
+        return {
+          data: null,
+          error: {
+            message: 'JSON object requested, multiple (or no) rows returned',
+            details: '',
+            hint: '',
+            code: 'PGRST116',
+          },
+        }
+      }
+      return { data: unwrapScalar(body) as T, error: null }
+    }
+
+    const rows: unknown[] = Array.isArray(body) ? body : body === null ? [] : [body]
     return {
-      data: body as U,
+      data: rows as T[],
       error: null,
       count: null,
       status: res.status,
       statusText: res.statusText,
     }
+  } catch (err) {
+    return {
+      data: null,
+      error: {
+        message: err instanceof Error ? err.message : 'Unknown error',
+        details: '',
+        hint: '',
+        code: 'NETWORK_ERROR',
+      },
+      count: null,
+      status: 0,
+      statusText: 'Network Error',
+    }
   }
+}
+
+function readErrorField(body: unknown, key: string): string | null {
+  if (typeof body !== 'object' || body === null) return null
+  const value = (body as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : null
+}
+
+// ponytail: scalar functions arrive as `[{<fn>: value}]` through the rows
+// transport. Unwrap to match PostgREST's scalar responses. A single-row
+// single-column SETOF result is indistinguishable — use the default form
+// (no `get`) when the row itself is wanted.
+function unwrapScalar(body: unknown): unknown {
+  if (Array.isArray(body) && body.length === 1) {
+    const row = body[0]
+    if (typeof row === 'object' && row !== null) {
+      const values = Object.values(row)
+      if (values.length === 1) return values[0]
+    }
+  }
+  return body
 }
 
 class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
@@ -209,6 +352,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
   private offsetParam?: number
   private rangeParam?: { from: number; to: number }
   private wantMaybeSingle = false
+  private getAccessToken: () => Promise<string | null>
 
   constructor(
     baseUrl: string,
@@ -218,6 +362,7 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
     body: unknown,
     columns?: string,
     options: Record<string, unknown> = {},
+    getAccessToken: () => Promise<string | null> = async () => null,
   ) {
     this.baseUrl = baseUrl
     this.apiKey = apiKey
@@ -226,39 +371,42 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
     this.body = body
     this.columns = columns
     this.options = options
+    this.getAccessToken = getAccessToken
   }
 
-  // Filters
+  // Filters — values are stored raw; URLSearchParams encodes them exactly
+  // once when the query string is built (pre-encoding here double-encoded
+  // JSON, wildcards, and multi-word queries).
   eq(column: string, value: unknown): this {
-    this.filters.push(`${column}=eq.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=eq.${String(value)}`)
     return this
   }
   neq(column: string, value: unknown): this {
-    this.filters.push(`${column}=neq.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=neq.${String(value)}`)
     return this
   }
   gt(column: string, value: unknown): this {
-    this.filters.push(`${column}=gt.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=gt.${String(value)}`)
     return this
   }
   gte(column: string, value: unknown): this {
-    this.filters.push(`${column}=gte.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=gte.${String(value)}`)
     return this
   }
   lt(column: string, value: unknown): this {
-    this.filters.push(`${column}=lt.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=lt.${String(value)}`)
     return this
   }
   lte(column: string, value: unknown): this {
-    this.filters.push(`${column}=lte.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=lte.${String(value)}`)
     return this
   }
   like(column: string, pattern: string): this {
-    this.filters.push(`${column}=like.${encodeURIComponent(pattern)}`)
+    this.filters.push(`${column}=like.${pattern}`)
     return this
   }
   ilike(column: string, pattern: string): this {
-    this.filters.push(`${column}=ilike.${encodeURIComponent(pattern)}`)
+    this.filters.push(`${column}=ilike.${pattern}`)
     return this
   }
   is(column: string, value: null | boolean): this {
@@ -272,31 +420,31 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
           const s = String(v)
           // Values containing commas must be double-quoted so PostgREST
           // treats them as a single value rather than splitting on the comma.
-          return s.includes(',') ? `%22${encodeURIComponent(s)}%22` : encodeURIComponent(s)
+          return s.includes(',') ? `"${s}"` : s
         })
         .join(',')})`,
     )
     return this
   }
   contains(column: string, value: unknown): this {
-    this.filters.push(`${column}=cs.${encodeURIComponent(JSON.stringify(value))}`)
+    this.filters.push(`${column}=cs.${JSON.stringify(value)}`)
     return this
   }
   or(filters: string): this {
-    this.filters.push(`or=(${encodeURIComponent(filters)})`)
+    this.filters.push(`or=(${filters})`)
     return this
   }
   not(column: string, operator: string, value: unknown): this {
-    this.filters.push(`${column}=not.${operator}.${encodeURIComponent(String(value))}`)
+    this.filters.push(`${column}=not.${operator}.${String(value)}`)
     return this
   }
   textSearch(column: string, query: string, options?: { type?: string; config?: string }): this {
     const type = options?.type ?? 'fts'
-    this.filters.push(`${column}=${type}.${encodeURIComponent(query)}`)
+    this.filters.push(`${column}=${type}.${query}`)
     return this
   }
   containedBy(column: string, value: unknown): this {
-    this.filters.push(`${column}=cd.${encodeURIComponent(JSON.stringify(value))}`)
+    this.filters.push(`${column}=cd.${JSON.stringify(value)}`)
     return this
   }
 
@@ -352,6 +500,23 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
 
   private async execute(): Promise<PostgrestResponse<T[]>> {
     try {
+      // Trust boundary: the session token is attached to these requests, so a
+      // hostile table name must not be able to retarget them at other routes.
+      if (!TABLE_NAME.test(this.table)) {
+        return {
+          data: null,
+          error: {
+            message: `Invalid table name "${this.table}"`,
+            details: '',
+            hint: '',
+            code: 'INVALID_TABLE',
+          },
+          count: null,
+          status: 0,
+          statusText: 'Invalid Table Name',
+        }
+      }
+
       let url = `${this.baseUrl}/rest/v1/${this.table}`
 
       // Build query string
@@ -375,7 +540,8 @@ class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         apikey: this.apiKey,
-        Authorization: `Bearer ${this.apiKey}`,
+        // Session token wins over the API key so RLS resolves the signed-in user's role.
+        Authorization: `Bearer ${(await this.getAccessToken()) ?? this.apiKey}`,
       }
 
       if (this.options.count) {
