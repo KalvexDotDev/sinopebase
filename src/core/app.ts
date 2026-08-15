@@ -1221,12 +1221,17 @@ export class Sinopebase {
         if (
           url.pathname === '/api/health' ||
           url.pathname === '/api/ready' ||
+          url.pathname === '/railway' ||
           url.pathname.startsWith('/api/admin/') ||
           url.pathname.startsWith('/api/logs')
         )
           return
         await rlHandler({ request, set })
       })
+
+      // Railway's platform healthcheck probes /railway on the HTTP port.
+      // Serve it (same contract as /api/health) so the deploy probe passes.
+      .get('/railway', () => ({ status: 'ok' }))
 
       // Health check — liveness (H10: production-safe)
       .get('/api/health', () => {
