@@ -24,10 +24,7 @@ export function createAuthClient(
   }
 
   let currentSession: Session | null = null
-  let sessionProbe: Promise<{
-    data: { session: Session | null; user: User | null }
-    error: AuthError | null
-  }> | null = null
+  let sessionProbe: Promise<string | null> | null = null
   const stateChangeCallbacks = new Set<(event: AuthChangeEvent, session: Session | null) => void>()
 
   function cookieHeader(): string {
@@ -43,7 +40,7 @@ export function createAuthClient(
     const setCookies = res.headers.getSetCookie?.() ?? []
     for (const header of setCookies) {
       const parsed = parseSetCookie(header)
-      if (parsed) cookies.setAll([parsed])
+      if (parsed) cookies.setAll?.([parsed])
     }
   }
 
@@ -108,7 +105,7 @@ export function createAuthClient(
         error: { message: (json?.message as string) ?? res.statusText, status: res.status },
       }
     }
-    return { data: { user: json as User }, error: null }
+    return { data: { user: json as unknown as User }, error: null }
   }
 
   async function doRefreshSession(): Promise<AuthResponse> {
@@ -282,7 +279,7 @@ export function createAuthClient(
           error: { message: (json?.message as string) ?? res.statusText, status: res.status },
         }
       }
-      const user = json as User
+      const user = json as unknown as User
       if (currentSession) {
         currentSession = { ...currentSession, user }
       }
@@ -321,10 +318,9 @@ export function createAuthClient(
         user: {
           id: '',
           email: '',
-          emailVerified: false,
           createdAt: new Date(),
           updatedAt: new Date(),
-        },
+        } as unknown as User,
       }
       currentSession = restored
 
@@ -374,14 +370,17 @@ function parseSetCookie(
   header: string,
 ): { name: string; value: string; opts?: Record<string, unknown> } | null {
   const [pair, ...attrs] = header.split(';')
-  const eq = pair?.indexOf('=')
-  if (eq === undefined || eq < 0 || eq === pair.length - 1) return null
+  if (!pair) return null
+  const eq = pair.indexOf('=')
+  if (eq < 0 || eq === pair.length - 1) return null
   const name = pair.slice(0, eq).trim()
   const value = pair.slice(eq + 1).trim()
   if (!name) return null
   const opts: Record<string, unknown> = { path: '/' }
   for (const attr of attrs) {
-    const [key, ...rest] = attr.trim().split('=')
+    const key = attr.trim().split('=')[0]
+    if (!key) continue
+    const rest = attr.trim().split('=').slice(1)
     const k = key.toLowerCase()
     const v = rest.join('=')
     if (k === 'max-age') opts.maxAge = parseInt(v, 10)

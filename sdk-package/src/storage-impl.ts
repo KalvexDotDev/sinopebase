@@ -83,16 +83,38 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
       }
       return {
         async upload(path: string, file: Blob | Buffer, options?: UploadOptions) {
-          const form = new FormData()
-          form.append('file', file instanceof Blob ? file : new Blob([file as BlobPart]))
-          if (options?.upsert) form.append('upsert', 'true')
-          // Don't set Content-Type for FormData — browser/fetch auto-sets boundary
           const { 'content-type': _, ...restHeaders } = headers as Record<string, string>
-          const res = await fetch(`${baseUrl}/storage/v1/object/${bucket}/${path}`, {
-            method: 'POST',
-            headers: restHeaders,
-            body: form,
-          })
+          let res: Response
+          if (file instanceof Blob) {
+            // Blob/File → multipart (storage-js parity).
+            const form = new FormData()
+            const part = options?.contentType ? new Blob([file], { type: options.contentType }) : file
+            // filename is required — the backend detects file parts by `filename=`
+            // in the content-disposition header; without it the part is a form field.
+            form.append('file', part, path.split('/').pop() ?? 'file')
+            if (options?.upsert) form.append('upsert', 'true')
+            res = await fetch(`${baseUrl}/storage/v1/object/${bucket}/${path}`, {
+              method: 'POST',
+              headers: restHeaders,
+              body: form,
+            })
+          } else {
+            // Buffer/ArrayBuffer → raw body with the content-type header
+            // (storage-js parity — the backend contract for byte buffers).
+            const raw = file instanceof Uint8Array ? file : new Uint8Array(file)
+            res = await fetch(`${baseUrl}/storage/v1/object/${bucket}/${path}`, {
+              method: 'POST',
+              headers: {
+                ...restHeaders,
+                'content-type': options?.contentType ?? 'application/octet-stream',
+                ...(options?.upsert ? { 'x-upsert': 'true' } : {}),
+              },
+              // Buffer is a Uint8Array subclass; the generic backing-store
+              // mismatch (ArrayBufferLike) is the only thing keeping it out of
+              // BodyInit — safe to view as an ArrayBuffer-backed Uint8Array.
+              body: raw as Uint8Array<ArrayBuffer>,
+            })
+          }
           const json = await res.json().catch(() => null)
           if (!res.ok) {
             return {
@@ -199,7 +221,7 @@ export function createStorageClient(baseUrl: string, apiKey: string): StorageCli
           // Only 404 means "not found" — auth and server failures must not fail open.
           if (res.status === 404) return { data: false, error: null }
           return {
-            data: null,
+            data: false,
             error: { message: res.statusText, details: '', hint: '', code: String(res.status) },
           }
         },

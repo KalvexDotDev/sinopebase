@@ -47,7 +47,7 @@ export type FilterOperator =
 // Note: cs, cd, sl, sr, nxl, nxr, adj, ov operators are deferred to v0.7.
 // Note: fts, plfts, phfts, wfts full-text search operators are deferred to v0.8+.
 
-export interface PostgrestClient<T extends Record<string, unknown>> {
+export interface PostgrestClient<T = any> {
   // Select
   select(
     columns?: string,
@@ -58,6 +58,10 @@ export interface PostgrestClient<T extends Record<string, unknown>> {
   insert(
     values: Partial<T> | Partial<T>[],
     options?: { upsert?: boolean },
+  ): PostgrestFilterBuilder<T>
+  upsert(
+    values: Partial<T> | Partial<T>[],
+    _options?: { onConflict?: string; ignoreDuplicates?: boolean },
   ): PostgrestFilterBuilder<T>
   update(values: Partial<T>): PostgrestFilterBuilder<T>
   delete(): PostgrestFilterBuilder<T>
@@ -75,7 +79,7 @@ export interface PostgrestClient<T extends Record<string, unknown>> {
   ): PromiseLike<PostgrestSingleResponse<T>>
 }
 
-export interface PostgrestFilterBuilder<T extends Record<string, unknown>> {
+export interface PostgrestFilterBuilder<T = any> {
   // Filters
   eq(column: string, value: unknown): this
   neq(column: string, value: unknown): this
@@ -115,7 +119,7 @@ export interface PostgrestFilterBuilder<T extends Record<string, unknown>> {
 // Implementation
 // ---------------------------------------------------------------------------
 
-export function createPostgrestClient<T extends Record<string, unknown>>(
+export function createPostgrestClient<T = any>(
   baseUrl: string,
   apiKey: string,
   table: string,
@@ -124,7 +128,7 @@ export function createPostgrestClient<T extends Record<string, unknown>>(
   return new PostgrestClientImpl<T>(baseUrl, apiKey, table, getAccessToken)
 }
 
-class PostgrestClientImpl<T extends Record<string, unknown>> implements PostgrestClient<T> {
+class PostgrestClientImpl<T = any> implements PostgrestClient<T> {
   private baseUrl: string
   private apiKey: string
   private table: string
@@ -166,6 +170,14 @@ class PostgrestClientImpl<T extends Record<string, unknown>> implements Postgres
       options as Record<string, unknown>,
       this.getAccessToken,
     )
+  }
+
+  upsert(
+    values: Partial<T> | Partial<T>[],
+    _options?: { onConflict?: string; ignoreDuplicates?: boolean },
+  ): PostgrestFilterBuilder<T> {
+    // ponytail: onConflict/ignoreDuplicates accepted for supabase-js parity, not yet honored.
+    return this.insert(values, { upsert: true })
   }
 
   update(values: Partial<T>): PostgrestFilterBuilder<T> {
@@ -336,7 +348,7 @@ function unwrapScalar(body: unknown): unknown {
   return body
 }
 
-class PostgrestFilterBuilderImpl<T extends Record<string, unknown>>
+class PostgrestFilterBuilderImpl<T = any>
   implements PostgrestFilterBuilder<T>
 {
   private baseUrl: string

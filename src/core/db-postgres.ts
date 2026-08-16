@@ -242,24 +242,25 @@ export class PostgresDatabase implements IDatabase {
   // -----------------------------------------------------------------------
 
   async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const id = record.id ?? crypto.randomUUID()
-    const data = { ...record, id }
-    await this.writer
+    // No client-side id injection — the table's own DEFAULT fills id
+    // (gen_random_uuid() on sinopebase tables, identity on f_* tables).
+    // returningAll() so the caller still gets the persisted row back.
+    const rows = await this.writer
       .insertInto(table as never)
-      .values(data as never)
+      .values(record as never)
+      .returningAll()
       .execute()
-    return data
+    return (rows[0] ?? record) as Record<string, unknown>
   }
 
   async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const id = record.id ?? crypto.randomUUID()
-    const data = { ...record, id }
-    await this.writer
+    const rows = await this.writer
       .insertInto(table as never)
-      .values(data as never)
-      .onConflict((oc) => oc.column('id' as never).doUpdateSet(data as never))
+      .values(record as never)
+      .onConflict((oc) => oc.column('id' as never).doUpdateSet(record as never))
+      .returningAll()
       .execute()
-    return data
+    return (rows[0] ?? record) as Record<string, unknown>
   }
 
   async select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]>

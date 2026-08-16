@@ -59,6 +59,9 @@ RUN addgroup -S -g 10001 sinopebase \
 
 COPY --from=builder --chown=sinopebase:sinopebase /out/sinopebase /app/sinopebase
 COPY --from=builder --chown=sinopebase:sinopebase /build/ui/dist /app/ui/dist
+# Migration modules are loaded at runtime by <timestamp>_<name>.ts discovery
+# (resolved next to the binary, /app/migrations) — the image must carry them.
+COPY --from=builder --chown=sinopebase:sinopebase /build/migrations /app/migrations
 
 # Bun's compiled executable is self-contained at the JavaScript layer but is
 # dynamically linked to the GCC/C++ runtimes. Copy the exact libraries from

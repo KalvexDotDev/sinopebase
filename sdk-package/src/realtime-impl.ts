@@ -11,6 +11,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000 // Phoenix standard: 30s
 
 export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeClient {
   let authToken = apiKey
+  /** Session token sent as `access_token` on phx_join so postgres_changes
+   *  delivery passes the server's RLS check (supabase-js parity). */
+  let accessToken: string | null = null
   function wsUrl(): string {
     return `${baseUrl.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${encodeURIComponent(authToken)}`
   }
@@ -95,14 +98,17 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
             // Malformed filter — skip rather than fail the join.
           }
         }
-        return postgresChanges.length > 0 ? { config: { postgres_changes: postgresChanges } } : {}
+        const payload: Record<string, unknown> =
+          postgresChanges.length > 0 ? { config: { postgres_changes: postgresChanges } } : {}
+        if (accessToken) payload.access_token = accessToken
+        return payload
       }
 
       const ch: RealtimeChannel = {
         on(
           event: string,
           _filter: Record<string, unknown>,
-          callback: (payload: unknown) => void,
+          callback: (payload: any) => void,
         ): RealtimeChannel {
           const key = `${event}:${JSON.stringify(_filter)}`
           if (!listeners.has(key)) listeners.set(key, [])
@@ -110,7 +116,10 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
           return this
         },
 
-        async subscribe(calback?: (status: string) => void): Promise<void> {
+        subscribe(calback?: (status: string) => void): RealtimeChannel {
+          // supabase-js parity: fire the async join in the background and
+          // return the channel immediately so callers can chain.
+          void (async () => {
           // Register listeners for topic-based dispatch.
           // Merge into existing listeners when multiple channels share a topic
           // (e.g. one channel tracks presence, another observes it). Copies,
@@ -186,6 +195,8 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
 
           calback?.('SUBSCRIBED')
           subscribed = true
+          })()
+          return this
         },
 
         unsubscribe(): void {
@@ -290,6 +301,7 @@ export function createRealtimeClient(baseUrl: string, apiKey: string): RealtimeC
     },
 
     setAuth(token: string | null): void {
+      accessToken = token
       authToken = token ?? apiKey
       // Drop the live socket so the old credentials stop working immediately.
       // Channels re-join when subscribe() is called again.
