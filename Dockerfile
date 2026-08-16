@@ -75,8 +75,9 @@ EXPOSE 8090
 
 # BusyBox wget is provided by Alpine without adding a package. This checks the
 # process HTTP path only; database readiness is a future application gate.
+# Railway injects PORT (8080); the app defaults to 8090 elsewhere.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget -q -O /dev/null http://127.0.0.1:8090/api/health || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1:${PORT:-8090}/api/health || exit 1
 
 USER 10001:10001
 

@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased (v0.8.1)
+## Unreleased (v0.8.2)
+
+### Fixed
+- **Production deploy crash** — the Dockerfile compiled the binary with `--external nodemailer` while the runtime image ships no node_modules, so every v0.8+ production deploy crashed at boot with `Cannot find package 'nodemailer'` (confirmed in Railway logs). nodemailer is now bundled.
+- **Railway platform healthcheck** — Railway's default probe hits `GET /railway`; the route now returns `{status:'ok'}` and is rate-limit exempt, with a deploy-health test suite (probe contract, exemption, sustained probe loop).
+- **Least-privilege roles heal at startup** — production databases provisioned before the migration (observed on Railway: roles 3/5) now get the `1779000000` migration applied idempotently at startup instead of running with weaker roles.
+- **Docker HEALTHCHECK port** — respects `PORT` (Railway injects 8080) instead of hardcoding 8090.
+- **Release workflow** — `npm version` tolerates an already-bumped SDK version (`--allow-same-version`) and the workflow supports manual dispatch.
+- **Test harness port sharing** — on macOS `exclusive` is a no-op and SO_REUSEADDR let two test apps share one port; reservations now skip ports already handed out by the process.
+
+## v0.8.1 — 2026-08-15
 
 ### Added
 - **SDK root-level `rpc()`** — `client.rpc(fn, args, options)` matches the supabase-js contract: rows by default, single value with `{ get: true }`, status only with `{ head: true }`. Sends the signed-in session token so RLS resolves the user's role (previously `rpc()` hung only off `from()` and always used the API key).
