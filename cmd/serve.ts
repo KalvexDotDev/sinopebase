@@ -166,17 +166,15 @@ async function main(): Promise<void> {
     minioSecretKey: process.env.S3_SECRET_KEY || undefined,
     openaiApiKey: process.env.OPENAI_API_KEY || undefined,
     mastraRequireAuth: process.env.MASTRA_REQUIRE_AUTH !== 'false',
-    smtp: {
-      enabled: process.env.SINOPEBASE_SMTP_ENABLED === 'true',
-      host: process.env.SINOPEBASE_SMTP_HOST || undefined,
-      port: process.env.SINOPEBASE_SMTP_PORT
-        ? parseInt(process.env.SINOPEBASE_SMTP_PORT, 10)
-        : undefined,
-      username: process.env.SINOPEBASE_SMTP_USERNAME || undefined,
-      password: process.env.SINOPEBASE_SMTP_PASSWORD || undefined,
-      fromAddress: process.env.SINOPEBASE_SMTP_FROM_ADDRESS || undefined,
-      fromName: process.env.SINOPEBASE_SMTP_FROM_NAME || undefined,
-    },
+    smtp: process.env.SMTP_HOST
+      ? {
+          enabled: true,
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT ?? '587', 10),
+          username: process.env.SMTP_USERNAME,
+          password: process.env.SMTP_PASSWORD,
+        }
+      : undefined,
   } satisfies AppConfig)
 
   try {
