@@ -11,7 +11,7 @@
 import type { AuthClient } from './auth'
 import type { JsonValue, PostgrestClient, RpcOptions } from './database'
 import type { FunctionsClient } from './functions'
-import type { RealtimeClient } from './realtime'
+import type { RealtimeChannel, RealtimeClient } from './realtime'
 import type { CookieProvider } from './ssr'
 import type { StorageClient } from './storage'
 
@@ -45,7 +45,7 @@ export interface PostgrestSingleResponse<T> {
 
 export interface SinopebaseClient {
   /** PostgREST-compatible database client */
-  from<T extends Record<string, unknown> = Record<string, unknown>>(
+  from<T = any>(
     table: string,
   ): PostgrestClient<T>
 
@@ -75,6 +75,12 @@ export interface SinopebaseClient {
   /** Realtime client (Supabase Realtime-compatible) */
   realtime: RealtimeClient
 
+  /** Supabase-js top-level convenience: open a realtime channel. */
+  channel(topic: string, params?: { config?: Record<string, unknown> }): RealtimeChannel
+
+  /** Supabase-js top-level convenience: remove a realtime channel. */
+  removeChannel(channel: RealtimeChannel): void
+
   /** Edge Functions client (Supabase Functions-compatible) */
   functions: FunctionsClient
 
@@ -98,8 +104,12 @@ export interface SinopebaseClient {
 export function createClient(
   url: string,
   key: string,
-  options?: { cookies?: CookieProvider },
+  options?: {
+    cookies?: CookieProvider
+    auth?: { autoRefreshToken?: boolean; persistSession?: boolean; detectSessionInUrl?: boolean }
+  },
 ): SinopebaseClient {
+  // ponytail: `auth` options accepted for supabase-js parity, not yet honored.
   return new SinopebaseClientImpl(url, key, options?.cookies)
 }
 
@@ -124,14 +134,31 @@ class SinopebaseClientImpl implements SinopebaseClient {
     this.storage = createStorageClient(this.supabaseUrl, this.supabaseKey)
     this.realtime = createRealtimeClient(this.supabaseUrl, this.supabaseKey)
     this.functions = createFunctionsClient(this.supabaseUrl, this.supabaseKey)
+
+    // supabase-js parity: keep the realtime session token in sync with auth so
+    // postgres_changes joins carry the user's access_token (RLS visibility).
+    void this.auth.getAccessToken().then((token) => {
+      if (token) this.realtime.setAuth(token)
+    })
+    this.auth.onAuthStateChange((_event, session) => {
+      this.realtime.setAuth(session?.access_token ?? null)
+    })
   }
 
-  from<T extends Record<string, unknown> = Record<string, unknown>>(
+  from<T = any>(
     table: string,
   ): PostgrestClient<T> {
     return createPostgrestClient<T>(this.supabaseUrl, this.supabaseKey, table, () =>
       this.auth.getAccessToken(),
     )
+  }
+
+  channel(topic: string, _params?: { config?: Record<string, unknown> }): RealtimeChannel {
+    return this.realtime.channel(topic)
+  }
+
+  removeChannel(channel: RealtimeChannel): void {
+    this.realtime.removeChannel(channel)
   }
 
   rpc<T = Record<string, JsonValue>>(
@@ -171,4 +198,6 @@ import { createRealtimeClient } from './realtime-impl'
 import { createStorageClient } from './storage-impl'
 
 export type { CookieProvider } from './ssr'
-export { createBrowserClient, createServerClient } from './ssr'
+export { createBrowserClient, createServerClient, isBrowser } from './ssr'
+export type { RealtimeChannel, RealtimeClient } from './realtime'
+export type { AuthError, Session, User } from './auth'

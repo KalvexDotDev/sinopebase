@@ -124,6 +124,15 @@ class SinopebaseClientImpl implements SinopebaseClient {
     this.storage = createStorageClient(this.supabaseUrl, this.supabaseKey)
     this.realtime = createRealtimeClient(this.supabaseUrl, this.supabaseKey)
     this.functions = createFunctionsClient(this.supabaseUrl, this.supabaseKey)
+
+    // supabase-js parity: keep the realtime session token in sync with auth so
+    // postgres_changes joins carry the user's access_token (RLS visibility).
+    void this.auth.getAccessToken().then((token) => {
+      if (token) this.realtime.setAuth(token)
+    })
+    this.auth.onAuthStateChange((_event, session) => {
+      this.realtime.setAuth(session?.access_token ?? null)
+    })
   }
 
   from<T extends Record<string, unknown> = Record<string, unknown>>(
