@@ -37,8 +37,11 @@ import { createClient } from './client'
  */
 export interface CookieProvider {
   getAll(): { name: string; value: string }[]
-  setAll(cookies: { name: string; value: string; opts?: Record<string, unknown> }[]): void
+  setAll?(cookies: { name: string; value: string; opts?: Record<string, unknown> }[]): void
 }
+
+/** supabase-js @supabase/ssr parity: isBrowser() picks client vs server creation. */
+export const isBrowser = () => typeof window !== 'undefined'
 
 /**
  * Create a Sinopebase client for server-side use (SvelteKit hooks.server.ts,
@@ -52,7 +55,7 @@ export interface CookieProvider {
 export function createServerClient(
   url: string,
   key: string,
-  options?: { cookies?: CookieProvider },
+  options?: { cookies?: CookieProvider; global?: { fetch?: typeof fetch } },
 ): SinopebaseClient {
   return createClient(url, key, options)
 }
@@ -65,6 +68,10 @@ export function createServerClient(
  * with supabase-js and to make the import path clear when splitting into
  * sub-packages.
  */
-export function createBrowserClient(url: string, key: string): SinopebaseClient {
+export function createBrowserClient(
+  url: string,
+  key: string,
+  _options?: { global?: { fetch?: typeof fetch } },
+): SinopebaseClient {
   return createClient(url, key)
 }

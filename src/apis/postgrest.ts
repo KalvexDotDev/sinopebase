@@ -403,6 +403,13 @@ export function mountPostgrestRoutes(
         set.status = 404
         return { code: 404, message }
       }
+      // PostgreSQL-raised errors (RAISE EXCEPTION, constraint violations, RLS
+      // denials) — PostgREST parity: 4xx with the error details, not a 500.
+      const pg = err as { code?: string; detail?: string; hint?: string }
+      if (pg.code && /^[0-9A-Z]{5}$/.test(pg.code)) {
+        set.status = 400
+        return { code: pg.code, message, details: pg.detail ?? '', hint: pg.hint ?? '' }
+      }
       throw err
     }
   })
@@ -633,7 +640,7 @@ async function resolveRelationship(
     )
   }
 
-  return candidates[0]?.relationship
+  return candidates[0]!.relationship
 }
 
 function relationshipMatches(relationship: ForeignKeyRelationship, value: string): boolean {
@@ -743,7 +750,7 @@ function buildSingularResponse(
   }
 
   const first = rows[0]
-  if (!first) return undefined
+  if (!first) return null
   return {
     body: first,
     contentType: 'application/vnd.pgrst.object+json',

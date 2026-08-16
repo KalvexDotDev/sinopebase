@@ -11,6 +11,7 @@ import * as m4 from './1717233559_v0.23_migrate4.ts'
 import * as authAlert from './1763020353_update_default_auth_alert_templates.ts'
 import * as indexes from './1778828400_normalize_indexes.ts'
 import * as leastPrivilegeRoles from './1779000000_least_privilege_roles.ts'
+import * as factorySchema from './1786752000_factory_schema.ts'
 
 // ---------------------------------------------------------------------------
 // Mock MigrationDB that records SQL statements
@@ -186,6 +187,40 @@ describe('migrations', () => {
 
       const allSql = executed.join(' ')
       expect(allSql).toContain('DROP INDEX')
+    })
+  })
+
+  describe('1786752000_factory_schema', () => {
+    it('creates the f_* tables and factory_* RPC functions', async () => {
+      const { db, executed } = createMockDB()
+      await factorySchema.up(db)
+
+      const allSql = executed.join(' ')
+      expect(allSql).toContain('CREATE TABLE')
+      expect(allSql).toContain('f_agents')
+      expect(allSql).toContain('f_messages')
+      expect(allSql).toContain('f_cost_events')
+      expect(allSql).toContain('ENABLE ROW LEVEL SECURITY')
+      for (const fn of [
+        'factory_register_agent',
+        'factory_queue_message',
+        'factory_approve_message',
+        'factory_reject_message',
+        'factory_send_message',
+        'factory_dryrun_send',
+        'factory_pull_andon',
+        'factory_resume_andon',
+        'factory_track_cost',
+        'factory_sweep_upsert',
+        'factory_plan_mission',
+        'factory_complete_browser_task',
+        'factory_digest',
+        'factory_metric_regression',
+        'factory_browser_tasks',
+        'factory_trust_gate_lookup',
+      ]) {
+        expect(allSql).toContain(fn)
+      }
     })
   })
 })

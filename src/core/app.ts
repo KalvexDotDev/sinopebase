@@ -1840,7 +1840,14 @@ export class Sinopebase {
 
     // Auto-discover migration files from the migrations/ directory.
     // Files are loaded by <timestamp>_<name>.ts naming convention.
-    const migrationsDir = resolve(import.meta.dir, '../../migrations')
+    // Compiled binaries: import.meta.dir is the binary's directory (/app), so
+    // ../../migrations misses — try next-to-binary and cwd-relative layouts.
+    const migrationsDir =
+      [
+        resolve(import.meta.dir, '../../migrations'),
+        resolve(import.meta.dir, 'migrations'),
+        resolve(process.cwd(), 'migrations'),
+      ].find((d) => existsSync(d)) ?? resolve(import.meta.dir, '../../migrations')
     const discovered = await loadMigrationsFromDirectory(migrationsDir)
 
     // Also discover raw SQL migrations from supabase/migrations/ (Supabase format).

@@ -9,7 +9,7 @@ export interface AuthClient {
   signUp(credentials: {
     email: string
     password: string
-    options?: { data?: Record<string, unknown> }
+    options?: { data?: Record<string, unknown>; emailRedirectTo?: string }
   }): Promise<AuthResponse>
 
   signInWithPassword(credentials: { email: string; password: string }): Promise<AuthResponse>

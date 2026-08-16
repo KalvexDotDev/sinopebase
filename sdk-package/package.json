@@ -1,19 +1,22 @@
 {
   "name": "@sinopebase/sdk",
   "version": "0.8.2",
-  "description": "Sinopebase SDK \u2014 thin supabase-js compatible client for Sinopebase backends",
+  "description": "Sinopebase SDK — thin supabase-js compatible client for Sinopebase backends",
   "type": "module",
-  "main": "./src/client.js",
-  "types": "./src/client.ts",
+  "main": "./dist/client.js",
+  "types": "./dist/client.d.ts",
   "exports": {
     ".": {
-      "import": "./src/client.js",
-      "types": "./src/client.ts"
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
     }
   },
   "files": [
-    "src/"
+    "dist/"
   ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && bun build src/client.ts --outdir dist --format esm --minify"
+  },
   "keywords": [
     "sinopebase",
     "supabase",

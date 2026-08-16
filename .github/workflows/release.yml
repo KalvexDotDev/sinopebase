@@ -95,6 +95,11 @@ jobs:
           cd sdk-package
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Build SDK (bundle + declarations)
+        run: |
+          cd sdk-package
+          bun run build
+
       - name: Publish to npm
         run: |
           cd sdk-package

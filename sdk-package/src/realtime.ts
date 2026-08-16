@@ -30,9 +30,10 @@ export interface RealtimeChannel {
   on(
     event: 'broadcast' | 'presence' | 'postgres_changes',
     filter: Record<string, unknown>,
-    callback: (payload: unknown) => void,
+    callback: (payload: any) => void,
   ): this
-  subscribe(callback?: (status: string) => void): Promise<void>
+  /** supabase-js parity: returns the channel for chaining; join runs in background. */
+  subscribe(callback?: (status: string) => void): this
   unsubscribe(): void
   send(payload: unknown): void
   /**

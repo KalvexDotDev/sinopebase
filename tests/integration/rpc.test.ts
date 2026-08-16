@@ -284,9 +284,9 @@ describe('SDK rpc() — supabase-js contract', () => {
     const { data, error } = await anonClient.rpc<number>('rpc_no_grant', {}, { get: true })
 
     // The migration revoked PUBLIC EXECUTE, so this function has no grant for
-    // anon — the call must fail (the server masks the internal permission
-    // error as a 500).
+    // anon — the call must fail. PostgREST parity: PG errors surface as 4xx
+    // with their real code instead of a masked 500.
     expect(data).toBeNull()
-    expect(error?.code).toBe('500')
+    expect(error?.code).toBe('42501')
   })
 })
