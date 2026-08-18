@@ -9,11 +9,11 @@
  * to a migration bucket and the server applies them at startup.
  */
 
-import type { S3FileStore } from '~/tools/filesystem/store-s3'
+import type { IFileStore } from '~/tools/filesystem/store-interface'
 import type { MigrationDB } from '../../migrations/types'
 
-// Re-exported so callers can reference S3FileStore via import('./migrations_s3').S3FileStore
-export type { S3FileStore }
+/** Minimal object-store surface needed for migration discovery. */
+type MigrationFileStore = Pick<IFileStore, 'list' | 'read'>
 
 /** Regex matching `<digits>_<snake-case-name>.sql` migration filenames. */
 const SQL_MIGRATION_FILE_RE = /^(\d+)_([a-z0-9_]+)\.sql$/i
@@ -33,7 +33,7 @@ export interface DiscoveredMigration {
  * the SQL as a migration. Already-applied migrations are skipped by the runner.
  */
 export async function loadSqlMigrationsFromS3(
-  store: S3FileStore,
+  store: MigrationFileStore,
   bucket: string,
   prefix?: string,
 ): Promise<DiscoveredMigration[]> {
@@ -44,8 +44,7 @@ export async function loadSqlMigrationsFromS3(
     objects = await store.list(bucket, prefix ?? '')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.warn(`[migrations] Could not list S3 bucket "${bucket}": ${message}`)
-    return migrations
+    throw new Error(`Could not list S3 migration bucket "${bucket}": ${message}`, { cause: err })
   }
 
   // Filter and sort by timestamp prefix
@@ -95,7 +94,7 @@ export async function loadSqlMigrationsFromS3(
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      console.warn(`[migrations] Skipping S3 object "${key}": ${message}`)
+      throw new Error(`Could not read S3 migration object "${key}": ${message}`, { cause: err })
     }
   }
 

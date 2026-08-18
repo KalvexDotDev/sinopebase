@@ -1,118 +1,193 @@
 /**
- * Bucket migrations ATDD — MIGRATIONS_BUCKET loads timestamped .sql files
- * from the file store at startup.
+ * Bucket migration lifecycle integration tests.
  *
- * Verifies a bucket-delivered migration that revokes PUBLIC EXECUTE on
- * functions actually applies, without recreating the database.
+ * These tests use real PostgreSQL and RustFS services. They exercise the same
+ * S3-compatible path used by production deployments, including startup
+ * ordering, the migration ledger, and fail-closed bucket discovery.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { Client as MinioClient } from 'minio'
+import { Pool } from 'pg'
 import { Sinopebase } from '~/core/app'
 import type { PostgresDatabase } from '~/core/db-postgres'
-import { createClient } from '~/sdk/client'
-import { requirePostgres, reserveLoopbackPort } from '../harness'
+import { requirePostgres, requireRustFS, reserveLoopbackPort } from '../harness'
 
-const rootDir = join(tmpdir(), `sinopebase-bucket-migrations-${process.pid}`)
-const dataDir = join(rootDir, 'data')
-const bucket = 'test-migrations'
-const anonKey = 'bucket-anon-key-min-32-chars!!!!!!'
-const serviceRoleKey = 'bucket-srvc-key-min-32-chars!!!!!!'
+const postgresUrl = requirePostgres()
+const rustfs = requireRustFS()
+const runId = `${Date.now()}_${process.pid}`
+const bucket = `migration-test-${process.pid}-${Date.now()}`
+const tableName = `bucket_migration_${runId}`
+const firstMigration = `${Date.now()}_create_bucket_migration_${runId}`
+const secondMigration = `${Date.now() + 1}_alter_bucket_migration_${runId}`
+const anonKey = 'bucket-anon-key-production-value-32-chars'
+const serviceRoleKey = 'bucket-service-role-production-value-32-chars'
+const jwtSecret = 'bucket-jwt-secret-production-value-32-chars'
 
-let app: Sinopebase
-let baseUrl: string
+function parseRustFSClient(): MinioClient {
+  const url = new URL(rustfs.endpoint)
+  return new MinioClient({
+    endPoint: url.hostname,
+    port: Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
+    useSSL: url.protocol === 'https:',
+    accessKey: rustfs.accessKey,
+    secretKey: rustfs.secretKey,
+  })
+}
 
-beforeAll(async () => {
-  // LocalFileStore reads buckets from <dataDir>/storage/<bucket>/.
-  mkdirSync(join(dataDir, 'storage', bucket), { recursive: true })
-  writeFileSync(
-    join(dataDir, 'storage', bucket, '1780000002_bucket_revoke_execute.sql'),
-    `
-REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+class ObservedSinopebase extends Sinopebase {
+  runAllMigrationsCalls = 0
+  runAppMigrationsCalls = 0
 
-CREATE OR REPLACE FUNCTION sinopebase_revoke_fn_execute()
-RETURNS event_trigger LANGUAGE plpgsql AS $$
-DECLARE
-  obj record;
-BEGIN
-  FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()
-    WHERE command_tag = 'CREATE FUNCTION'
-  LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', obj.object_identity);
-  END LOOP;
-END;
-$$;
+  override async runAllMigrations(): Promise<void> {
+    this.runAllMigrationsCalls++
+    await super.runAllMigrations()
+  }
 
-DO $$
-BEGIN
-  BEGIN
-    DROP EVENT TRIGGER IF EXISTS sinopebase_revoke_fn_execute;
-    CREATE EVENT TRIGGER sinopebase_revoke_fn_execute
-      ON ddl_command_end
-      WHEN TAG IN ('CREATE FUNCTION')
-      EXECUTE FUNCTION sinopebase_revoke_fn_execute();
-  EXCEPTION WHEN insufficient_privilege THEN
-    RAISE NOTICE 'sinopebase: not superuser — event trigger skipped';
-  END;
-END
-$$;
-`,
-  )
+  override async runAppMigrations(): Promise<void> {
+    this.runAppMigrationsCalls++
+    await super.runAppMigrations()
+  }
+}
 
-  const portReservation = await reserveLoopbackPort()
-  const prevBucket = process.env.MIGRATIONS_BUCKET
-  process.env.MIGRATIONS_BUCKET = bucket
-  app = new Sinopebase({
-    postgresUrl: requirePostgres(),
-    port: portReservation.port,
-    dataDir,
-    jwtSecret: 'bucket-jwt-secret-min-32-chars!!!',
+function createApp(port: number, overrides: Record<string, unknown> = {}): ObservedSinopebase {
+  return new ObservedSinopebase({
+    postgresUrl,
+    port,
+    mode: 'production',
+    jwtSecret,
     serviceRoleKey,
     anonKey,
+    minioEndpoint: rustfs.endpoint,
+    minioAccessKey: rustfs.accessKey,
+    minioSecretKey: rustfs.secretKey,
+    ...overrides,
   })
+}
+
+async function startWithBucket(
+  app: Sinopebase,
+  migrationBucket: string | undefined,
+): Promise<void> {
+  const previous = process.env.MIGRATIONS_BUCKET
   try {
-    await portReservation.release()
+    if (migrationBucket === undefined) delete process.env.MIGRATIONS_BUCKET
+    else process.env.MIGRATIONS_BUCKET = migrationBucket
     await app.start()
   } finally {
-    if (prevBucket === undefined) delete process.env.MIGRATIONS_BUCKET
-    else process.env.MIGRATIONS_BUCKET = prevBucket
+    if (previous === undefined) delete process.env.MIGRATIONS_BUCKET
+    else process.env.MIGRATIONS_BUCKET = previous
   }
-  baseUrl = portReservation.origin
+}
+
+const s3 = parseRustFSClient()
+const cleanupPool = new Pool({ connectionString: postgresUrl })
+
+beforeAll(async () => {
+  await s3.makeBucket(bucket)
+  await s3.putObject(
+    bucket,
+    `${firstMigration}.sql`,
+    Buffer.from(`
+      CREATE TABLE public.${tableName} (
+        id integer PRIMARY KEY,
+        sequence integer NOT NULL
+      );
+      INSERT INTO public.${tableName} (id, sequence) VALUES (1, 1);
+    `),
+  )
+  await s3.putObject(
+    bucket,
+    `${secondMigration}.sql`,
+    Buffer.from(`
+      ALTER TABLE public.${tableName} ADD COLUMN applied_by text;
+      UPDATE public.${tableName} SET sequence = 2, applied_by = 'second';
+    `),
+  )
 })
 
 afterAll(async () => {
-  await app.stop()
+  await cleanupPool.query(`DROP TABLE IF EXISTS public.${tableName}`)
+  await cleanupPool.query('DELETE FROM _migrations WHERE name = ANY($1)', [
+    [firstMigration, secondMigration],
+  ])
+  await cleanupPool.end()
+  await s3.removeObjects(bucket, [`${firstMigration}.sql`, `${secondMigration}.sql`])
+  await s3.removeBucket(bucket)
 })
 
-describe('bucket migrations', () => {
-  it('applies .sql migrations from the configured bucket at startup', async () => {
-    const appDb = app.getDatabase() as PostgresDatabase
-    await appDb.getPool().query(`
-      DROP FUNCTION IF EXISTS bucket_no_grant();
-      CREATE FUNCTION bucket_no_grant() RETURNS integer
-      LANGUAGE sql AS $$ SELECT 7 $$;
-    `)
+describe('S3 bucket migrations during production startup', () => {
+  it('lists, loads, orders, and applies timestamped SQL exactly once before listen', async () => {
+    const reservation = await reserveLoopbackPort()
+    const app = createApp(reservation.port)
+    await reservation.release()
 
-    const client = createClient(baseUrl, anonKey)
-    const { data, error } = await client.rpc<number>('bucket_no_grant', {}, { get: true })
+    try {
+      await startWithBucket(app, bucket)
 
-    // The bucket migration revoked PUBLIC EXECUTE, so this function has no
-    // grant for anon — the call must fail (the server masks the internal
-    // permission error as a 500).
-    expect(data).toBeNull()
-    expect(error?.code).toBe('500')
+      expect(app.runAllMigrationsCalls).toBe(1)
+      expect(app.runAppMigrationsCalls).toBe(1)
+
+      const db = app.getDatabase() as PostgresDatabase
+      const { rows } = await db
+        .getPool()
+        .query(`SELECT sequence, applied_by FROM public.${tableName} WHERE id = 1`)
+      expect(rows).toEqual([{ sequence: 2, applied_by: 'second' }])
+
+      const ledger = await db
+        .getPool()
+        .query<{ name: string }>(
+          'SELECT name FROM _migrations WHERE name = ANY($1) ORDER BY applied_at, name',
+          [[firstMigration, secondMigration]],
+        )
+      expect(ledger.rows.map((row) => row.name)).toEqual([firstMigration, secondMigration])
+    } finally {
+      await app.stop()
+    }
   })
 
-  it('records the applied TypeScript migrations in the _migrations table', async () => {
-    const appDb = app.getDatabase() as PostgresDatabase
-    const { rows } = await appDb.getPool().query<{ name: string }>('SELECT name FROM _migrations')
+  it('uses the migration ledger to skip SQL that was already applied', async () => {
+    const reservation = await reserveLoopbackPort()
+    const app = createApp(reservation.port)
+    await reservation.release()
 
-    const names = rows.map((row) => row.name)
-    // Both system migrations must have applied on this booted app. Their
-    // names come from the migration filenames (see migrations_loader).
-    expect(names).toContain('1779000000_least_privilege_roles')
-    expect(names).toContain('1780000000_revoke_public_function_execute')
+    try {
+      await startWithBucket(app, bucket)
+      const db = app.getDatabase() as PostgresDatabase
+      const result = await db
+        .getPool()
+        .query<{ count: string }>(`SELECT count(*)::text AS count FROM public.${tableName}`)
+      expect(result.rows[0]?.count).toBe('1')
+    } finally {
+      await app.stop()
+    }
+  })
+
+  it('fails production startup when the configured migration bucket cannot be listed', async () => {
+    const reservation = await reserveLoopbackPort()
+    const app = createApp(reservation.port)
+    await reservation.release()
+
+    try {
+      await expect(startWithBucket(app, `${bucket}-missing`)).rejects.toThrow(
+        /migration|bucket|S3/i,
+      )
+    } finally {
+      await app.stop()
+    }
+  })
+
+  it('retains existing startup behavior when MIGRATIONS_BUCKET is unset', async () => {
+    const reservation = await reserveLoopbackPort()
+    const app = createApp(reservation.port)
+    await reservation.release()
+
+    try {
+      await startWithBucket(app, undefined)
+      expect(app.runAllMigrationsCalls).toBe(1)
+      expect(app.runAppMigrationsCalls).toBe(1)
+    } finally {
+      await app.stop()
+    }
   })
 })
