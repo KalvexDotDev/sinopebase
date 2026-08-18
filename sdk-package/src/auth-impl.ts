@@ -368,7 +368,7 @@ export function createAuthClient(
 /** Parse a Set-Cookie header into the shape SvelteKit-style cookie providers expect. */
 function parseSetCookie(
   header: string,
-): { name: string; value: string; opts?: Record<string, unknown> } | null {
+): { name: string; value: string; options?: Record<string, unknown> } | null {
   const [pair, ...attrs] = header.split(';')
   if (!pair) return null
   const eq = pair.indexOf('=')
@@ -389,5 +389,5 @@ function parseSetCookie(
     else if (k === 'samesite') opts.sameSite = v
     else if (k === 'path') opts.path = v
   }
-  return { name, value, opts }
+  return { name, value, options: opts }
 }

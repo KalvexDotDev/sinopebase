@@ -37,7 +37,7 @@ import { createClient } from './client'
  */
 export interface CookieProvider {
   getAll(): { name: string; value: string }[]
-  setAll(cookies: { name: string; value: string; opts?: Record<string, unknown> }[]): void
+  setAll(cookies: { name: string; value: string; options?: Record<string, unknown> }[]): void
 }
 
 /**

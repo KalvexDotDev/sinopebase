@@ -48,7 +48,7 @@ function sessionResponse(
 /** Copy better-auth set-cookie headers onto the Elysia response. */
 function forwardSessionCookies(
   headers: Headers,
-  set: { headers: Record<string, string | string[]> },
+  set: { headers: Record<string, string | string[] | number | undefined> },
 ): void {
   // Headers.entries() comma-joins multiple Set-Cookie headers into one
   // string, which browsers mis-parse at the Expires comma. getSetCookie()
@@ -402,6 +402,28 @@ interface BetterAuthInstance {
   [key: string]: unknown
 }
 
+/**
+ * Resolve a browser session through Better Auth, which verifies its signed
+ * session-cookie format before returning the backing session row.  The raw
+ * cookie value is not necessarily the database session token (signed cookies
+ * append a signature), so it must never be queried directly.
+ */
+async function getValidatedCookieSession(
+  auth: BetterAuthInstance,
+  headers: HeadersInit,
+): Promise<BetterAuthGetSessionResult | null> {
+  try {
+    return await auth.api.getSession({ headers: new Headers(headers) })
+  } catch {
+    return null
+  }
+}
+
+function getSessionToken(result: BetterAuthGetSessionResult | null): string | null {
+  const token = result?.session.token
+  return typeof token === 'string' && token.length > 0 ? token : null
+}
+
 export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: string[]) {
   // Map known provider IDs to display labels and colors.
   // Source of truth: BUILTIN_SOCIAL from auth-better.
@@ -496,25 +518,14 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
           return { code: 403, message: 'CSRF protection: missing X-Requested-With header' }
         }
 
-        // Extract the better-auth session cookie
-        const cookieHeader = request.headers.get('cookie') ?? ''
-        const match = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
-        const sessionToken = match?.[1]
-        if (!sessionToken) {
+        const result = await getValidatedCookieSession(auth, request.headers)
+        const sessionToken = getSessionToken(result)
+        if (!sessionToken || !result?.user) {
           set.status = 401
           return { code: 401, message: 'No active session' }
         }
 
         try {
-          const session = await lookupSessionByToken(
-            auth as unknown as Record<string, unknown>,
-            sessionToken,
-          )
-          if (!session) {
-            set.status = 401
-            return { code: 401, message: 'Session expired or invalid' }
-          }
-
           // Return the session token itself as the Bearer token (same pattern as bridgeSignInResponse)
           const now = Math.floor(Date.now() / 1000)
           const expiresIn = ACCESS_TOKEN_TTL
@@ -525,14 +536,14 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
             expires_at: now + expiresIn,
             refresh_token: sessionToken,
             user: {
-              id: session.id,
-              email: session.email,
-              role: session.role,
+              id: result.user.id,
+              email: result.user.email,
+              role: result.user.role,
               aud: 'authenticated',
               app_metadata: {},
-              user_metadata: { name: session.name, image: session.image },
-              created_at: session.createdAt.toISOString(),
-              updated_at: session.updatedAt.toISOString(),
+              user_metadata: { name: result.user.name, image: result.user.image },
+              created_at: result.user.createdAt.toISOString(),
+              updated_at: result.user.updatedAt.toISOString(),
             },
           }
         } catch {
@@ -542,28 +553,16 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
       })
       // GET /auth/v1/session — read session from better-auth cookie (SSR support)
       .get('/auth/v1/session', async ({ request }) => {
-        const cookieHeader = request.headers.get('cookie') ?? ''
-        const match = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
-        const sessionToken = match?.[1]
-        if (!sessionToken) {
+        const result = await getValidatedCookieSession(auth, request.headers)
+        const sessionToken = getSessionToken(result)
+        if (!sessionToken || !result?.user) {
           return { data: { session: null, user: null }, error: null }
         }
-        try {
-          const row = await lookupSessionByToken(
-            auth as unknown as Record<string, unknown>,
-            sessionToken,
-          )
-          if (!row) {
-            return { data: { session: null, user: null }, error: null }
-          }
-          const session = bridgeSignInResponse({ token: sessionToken, user: row })
-          if ('message' in session) {
-            return { data: { session: null, user: null }, error: null }
-          }
-          return { data: { session, user: session.user }, error: null }
-        } catch {
+        const session = bridgeSignInResponse({ token: sessionToken, user: result.user })
+        if ('message' in session) {
           return { data: { session: null, user: null }, error: null }
         }
+        return { data: { session, user: session.user }, error: null }
       })
       .post('/auth/v1/signup', async ({ body, set }) => {
         const { email, password } = body as { email: string; password: string }
@@ -770,22 +769,16 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
           // /api/auth/callback handler. Just read the session cookie that
           // better-auth set during the callback redirect.
           try {
-            const cookieHeader = request.headers.get('cookie') ?? ''
-            const match = /better-auth\.session_token=([^;]+)/.exec(cookieHeader)
-            const sessionToken = match?.[1]
-            if (!sessionToken) {
+            const validatedSession = await getValidatedCookieSession(auth, request.headers)
+            const sessionToken = getSessionToken(validatedSession)
+            if (!sessionToken || !validatedSession?.user) {
               set.status = 400
               return errorResponse('Invalid authorization code', 400)
             }
-            const row = await lookupSessionByToken(
-              auth as unknown as Record<string, unknown>,
-              sessionToken,
-            )
-            if (!row) {
-              set.status = 400
-              return errorResponse('Invalid authorization code', 400)
-            }
-            const result = bridgeSignInResponse({ token: sessionToken, user: row })
+            const result = bridgeSignInResponse({
+              token: sessionToken,
+              user: validatedSession.user,
+            })
             if ('message' in result) {
               set.status = 400
               return result

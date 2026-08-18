@@ -151,6 +151,10 @@ async function main(): Promise<void> {
   }
 
   const tls = flags.tlsCert && flags.tlsKey ? { cert: flags.tlsCert, key: flags.tlsKey } : undefined
+  const extraOrigins = (process.env.SINOPEBASE_EXTRA_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
 
   const server = new Sinopebase({
     port: flags.port,
@@ -160,6 +164,7 @@ async function main(): Promise<void> {
     jwtSecret: flags.jwtSecret || undefined,
     serviceRoleKey: process.env.SINOPEBASE_SERVICE_ROLE_KEY || undefined,
     anonKey: process.env.SINOPEBASE_ANON_KEY || undefined,
+    extraOrigins,
     tls,
     minioEndpoint: process.env.S3_ENDPOINT || undefined,
     minioAccessKey: process.env.S3_ACCESS_KEY || undefined,

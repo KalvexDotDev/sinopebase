@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased (v0.8.2)
+## v0.8.4 — 2026-08-18
+
+### Fixed
+- **CORS preflight routing** — all allowed, rejected, and origin-less `OPTIONS` requests now return an explicit empty `204` response instead of falling through to route handling as `501`.
+- **Configurable browser origins** — `SINOPEBASE_EXTRA_ORIGINS` is parsed as a trimmed comma-separated list and passed into the server's trusted CORS and OAuth origins.
+- **SSR cookie adapter compatibility** — the workspace SDK and published `@sinopebase/sdk` now pass cookie attributes under the SvelteKit-compatible `options` property instead of `opts`.
+- **Signed browser sessions** — `/auth/v1/session`, `/api/auth/exchange`, and authorization-code token exchange now ask Better Auth to validate signed session cookies before using the backing session token; tampered cookies are rejected consistently.
+
+## v0.8.3 — 2026-08-16
+
+### Added
+- **Factory schema** — migration-backed `f_*` tables and `factory_*` RPC functions, with integration coverage for the factory API surface.
+- **Distributable SDK package** — `sdk-package` now builds bundled JavaScript and declarations into `dist/` for npm publishing.
+
+### Fixed
+- **Realtime RLS delivery** — realtime joins send the current access token and auth changes propagate through `realtime.setAuth()`, so `postgres_changes` events reach authenticated subscribers under RLS.
+- **PostgREST PostgreSQL errors** — database errors preserve compatible 4xx response codes instead of being masked as 500s.
+- **Compiled migrations** — migrations resolve beside the compiled binary and are included in the Docker image.
+- **Release npm job** — installs Bun and frozen dependencies before building and publishing the SDK.
+
+## v0.8.2 — 2026-08-16
 
 ### Fixed
 - **Production deploy crash** — the Dockerfile compiled the binary with `--external nodemailer` while the runtime image ships no node_modules, so every v0.8+ production deploy crashed at boot with `Cannot find package 'nodemailer'` (confirmed in Railway logs). nodemailer is now bundled.

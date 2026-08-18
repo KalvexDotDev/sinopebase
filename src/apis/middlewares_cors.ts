@@ -148,7 +148,7 @@ export function cors(config: CORSConfig = {}) {
     if (!origin) {
       if (!isPreflight) return
       ctx.set.status = 204
-      return
+      return new Response(null, { status: 204, headers: res.headers }) as never
     }
 
     let allowOrigin = ''
@@ -188,7 +188,7 @@ export function cors(config: CORSConfig = {}) {
     if (!allowOrigin) {
       if (!isPreflight) return
       ctx.set.status = 204
-      return
+      return new Response(null, { status: 204, headers: res.headers }) as never
     }
 
     res.headers['access-control-allow-origin'] = allowOrigin
@@ -221,5 +221,6 @@ export function cors(config: CORSConfig = {}) {
     }
 
     ctx.set.status = 204
+    return new Response(null, { status: 204, headers: res.headers }) as never
   }
 }

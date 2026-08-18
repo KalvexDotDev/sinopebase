@@ -81,6 +81,88 @@ describe('Auth API (better-auth)', () => {
     expect(json).not.toHaveProperty('data')
   })
 
+  it('resolves the actual signed browser cookie through /auth/v1/session', async () => {
+    const signIn = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: supabaseHeaders,
+      body: JSON.stringify({ email: testEmail, password: testPassword }),
+    })
+    expect(signIn.status).toBe(200)
+
+    const setCookie = signIn.headers
+      .getSetCookie()
+      .find((value) => value.startsWith('better-auth.session_token='))
+    expect(setCookie).toBeTruthy()
+    const cookie = setCookie?.slice(0, setCookie.indexOf(';'))
+
+    // The Set-Cookie value is Better Auth's signed browser representation;
+    // it can differ from the database session token returned as access_token.
+    const session = await fetch(`${baseUrl}/auth/v1/session`, {
+      headers: { ...supabaseHeaders, cookie: cookie ?? '' },
+    })
+    expect(session.status).toBe(200)
+    const body = (await session.json()) as {
+      data: { session: { access_token: string; user: { email: string } } | null }
+    }
+    expect(body.data.session?.user.email).toBe(testEmail)
+    expect(body.data.session?.access_token).toBeTruthy()
+  })
+
+  it('exchanges a validated browser cookie for an authorization-code session', async () => {
+    const signIn = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: supabaseHeaders,
+      body: JSON.stringify({ email: testEmail, password: testPassword }),
+    })
+    const setCookie = signIn.headers
+      .getSetCookie()
+      .find((value) => value.startsWith('better-auth.session_token='))
+    expect(setCookie).toBeTruthy()
+    const cookie = setCookie?.slice(0, setCookie.indexOf(';')) ?? ''
+
+    const exchange = await fetch(`${baseUrl}/auth/v1/token?grant_type=authorization_code`, {
+      method: 'POST',
+      headers: { ...supabaseHeaders, cookie },
+      body: JSON.stringify({}),
+    })
+
+    expect(exchange.status).toBe(200)
+    const body = (await exchange.json()) as {
+      access_token: string
+      refresh_token: string
+      user: { email: string }
+    }
+    expect(body.access_token).toBeTruthy()
+    expect(body.refresh_token).toBe(body.access_token)
+    expect(body.user.email).toBe(testEmail)
+  })
+
+  it('rejects a tampered browser cookie during authorization-code exchange', async () => {
+    const exchange = await fetch(`${baseUrl}/auth/v1/token?grant_type=authorization_code`, {
+      method: 'POST',
+      headers: {
+        ...supabaseHeaders,
+        cookie: 'better-auth.session_token=not-a-valid-cookie',
+      },
+      body: JSON.stringify({}),
+    })
+
+    expect(exchange.status).toBe(400)
+    expect(await exchange.json()).toEqual({
+      message: 'Invalid authorization code',
+      status: 400,
+    })
+  })
+
+  it('does not resolve a tampered browser session cookie', async () => {
+    const res = await fetch(`${baseUrl}/auth/v1/session`, {
+      headers: { ...supabaseHeaders, cookie: 'better-auth.session_token=not-a-valid-cookie' },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { data: { session: unknown; user: unknown } }
+    expect(body.data).toEqual({ session: null, user: null })
+  })
+
   it('keeps the built-in Supabase-style SDK compatible with raw GoTrue responses', async () => {
     const client = createClient(baseUrl, 'test-anon-key')
     const response = await client.auth.signInWithPassword({
@@ -90,8 +172,10 @@ describe('Auth API (better-auth)', () => {
 
     expect(response.error).toBeNull()
     expect(response.data.session?.user.email).toBe(testEmail)
+    const auth = app.getAuth()
+    if (!auth) throw new Error('Expected better-auth to be initialized')
     expect(
-      await lookupSessionByToken(app.getAuth(), response.data.session?.access_token),
+      await lookupSessionByToken(auth, response.data.session?.access_token ?? null),
     ).not.toBeNull()
   })
 

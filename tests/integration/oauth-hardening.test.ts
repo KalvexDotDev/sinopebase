@@ -267,6 +267,7 @@ describe('OAuth hardening (full server)', () => {
     const email = uniqueEmail()
     const password = 'oauth-hardening-password-123!'
     let sessionToken = ''
+    let sessionCookie = ''
 
     test('signs up and signs in to obtain a session token', async () => {
       const supabaseHeaders = {
@@ -294,7 +295,9 @@ describe('OAuth hardening (full server)', () => {
       // The GoTrue-style sign-in forwards better-auth's session cookie so
       // cookie-based flows (session exchange, admin UI login) work directly.
       const setCookies = signIn.headers.getSetCookie()
-      expect(setCookies.some((c) => c.startsWith('better-auth.session_token='))).toBe(true)
+      const setCookie = setCookies.find((c) => c.startsWith('better-auth.session_token='))
+      expect(setCookie).toBeTruthy()
+      sessionCookie = setCookie?.slice(0, setCookie.indexOf(';')) ?? ''
     })
 
     test('exchanges a valid session cookie for a Bearer token', async () => {
@@ -304,7 +307,7 @@ describe('OAuth hardening (full server)', () => {
         headers: {
           'Content-Type': 'application/json',
           [EXCHANGE_CSRF_HEADER]: 'sinopebase-admin',
-          cookie: `better-auth.session_token=${sessionToken}`,
+          cookie: sessionCookie,
         },
       })
       expect(res.status).toBe(200)
@@ -327,7 +330,7 @@ describe('OAuth hardening (full server)', () => {
         headers: {
           'Content-Type': 'application/json',
           [EXCHANGE_CSRF_HEADER]: 'sinopebase-admin',
-          cookie: `better-auth.session_token=${sessionToken}`,
+          cookie: sessionCookie,
         },
       })
       const body = (await res.json()) as { access_token: string }
@@ -360,7 +363,7 @@ describe('OAuth hardening (full server)', () => {
       })
       expect(res.status).toBe(401)
       const body = (await res.json()) as { message: string }
-      expect(body.message).toBe('Session expired or invalid')
+      expect(body.message).toBe('No active session')
     })
 
     test('rejects the exchange without the CSRF header even with a valid cookie', async () => {
@@ -369,7 +372,7 @@ describe('OAuth hardening (full server)', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          cookie: `better-auth.session_token=${sessionToken}`,
+          cookie: sessionCookie,
         },
       })
       expect(res.status).toBe(403)
