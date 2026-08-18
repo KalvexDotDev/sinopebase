@@ -7,11 +7,12 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createAuthClient } from '~/sdk/auth-impl'
 import type { CookieProvider } from '~/sdk/ssr'
+import { createAuthClient as createPackageAuthClient } from '../../sdk-package/src/auth-impl'
 
 const realFetch = globalThis.fetch
 
 let cookieJar: { name: string; value: string }[] = []
-let persisted: { name: string; value: string; opts?: Record<string, unknown> }[] = []
+let persisted: { name: string; value: string; options?: Record<string, unknown> }[] = []
 
 const provider: CookieProvider = {
   getAll: () => cookieJar,
@@ -29,7 +30,7 @@ const testUser = { id: 'u1', email: 'a@example.com' }
 
 function stubJson(status: number, body: unknown, headers: Record<string, string> = {}): void {
   globalThis.fetch = (async () =>
-    new Response(JSON.stringify(body), { status, headers })) as typeof fetch
+    new Response(JSON.stringify(body), { status, headers })) as unknown as typeof fetch
 }
 
 afterEach(() => {
@@ -110,7 +111,39 @@ describe('SSR cookie provider', () => {
     expect(persisted.length).toBe(1)
     expect(persisted[0]?.name).toBe('better-auth.session_token')
     expect(persisted[0]?.value).toBe('xyz')
-    expect(persisted[0]?.opts?.httpOnly).toBe(true)
+    expect(persisted[0]?.options).toEqual({ path: '/', httpOnly: true })
+  })
+
+  it('persists cookie attributes as options in the publishable SDK', async () => {
+    const packagePersisted: typeof persisted = []
+    stubJson(
+      200,
+      { data: { session: null, user: null } },
+      {
+        'set-cookie':
+          'better-auth.session_token=xyz; Path=/auth; Max-Age=3600; HttpOnly; Secure; SameSite=Lax',
+      },
+    )
+    const auth = createPackageAuthClient('http://x', 'key', {
+      getAll: () => [],
+      setAll: (cookies) => packagePersisted.push(...cookies),
+    })
+
+    await auth.getSession()
+
+    expect(packagePersisted).toEqual([
+      {
+        name: 'better-auth.session_token',
+        value: 'xyz',
+        options: {
+          path: '/auth',
+          maxAge: 3600,
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax',
+        },
+      },
+    ])
   })
 
   it('getAccessToken probes the cookie session only once per client', async () => {
@@ -127,7 +160,7 @@ describe('SSR cookie provider', () => {
         }),
         { status: 200 },
       )
-    }) as typeof fetch
+    }) as unknown as typeof fetch
     const auth = createAuthClient('http://x', 'key', provider)
 
     expect(await auth.getAccessToken()).toBe('cookie-token')

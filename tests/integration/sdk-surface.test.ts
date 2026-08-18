@@ -62,7 +62,7 @@ interface EchoResult {
 
 class FakeCookieJar implements CookieProvider {
   private jar: { name: string; value: string }[] = []
-  readonly persisted: { name: string; value: string; opts?: Record<string, unknown> }[] = []
+  readonly persisted: { name: string; value: string; options?: Record<string, unknown> }[] = []
 
   /** Seed a cookie, mirroring what better-auth would have set in a browser. */
   seed(name: string, value: string): void {
@@ -74,7 +74,7 @@ class FakeCookieJar implements CookieProvider {
     return [...this.jar]
   }
 
-  setAll(cookies: { name: string; value: string; opts?: Record<string, unknown> }[]): void {
+  setAll(cookies: { name: string; value: string; options?: Record<string, unknown> }[]): void {
     this.persisted.push(...cookies)
     for (const c of cookies) {
       this.jar = this.jar.filter((x) => x.name !== c.name)
