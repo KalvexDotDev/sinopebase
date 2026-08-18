@@ -769,7 +769,7 @@ export class Sinopebase {
 
       this.server = null
       this.pendingServer = null
-      this.database = null
+      await this.closeDatabaseAfterStartupFailure()
       this.fileStore = null
       this.auth = null
       throw error
@@ -828,13 +828,13 @@ export class Sinopebase {
       this.database = pg
       logger.info('Database', { provider: 'PostgreSQL', status: 'connected' })
 
-      // Run pending system migrations (PocketBase pattern: migrate on startup).
-      // Migrations are tracked in the _migrations table and skipped if already
-      // applied. In non-production, bootstrapPostgresRequestRoles() (called by
-      // connect()) creates request-context roles at runtime so the least-
-      // privilege migration is a no-op. In production, the migration creates
-      // roles that the pool-level SET ROLE depends on.
-      await this.runSystemMigrations()
+      // Run the complete migration lifecycle exactly once after PostgreSQL is
+      // connected and before any HTTP listener is created. System migrations
+      // establish the core schema first; app migrations then discover local
+      // and S3-backed SQL files. The shared _migrations ledger skips anything
+      // already applied on previous boots, preserving startup idempotency.
+      // Production bucket discovery errors propagate and abort startup.
+      await this.runAllMigrations()
 
       // Validate database roles and schema preflight before proceeding.
       // Migration 1779000000_least_privilege_roles must have been applied.
@@ -1820,6 +1820,20 @@ export class Sinopebase {
     await this.mailer.send(message)
   }
 
+  private async closeDatabaseAfterStartupFailure(): Promise<void> {
+    const database = this.database
+    this.database = null
+    if (!(database instanceof PostgresDatabase)) return
+
+    try {
+      await database.close()
+    } catch (error) {
+      logger.error('Failed to close PostgreSQL pool after startup failure', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   /**
    * Apply pending system migrations (PocketBase pattern: migrate on startup).
    *
@@ -1850,9 +1864,35 @@ export class Sinopebase {
       ].find((d) => existsSync(d)) ?? resolve(import.meta.dir, '../../migrations')
     const discovered = await loadMigrationsFromDirectory(migrationsDir)
 
-    // Also discover raw SQL migrations from supabase/migrations/ (Supabase format).
-    // Users can bring their existing supabase/migrations/*.sql files and they
-    // will be applied alongside Sinopebase's own TypeScript migrations.
+    discovered.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
+
+    if (discovered.length === 0) return
+
+    const runner = new MigrationRunner(this.database, migrationDB)
+    runner.registerAll(discovered)
+
+    const count = await runner.run()
+    if (count > 0) {
+      logger.info('System migrations', { applied: count, status: 'complete' })
+    }
+  }
+
+  /**
+   * Apply application SQL migrations from the local Supabase directory and,
+   * when configured, an S3-compatible migration bucket.
+   */
+  async runAppMigrations(): Promise<void> {
+    if (!(this.database instanceof PostgresDatabase)) return
+
+    const pool = this.database.getPool()
+    const migrationDB: MigrationDB = {
+      raw: async (sql: string) => {
+        await pool.query(sql)
+      },
+    }
+
+    // Users can bring existing supabase/migrations/*.sql files and apply them
+    // without converting them to Sinopebase TypeScript migrations.
     const supabaseMigrationsDir = resolve(import.meta.dir, '../../../supabase/migrations')
     const sqlDiscovered = await loadSqlMigrationsFromDirectory(supabaseMigrationsDir)
 
@@ -1866,23 +1906,35 @@ export class Sinopebase {
         // The main store is initialized after migrations, so build one here.
         const s3Store = createMigrationsFileStore(this.config)
         if (!(s3Store instanceof S3FileStore)) {
-          logger.warn('S3 migrations', {
-            error: `MIGRATIONS_BUCKET is set but the store resolved to the local filesystem — check RUSTFS_ENDPOINT/RUSTFS_ACCESS_KEY/RUSTFS_SECRET_KEY`,
-          })
+          throw new Error(
+            'MIGRATIONS_BUCKET is set but S3 storage is not configured; check RUSTFS_ENDPOINT/RUSTFS_ACCESS_KEY/RUSTFS_SECRET_KEY',
+          )
         }
         s3Discovered = await loadSqlMigrationsFromS3(
-          s3Store as unknown as import('./migrations_s3').S3FileStore,
+          s3Store,
           s3MigrationsBucket,
           process.env.MIGRATIONS_PREFIX ?? '',
         )
+        logger.info('S3 migrations', {
+          bucket: s3MigrationsBucket,
+          discovered: s3Discovered.length,
+        })
       } catch (err) {
-        logger.warn('S3 migrations', { error: err instanceof Error ? err.message : String(err) })
+        const message = err instanceof Error ? err.message : String(err)
+        const context = { bucket: s3MigrationsBucket, error: message }
+        if (this.mode === 'production') {
+          logger.error('S3 migration discovery failed; aborting production startup', context)
+          throw new Error(`S3 migration discovery failed for bucket "${s3MigrationsBucket}"`, {
+            cause: err,
+          })
+        }
+        logger.warn('S3 migration discovery failed; continuing in development', context)
       }
     }
 
-    const allMigrations = [...discovered, ...sqlDiscovered, ...s3Discovered]
+    const allMigrations = [...sqlDiscovered, ...s3Discovered]
 
-    // Sort all migrations by timestamp so interleaved TS + SQL files run in order.
+    // Sort local and bucket SQL migrations together by timestamp.
     allMigrations.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
 
     if (allMigrations.length === 0) return
@@ -1892,8 +1944,14 @@ export class Sinopebase {
 
     const count = await runner.run()
     if (count > 0) {
-      logger.info('Migrations', { applied: count, status: 'complete' })
+      logger.info('App migrations', { applied: count, status: 'complete' })
     }
+  }
+
+  /** Apply system migrations first, followed by application migrations. */
+  async runAllMigrations(): Promise<void> {
+    await this.runSystemMigrations()
+    await this.runAppMigrations()
   }
 
   /**

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.5 — 2026-08-18
+
+### Fixed
+- **S3-backed production migrations** — the production entry point now runs the complete system and application migration lifecycle exactly once after PostgreSQL connects and before listening. `MIGRATIONS_BUCKET` SQL files are discovered through the configured S3-compatible store, ordered, applied through the existing `_migrations` ledger, and skipped on subsequent boots.
+- **Fail-closed migration discovery** — an unreachable or missing configured migration bucket is logged as a startup error and aborts production startup instead of allowing a healthy server to run against an un-migrated application schema.
+
 ## v0.8.4 — 2026-08-18
 
 ### Fixed
