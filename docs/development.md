@@ -84,6 +84,16 @@ sinopebase/
 - Tests run against real infrastructure (PostgreSQL + RustFS in Docker)
 - Test files mirror source structure under `tests/`
 - `bun test` must pass with 0 failures before any commit
+- Changed production code must keep at least 95% diff coverage and a CRAP score
+  no higher than 6 for every changed function.
+- Every changed production file needs both positive and negative tests. Mark the
+  changed test file with `@new-code-test positive src/path.ts` and
+  `@new-code-test negative src/path.ts`. If the failure behavior is not in the
+  issue, acceptance criteria, or existing contract, ask the human before coding it.
+- Run `bun run test:quality` to apply the diff coverage, CRAP, test-polarity,
+  and changed-line mutation gates locally. Set `NEW_CODE_BASE=<commit>` when
+  validating committed changes; otherwise the local gate compares the worktree
+  with `HEAD`.
 
 ### Git
 

@@ -34,7 +34,10 @@
     "typecheck": "bun run tsc --noEmit",
     "typecheck:ci": "bun run scripts/typecheck-ci.ts",
     "typecheck:harness": "bun run tsc --noEmit --project wave0-test-tsconfig.json",
-    "test:ci": "bun test --exclude tests/plugins/drop-functions --reporter=junit --reporter-outfile=junit.xml",
+    "test:ci": "bun test --path-ignore-patterns='tests/plugins/drop-functions/**' --reporter=junit --reporter-outfile=junit.xml",
+    "test:new-code": "bun run scripts/new-code-quality.ts",
+    "test:mutation": "bun run scripts/mutation-ci.ts",
+    "test:quality": "bun run test:new-code && bun run test:mutation",
     "security:semgrep": "semgrep --config .semgrep.yml --sarif --output semgrep-results.sarif src/ tests/",
     "security:gitleaks": "gitleaks detect --config .gitleaks.toml --verbose",
     "gitleaks:install": "git config core.hooksPath .githooks",
@@ -48,10 +51,12 @@
     "./sdk": "./src/sdk/client.ts"
   },
   "devDependencies": {
+    "@babel/parser": "^8.0.4",
     "@biomejs/biome": "^2.5.7",
     "@eslint/js": "^10.0.1",
     "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@playwright/test": "^1.62.1",
+    "@stryker-mutator/core": "^10.0.0",
     "@types/bun": "latest",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.4",
@@ -84,6 +89,7 @@
   "overrides": {
     "lodash": ">=4.17.21",
     "brace-expansion": ">=5.0.9",
-    "js-yaml": ">=3.15.1"
+    "js-yaml": ">=3.15.1",
+    "qs": "6.15.3"
   }
 }
