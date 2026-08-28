@@ -12,10 +12,9 @@
  * (src/core/app.ts), so test functions are written to that relative path —
  * the same mechanism as tests/plugins/drop-functions/*.test.ts.
  *
- * SSR cookies: the password-grant endpoint returns the better-auth session
- * token in the JSON body (access_token) rather than a Set-Cookie header, so
- * the fake cookie jar carries that token under the `better-auth.session_token`
- * cookie name — the exact value better-auth would have set.
+ * SSR cookies: the password-grant endpoint returns both a raw access token and
+ * Better Auth's signed browser cookie. The fake cookie jar carries the signed
+ * `better-auth.session_token` value so the server exercises cookie validation.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
@@ -124,11 +123,11 @@ let emptyJarClient: SinopebaseClient
 let userAId: string
 let userBId: string
 
-/** Sign in via raw fetch and capture the better-auth session token. */
-async function signInSessionToken(
+/** Sign in via raw fetch and capture the signed better-auth browser cookie. */
+async function signInBrowserSession(
   email: string,
   password: string,
-): Promise<{ sessionToken: string; userId: string }> {
+): Promise<{ sessionCookie: string; userId: string }> {
   const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     headers: {
@@ -139,12 +138,15 @@ async function signInSessionToken(
     body: JSON.stringify({ email, password }),
   })
   expect(res.status).toBe(200)
-  // ponytail: the password-grant endpoint returns the session token in the
-  // JSON body, not a Set-Cookie header (verified against the live backend).
-  // The token IS the better-auth session token, so it goes into the jar under
-  // the cookie name better-auth uses.
+  const setCookie = res.headers
+    .getSetCookie()
+    .find((value) => value.startsWith('better-auth.session_token='))
+  expect(setCookie).toBeTruthy()
+  const cookiePair = setCookie?.slice(0, setCookie.indexOf(';')) ?? ''
+  const sessionCookie = cookiePair.slice(cookiePair.indexOf('=') + 1)
+  expect(sessionCookie).toBeTruthy()
   const json = (await res.json()) as { access_token: string; user: { id: string } }
-  return { sessionToken: json.access_token, userId: json.user.id }
+  return { sessionCookie, userId: json.user.id }
 }
 
 beforeAll(async () => {
@@ -255,11 +257,11 @@ beforeAll(async () => {
   expect(signUpA.error).toBeNull()
   expect(signUpB.error).toBeNull()
 
-  const signInA = await signInSessionToken(
+  const signInA = await signInBrowserSession(
     `sdk-surface-a-${stamp}@example.com`,
     'sdk-surface-password-123',
   )
-  const signInB = await signInSessionToken(
+  const signInB = await signInBrowserSession(
     `sdk-surface-b-${stamp}@example.com`,
     'sdk-surface-password-123',
   )
@@ -269,9 +271,9 @@ beforeAll(async () => {
   expect(userBId).toBe(signUpB.data.session?.user.id ?? '')
 
   const jarA = new FakeCookieJar()
-  jarA.seed('better-auth.session_token', signInA.sessionToken)
+  jarA.seed('better-auth.session_token', signInA.sessionCookie)
   const jarB = new FakeCookieJar()
-  jarB.seed('better-auth.session_token', signInB.sessionToken)
+  jarB.seed('better-auth.session_token', signInB.sessionCookie)
   serverClientA = createServerClient(baseUrl, anonKey, { cookies: jarA })
   serverClientB = createServerClient(baseUrl, anonKey, { cookies: jarB })
   emptyJarClient = createServerClient(baseUrl, anonKey, { cookies: new FakeCookieJar() })
