@@ -28,6 +28,7 @@ await app.start()
 | `SINOPEBASE_SERVICE_ROLE_KEY` | **Yes** (prod) | Admin/service-role API key (≥32 chars) |
 | `SINOPEBASE_ANON_KEY` | **Yes** (prod) | Anonymous/public API key (≥32 chars) |
 | `SINOPEBASE_PRODUCTION` | No | Set to `true` for fail-closed production mode. Or `NODE_ENV=production`. |
+| `ALLOW_SIGNUPS` | No | Public email/password signup. Defaults to disabled in production and enabled in development; set explicitly to `true` to allow production signup. |
 | `RUSTFS_ENDPOINT` | **Yes** (prod) | S3-compatible storage URL |
 | `RUSTFS_ACCESS_KEY` | **Yes** (prod) | S3 access key |
 | `RUSTFS_SECRET_KEY` | **Yes** (prod) | S3 secret key |

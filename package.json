@@ -1,6 +1,6 @@
 {
   "name": "sinopebase",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "module": "cmd/serve.ts",
   "type": "module",
   "private": false,

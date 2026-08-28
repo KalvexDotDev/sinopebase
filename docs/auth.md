@@ -179,6 +179,7 @@ Keycloak's OIDC endpoint.
 | `JWT_SECRET` | JWT signing secret | **Must set in production** |
 | `POSTGRES_URL` | Database connection | `postgresql://localhost:5432/sinopebase` |
 | `BETTER_AUTH_URL` | Public-facing base URL for OAuth callbacks | `http://localhost:8090` |
+| `ALLOW_SIGNUPS` | Public email/password signup | Disabled in production; enabled in development |
 | `GOOGLE_CLIENT_ID` | Google OAuth client | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret | — |
 | `AZURE_CLIENT_ID` | Entra ID client | — |
@@ -188,6 +189,7 @@ Keycloak's OIDC endpoint.
 ## Security
 
 - JWT tokens are HMAC-SHA256 signed. Set `JWT_SECRET` to a strong random value in production.
+- Public signup fails closed in production. Set `ALLOW_SIGNUPS=true` only when self-service account creation is intended.
 - Refresh tokens are rotated on each use. Old tokens are invalidated immediately.
 - Bearer tokens are validated via direct database lookup (not cookie-based).
 - Password minimum length is enforced by better-auth (8 characters default).

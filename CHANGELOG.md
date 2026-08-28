@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.0 — 2026-08-28
+
+### Added
+- **Changed-line mutation testing** — CI mutates production code changed from the merge base and requires every generated mutant to be killed.
+- **New-code quality gates** — changed executable lines require at least 95% coverage, changed functions require a maximum CRAP score of 6, and every changed production behavior must declare both positive and negative tests.
+
+### Security
+- **Fail-closed production signup** — public email/password signup is disabled in production unless `ALLOW_SIGNUPS=true` is set explicitly. Development remains open by default and can be closed with `ALLOW_SIGNUPS=false`.
+
+### Fixed
+- **CI test isolation** — CI ignores the opt-in destructive drop-functions suite correctly, recognizes equivalent TypeScript baseline diagnostics, and uses signed SSR session-cookie fixtures for protected auth flows.
+
 ## v0.8.5 — 2026-08-18
 
 ### Fixed
