@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type AppConfig, Sinopebase } from '../../src/core/app'
+import { reserveLoopbackPort } from '../harness'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,6 +23,14 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     minioSecretKey: '',
     ...overrides,
   }
+}
+
+async function startTestApp(overrides: Partial<AppConfig> = {}): Promise<Sinopebase> {
+  const reservation = await reserveLoopbackPort()
+  const app = new Sinopebase(makeConfig({ ...overrides, port: reservation.port }))
+  await reservation.release()
+  await app.start()
+  return app
 }
 
 /**
@@ -86,26 +95,32 @@ describe('secure boot — production mode', () => {
 
 describe('secure boot — development mode', () => {
   it('starts with memory db when postgresUrl is empty', async () => {
-    const app = new Sinopebase(makeConfig())
-    await app.start()
-    expect(app.getDatabase()).not.toBeNull()
-    await app.stop()
+    const app = await startTestApp()
+    try {
+      expect(app.getDatabase()).not.toBeNull()
+    } finally {
+      await app.stop()
+    }
   })
 
   it('starts with local file store when S3 is unset', async () => {
-    const app = new Sinopebase(makeConfig())
-    await app.start()
-    expect(app.getFileStore()).not.toBeNull()
-    await app.stop()
+    const app = await startTestApp()
+    try {
+      expect(app.getFileStore()).not.toBeNull()
+    } finally {
+      await app.stop()
+    }
   })
 
   it('health endpoint reports development mode', async () => {
-    const app = new Sinopebase(makeConfig())
-    await app.start()
-    const config = app.buildValidatedConfig()
-    expect(config.host).toBe('0.0.0.0')
-    expect(config.port).toBeGreaterThan(0)
-    await app.stop()
+    const app = await startTestApp()
+    try {
+      const config = app.buildValidatedConfig()
+      expect(config.host).toBe('0.0.0.0')
+      expect(config.port).toBeGreaterThan(0)
+    } finally {
+      await app.stop()
+    }
   })
 })
 
