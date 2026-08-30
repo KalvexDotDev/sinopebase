@@ -52,7 +52,7 @@ describe('deploy healthchecks', () => {
     const body = (await res.json()) as { code: number; db: string; storage: string }
     expect(body.code).toBe(200)
     expect(body.db).toBe('postgresql')
-    expect(body.storage).toBe('local')
+    expect(body.storage).toBe(process.env.RUSTFS_ENDPOINT ? 's3' : 'local')
   })
 
   it('GET /api/ready returns 2xx', async () => {

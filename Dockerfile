@@ -49,6 +49,11 @@ LABEL org.opencontainers.image.title="Sinopebase" \
 
 WORKDIR /app
 
+# The digest-pinned rootfs can lag Alpine security repositories between image
+# refreshes. Upgrade the TLS runtime libraries before the image is scanned and
+# shipped so fixed OpenSSL packages are not held back by the base-image digest.
+RUN apk upgrade --no-cache libcrypto3 libssl3
+
 # A fixed, unprivileged identity works with ECS/Fargate and read-only root
 # filesystems. DATA_DIR is the sole application write location and must be a
 # writable mount in production.

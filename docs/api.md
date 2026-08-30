@@ -91,6 +91,10 @@ All operators work on GET, HEAD, POST, PATCH, and DELETE. `or` filter groups are
 
 ### Sign Up
 
+Production deployments reject public signup by default. Set `ALLOW_SIGNUPS=true`
+explicitly to enable this endpoint; development mode remains open unless the value
+is set to `false`.
+
 ```bash
 curl 'https://your-instance/auth/v1/signup' \
   -H 'Content-Type: application/json' \

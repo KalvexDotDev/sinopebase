@@ -62,6 +62,13 @@ function errorResponse(message: string, status: number) {
   return { message, status }
 }
 
+// Keep direct Supabase-compatible signup closed in production. Existing users
+// can still sign in; local development remains open unless explicitly disabled.
+export function signupsAllowed(): boolean {
+  if (process.env.SINOPEBASE_PRODUCTION === 'true') return process.env.ALLOW_SIGNUPS === 'true'
+  return process.env.ALLOW_SIGNUPS !== 'false'
+}
+
 function userResponse(user: ReturnType<typeof authStore.toUser>) {
   return user
 }
@@ -82,6 +89,11 @@ export const authPlugin = new Elysia({ name: 'sinopebase-auth-fallback' })
       if (!email || !password) {
         set.status = 400
         return errorResponse('Email and password are required', 400)
+      }
+
+      if (!signupsAllowed()) {
+        set.status = 403
+        return errorResponse('Signups are currently invite-only.', 403)
       }
 
       const existing = authStore.findUserByEmail(email)
@@ -566,6 +578,10 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
       })
       .post('/auth/v1/signup', async ({ body, set }) => {
         const { email, password } = body as { email: string; password: string }
+        if (!signupsAllowed()) {
+          set.status = 403
+          return errorResponse('Signups are currently invite-only.', 403)
+        }
         if (!email || !password) {
           set.status = 400
           return errorResponse('Email and password are required', 400)

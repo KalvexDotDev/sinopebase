@@ -1,5 +1,11 @@
 const BASELINE = 'typecheck-baseline.txt'
 
+function normalizeDiagnostic(line: string): string {
+  // Source edits move existing diagnostics without making them new errors.
+  // Compare diagnostic content independently of its volatile line/column.
+  return line.trim().replace(/^(.*)\(\d+,\d+\)(: error TS\d+:)/, '$1$2')
+}
+
 async function run() {
   const proc = Bun.spawn(['bun', 'run', 'typecheck'], { stdout: 'pipe', stderr: 'pipe' })
   const out = await new Response(proc.stdout).text()
@@ -8,13 +14,13 @@ async function run() {
 
   const current = new Set<string>()
   for (const line of (out + err).split('\n')) {
-    if (line.match(/error TS\d+:/)) current.add(line.trim())
+    if (line.match(/error TS\d+:/)) current.add(normalizeDiagnostic(line))
   }
 
   const base = new Set<string>()
   try {
     for (const line of (await Bun.file(BASELINE).text()).split('\n')) {
-      if (line.trim()) base.add(line.trim())
+      if (line.trim()) base.add(normalizeDiagnostic(line))
     }
   } catch {
     /* no baseline yet */

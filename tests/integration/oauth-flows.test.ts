@@ -76,6 +76,7 @@ describe('OAuth flows (full server)', () => {
       serviceRoleKey: SERVICE_ROLE_KEY,
       anonKey: ANON_KEY,
       dataDir: DATA_DIR,
+      extraOrigins: [portReservation.origin],
     })
     await portReservation.release()
     await server.start()

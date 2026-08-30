@@ -11,6 +11,7 @@ dist
 
 # code coverage
 coverage
+.stryker-tmp
 *.lcov
 
 # logs
