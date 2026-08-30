@@ -2,26 +2,30 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type AppConfig, Sinopebase } from '../../src/core/app'
+import { reserveLoopbackPort } from '../harness'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-let nextPort = 42000
-function getPort(): number {
-  return nextPort++
-}
-
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
-    port: getPort(),
-    dataDir: join(tmpdir(), `sinopebase-health-${getPort()}`),
+async function startTestApp(overrides: Partial<AppConfig> = {}): Promise<{
+  app: Sinopebase
+  baseUrl: string
+}> {
+  const reservation = await reserveLoopbackPort()
+  const config: AppConfig = {
+    port: reservation.port,
+    dataDir: join(tmpdir(), `sinopebase-health-${reservation.port}`),
     postgresUrl: '',
     minioEndpoint: '',
     minioAccessKey: '',
     minioSecretKey: '',
     ...overrides,
   }
+  const app = new Sinopebase(config)
+  await reservation.release()
+  await app.start()
+  return { app, baseUrl: reservation.origin }
 }
 
 /**
@@ -62,10 +66,7 @@ describe('GET /api/health — liveness', () => {
   let baseUrl: string
 
   beforeAll(async () => {
-    const config = makeConfig()
-    app = new Sinopebase(config)
-    await app.start()
-    baseUrl = `http://127.0.0.1:${config.port}`
+    ;({ app, baseUrl } = await startTestApp())
   })
 
   afterAll(async () => {
@@ -103,10 +104,7 @@ describe('GET /api/ready — readiness', () => {
   let baseUrl: string
 
   beforeAll(async () => {
-    const config = makeConfig()
-    app = new Sinopebase(config)
-    await app.start()
-    baseUrl = `http://127.0.0.1:${config.port}`
+    ;({ app, baseUrl } = await startTestApp())
   })
 
   afterAll(async () => {
@@ -135,10 +133,7 @@ describe('GET /api/ready — readiness', () => {
 
 describe('GET /api/health returns 200 even in edge conditions', () => {
   it('responds to multiple sequential requests', async () => {
-    const config = makeConfig()
-    const app = new Sinopebase(config)
-    await app.start()
-    const baseUrl = `http://127.0.0.1:${config.port}`
+    const { app, baseUrl } = await startTestApp()
 
     try {
       for (let i = 0; i < 5; i++) {
@@ -151,10 +146,7 @@ describe('GET /api/health returns 200 even in edge conditions', () => {
   })
 
   it('responds to health while server is under light load', async () => {
-    const config = makeConfig()
-    const app = new Sinopebase(config)
-    await app.start()
-    const baseUrl = `http://127.0.0.1:${config.port}`
+    const { app, baseUrl } = await startTestApp()
 
     try {
       const results = await Promise.all([
