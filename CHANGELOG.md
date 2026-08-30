@@ -11,6 +11,7 @@
 
 ### Fixed
 - **CI test isolation** — CI ignores the opt-in destructive drop-functions suite correctly, recognizes equivalent TypeScript baseline diagnostics, and uses signed SSR session-cookie fixtures for protected auth flows.
+- **Patched container TLS libraries** — the runtime image upgrades Alpine's OpenSSL libraries from the digest-pinned rootfs to the latest security-fixed repository versions before vulnerability scanning and release.
 
 ## v0.8.5 — 2026-08-18
 
