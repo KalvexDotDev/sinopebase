@@ -173,3 +173,101 @@ describe('Mastra Auth — HTTP gating', () => {
     expect(res.status).toBe(200)
   })
 })
+
+// The real plugin's catalogue must share the inference authentication boundary.
+describe('Mastra Auth — real agent catalogue', () => {
+  it('denies catalogue access when no session adapter is available', async () => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const app = await new MastraPlugin({ requireAuth: true }).register(new Elysia())
+    const response = await app.fetch(new Request('http://localhost/api/mastra/agents'))
+    expect(response.status).toBe(401)
+  })
+
+  it('allows the explicitly configured service credential without a session adapter', async () => {
+    const previous = process.env.SINOPEBASE_SERVICE_ROLE_KEY
+    const serviceKey = 's'.repeat(64)
+    try {
+      process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceKey
+      const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+      const app = await new MastraPlugin({ requireAuth: true }).register(new Elysia())
+      const response = await app.fetch(
+        new Request('http://localhost/api/mastra/agents', {
+          headers: { Authorization: `Bearer ${serviceKey}` },
+        }),
+      )
+      expect(response.status).toBe(200)
+    } finally {
+      if (previous === undefined) delete process.env.SINOPEBASE_SERVICE_ROLE_KEY
+      else process.env.SINOPEBASE_SERVICE_ROLE_KEY = previous
+    }
+  })
+
+  it.each([undefined, 'Bearer invalid-token'])(
+    'rejects catalogue access with %s',
+    async (authorization) => {
+      const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+      const plugin = new MastraPlugin({ requireAuth: true })
+      const app = await plugin.register(
+        new Elysia(),
+        {} as unknown as import('~/tools/auth-better').SinopebaseAuth,
+      )
+      const response = await app.fetch(
+        new Request('http://localhost/api/mastra/agents', {
+          headers: authorization ? { Authorization: authorization } : {},
+        }),
+      )
+      expect(response.status).toBe(401)
+      expect(await response.text()).not.toContain('instructions')
+    },
+  )
+
+  it('retains catalogue access after token verification', async () => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const plugin = new MastraPlugin({ requireAuth: true })
+    const app = await plugin.register(
+      new Elysia(),
+      {} as unknown as import('~/tools/auth-better').SinopebaseAuth,
+    )
+    const response = await app.fetch(
+      new Request('http://localhost/api/mastra/agents', {
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.length).toBeGreaterThan(0)
+  })
+})
+
+// Exercise the real provider routes, including streaming, before any inference can run.
+describe('Mastra Auth — real inference routes', () => {
+  const routes = [
+    '/api/mastra/chat',
+    '/api/mastra/chat/stream',
+    '/api/mastra/embeddings',
+    '/api/mastra/agents/default/chat',
+    '/api/mastra/agents/default/stream',
+  ]
+
+  it.each(routes)('rejects absent and invalid credentials at %s', async (path) => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const plugin = new MastraPlugin({ requireAuth: true })
+    const app = await plugin.register(
+      new Elysia(),
+      {} as unknown as import('~/tools/auth-better').SinopebaseAuth,
+    )
+    for (const authorization of [undefined, 'Bearer invalid-token']) {
+      const response = await app.fetch(
+        new Request(`http://localhost${path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello' }], input: 'Hello' }),
+        }),
+      )
+      expect(response.status).toBe(401)
+      await response.body?.cancel()
+    }
+  })
+})

@@ -9,6 +9,7 @@
 
 import { Elysia } from 'elysia'
 import { lookupSessionByToken } from '~/tools/auth-better'
+import { signupsAllowed } from '~/tools/auth-better/signup-policy'
 import {
   type BetterAuthGetSessionResult,
   type BetterAuthSignInResult,
@@ -64,10 +65,7 @@ function errorResponse(message: string, status: number) {
 
 // Keep direct Supabase-compatible signup closed in production. Existing users
 // can still sign in; local development remains open unless explicitly disabled.
-export function signupsAllowed(): boolean {
-  if (process.env.SINOPEBASE_PRODUCTION === 'true') return process.env.ALLOW_SIGNUPS === 'true'
-  return process.env.ALLOW_SIGNUPS !== 'false'
-}
+export { signupsAllowed }
 
 function userResponse(user: ReturnType<typeof authStore.toUser>) {
   return user

@@ -508,6 +508,7 @@ import { resolve } from 'node:path'
 import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
 import { Cron } from '~/tools/cron/cron'
+import { parseS3Endpoint } from '~/tools/filesystem/s3-endpoint'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
@@ -558,28 +559,10 @@ function createMigrationsFileStore(config: AppConfig): IFileStore {
   const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
   const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
-    // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
-    // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
-    let host = s3Endpoint
-    let port = 9000
-    let useSSL = false
-    try {
-      const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
-      host = url.hostname
-      if (url.port) port = Number(url.port)
-      useSSL = url.protocol === 'https:'
-    } catch {
-      // Fallback: treat as bare host:port
-      const parts = s3Endpoint.split(':')
-      host = parts[0] ?? s3Endpoint
-      if (parts[1]) port = Number(parts[1])
-    }
     return new S3FileStore({
-      endpoint: host,
-      port,
+      ...parseS3Endpoint(s3Endpoint),
       accessKey: s3AccessKey,
       secretKey: s3SecretKey,
-      useSSL,
     })
   }
   return new LocalFileStore(config.dataDir ?? './pb_data')

@@ -3,7 +3,7 @@
 # Pin the builder to the Docker Hub index digest for oven/bun:1.3.14-alpine.
 # The Alpine builder emits a musl-linked Bun executable; the runtime below uses
 # the same Alpine 3.22 musl family.
-FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS builder
+FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS builder
 
 WORKDIR /build
 
@@ -20,11 +20,22 @@ COPY . .
 # Never consume a host-built UI artifact: create ui/dist in this builder.
 RUN cd ui && bun run build
 
-# Build a self-contained executable for the builder platform. It carries the
+# Build on the native host architecture, then target the requested Linux musl
+# runtime explicitly. This avoids emulating esbuild during the admin UI build.
+# The self-contained executable carries the
 # Bun runtime and therefore needs no Bun installation in the final image.
 # --minify reduces binary size and attack surface; --sourcemap=external keeps
 # debugging symbols out of the binary while preserving them for crash forensics.
-RUN bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target bun
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) bun_target=bun-linux-x64-musl ;; \
+      arm64) bun_target=bun-linux-arm64-musl ;; \
+      *) echo "Unsupported runtime architecture" >&2; exit 1 ;; \
+    esac \
+ && bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target "$bun_target"
+
+# Runtime libraries must match TARGETPLATFORM, not the native build host.
+FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS runtime-libs
 
 # Pin the Docker Official Image index digest for alpine:3.22. Alpine is kept
 # deliberately small; no shell packages, package manager cache, or DB clients
@@ -70,10 +81,10 @@ COPY --from=builder --chown=sinopebase:sinopebase /build/migrations /app/migrati
 
 # Bun's compiled executable is self-contained at the JavaScript layer but is
 # dynamically linked to the GCC/C++ runtimes. Copy the exact libraries from
-# the digest-pinned Alpine builder instead of resolving floating APK packages.
-COPY --from=builder /usr/lib/libgcc_s.so.1 /usr/lib/libgcc_s.so.1
-COPY --from=builder /usr/lib/libstdc++.so.6.0.33 /usr/lib/libstdc++.so.6.0.33
-COPY --from=builder /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so.6
+# the digest-pinned target-platform Alpine image instead of resolving floating APK packages.
+COPY --from=runtime-libs /usr/lib/libgcc_s.so.1 /usr/lib/libgcc_s.so.1
+COPY --from=runtime-libs /usr/lib/libstdc++.so.6.0.33 /usr/lib/libstdc++.so.6.0.33
+COPY --from=runtime-libs /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so.6
 
 ENV DATA_DIR=/data
 

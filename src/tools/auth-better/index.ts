@@ -7,11 +7,13 @@
 // ---------------------------------------------------------------------------
 
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import { genericOAuth } from 'better-auth/plugins/generic-oauth'
 import { type Kysely, sql } from 'kysely'
 import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 import type { BetterAuthDatabase } from './adapter'
+import { signupsAllowed } from './signup-policy'
 
 // Guard against redundant DDL on hot reload or multiple createAuth calls
 let tablesEnsured = false
@@ -309,6 +311,19 @@ export async function createAuth(
       },
     },
     emailAndPassword: { enabled: true, ...emailSenders },
+    // Enforce at user creation so native and OAuth routes cannot bypass the
+    // compatibility signup gate. Existing users can still sign in.
+    databaseHooks: {
+      user: {
+        create: {
+          before: async () => {
+            if (!signupsAllowed()) {
+              throw new APIError('FORBIDDEN', { message: 'Signups are currently invite-only.' })
+            }
+          },
+        },
+      },
+    },
     // Email verification flows are available only when a mailer can deliver
     // them. requireEmailVerification stays off — signin is not blocked.
     ...(sendEmail ? { emailVerification: { enabled: true, ...verificationSender } } : {}),
