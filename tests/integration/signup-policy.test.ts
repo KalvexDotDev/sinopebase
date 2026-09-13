@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { Pool } from 'pg'
 import { Sinopebase } from '~/core/app'
 import { createAuth } from '~/tools/auth-better'
+import { signupsAllowed } from '~/tools/auth-better/signup-policy'
 import { requirePostgres, reserveLoopbackPort } from '../harness'
 
 let app: Sinopebase
@@ -46,6 +47,7 @@ test('closing registration also blocks native signup without blocking existing-u
       expect(denied.status).toBe(403)
       expect(denied.headers.get('set-cookie')).toBeNull()
       const body = (await denied.json()) as Record<string, unknown>
+      expect(body.message).toBe('Signups are currently invite-only.')
       expect(body.token).toBeUndefined()
       expect(body.access_token).toBeUndefined()
     }
@@ -84,7 +86,10 @@ test('registration policy rejects OAuth auto-provisioning before user or account
           { email, name: 'OAuth fixture', emailVerified: true },
           { providerId: 'google', accountId: crypto.randomUUID() },
         ),
-      ).rejects.toMatchObject({ status: 'FORBIDDEN' })
+      ).rejects.toMatchObject({
+        status: 'FORBIDDEN',
+        body: { message: 'Signups are currently invite-only.' },
+      })
       const rows = await pool.query('SELECT id FROM "user" WHERE email = $1', [email])
       expect(rows.rowCount).toBe(0)
     }
@@ -96,3 +101,40 @@ test('registration policy rejects OAuth auto-provisioning before user or account
     await pool.end()
   }
 })
+
+// @new-code-test positive src/apis/auth.ts
+// @new-code-test negative src/apis/auth.ts
+// @new-code-test positive src/tools/auth-better/index.ts
+// @new-code-test negative src/tools/auth-better/index.ts
+// @new-code-test positive src/tools/auth-better/signup-policy.ts
+// @new-code-test negative src/tools/auth-better/signup-policy.ts
+
+test.each([
+  ['true', undefined, false],
+  ['true', 'false', false],
+  ['true', 'true', true],
+  [undefined, undefined, true],
+  [undefined, 'false', false],
+  [undefined, 'true', true],
+  ['false', undefined, true],
+  ['false', 'false', false],
+  ['false', 'true', true],
+] as const)(
+  'registration policy production=%s explicit=%s allows=%s',
+  (production, signup, expected) => {
+    const oldProduction = process.env.SINOPEBASE_PRODUCTION
+    const oldSignup = process.env.ALLOW_SIGNUPS
+    try {
+      if (production === undefined) delete process.env.SINOPEBASE_PRODUCTION
+      else process.env.SINOPEBASE_PRODUCTION = production
+      if (signup === undefined) delete process.env.ALLOW_SIGNUPS
+      else process.env.ALLOW_SIGNUPS = signup
+      expect(signupsAllowed()).toBe(expected)
+    } finally {
+      if (oldProduction === undefined) delete process.env.SINOPEBASE_PRODUCTION
+      else process.env.SINOPEBASE_PRODUCTION = oldProduction
+      if (oldSignup === undefined) delete process.env.ALLOW_SIGNUPS
+      else process.env.ALLOW_SIGNUPS = oldSignup
+    }
+  },
+)

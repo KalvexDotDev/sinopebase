@@ -1,22 +1,21 @@
 /** Resolve the S3 host, explicitly configured port, and TLS independently. */
 export function parseS3Endpoint(endpoint: string) {
-  let host = endpoint
-  let port = 9000
-  let useSSL = false
   try {
     const target = endpoint.startsWith('http') ? endpoint : `http://${endpoint}`
     const url = new URL(target)
-    host = url.hostname
-    // URL.port omits explicitly stated defaults such as :443 and :80.
-    // Preserve those values without changing the historical no-port default.
-    const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(target)?.[1] ?? ''
-    const stated = /:(\d+)$/.exec(authority)?.[1]
-    if (stated) port = Number(stated)
-    useSSL = url.protocol === 'https:'
+    const host = url.hostname
+    // A scheme without default ports preserves explicit :80 and :443.
+    // Use the HTTP URL above for standard hostname normalization and TLS.
+    const statedPort = new URL('s3:' + target.slice(target.indexOf(':') + 1)).port
+    const port = statedPort ? Number(statedPort) : 9000
+    const useSSL = url.protocol === 'https:'
+    return { endpoint: host, port, useSSL }
   } catch {
-    const parts = endpoint.split(':')
-    host = parts[0] ?? endpoint
-    if (parts[1]) port = Number(parts[1])
+    return parseBareEndpoint(endpoint)
   }
-  return { endpoint: host, port, useSSL }
+}
+
+function parseBareEndpoint(endpoint: string) {
+  const [host = endpoint, port] = endpoint.split(':')
+  return { endpoint: host, port: port ? Number(port) : 9000, useSSL: false }
 }

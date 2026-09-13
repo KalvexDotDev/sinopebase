@@ -554,10 +554,14 @@ import { MigrationRunner } from './migrations_runner'
  * The main store is initialized after migrations run, so bucket migrations
  * (MIGRATIONS_BUCKET) construct their own here — they only need list/read.
  */
+function storageSetting(configured: string | undefined, environment: string | undefined): string {
+  return configured || environment || ''
+}
+
 function createMigrationsFileStore(config: AppConfig): IFileStore {
-  const s3Endpoint = config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
-  const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
-  const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
+  const s3Endpoint = storageSetting(config.minioEndpoint, process.env.RUSTFS_ENDPOINT)
+  const s3AccessKey = storageSetting(config.minioAccessKey, process.env.RUSTFS_ACCESS_KEY)
+  const s3SecretKey = storageSetting(config.minioSecretKey, process.env.RUSTFS_SECRET_KEY)
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
     return new S3FileStore({
       ...parseS3Endpoint(s3Endpoint),

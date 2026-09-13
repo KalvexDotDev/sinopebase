@@ -19,6 +19,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createClient, type SinopebaseClient } from '~/sdk/client'
+import { LocalFileStore } from '~/tools/filesystem/store'
 import { Sinopebase } from '../../src/core/app'
 import { reserveLoopbackPort } from '../harness'
 import { uniqueId } from './setup'
@@ -60,6 +61,7 @@ beforeAll(async () => {
   })
   await portReservation.release()
   await server.start()
+  expect(server.getFileStore()).toBeInstanceOf(LocalFileStore)
   origin = portReservation.origin
   client = createClient(origin, ANON_KEY)
 })
@@ -234,3 +236,6 @@ describe('storage-local: bucket name validation', () => {
     expect(encodedRes.status).toBe(400)
   })
 })
+
+// @new-code-test positive src/core/app.ts
+// @new-code-test negative src/core/app.ts

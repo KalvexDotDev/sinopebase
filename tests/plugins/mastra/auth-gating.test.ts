@@ -217,7 +217,10 @@ describe('Mastra Auth — real agent catalogue', () => {
         }),
       )
       expect(response.status).toBe(401)
-      expect(await response.text()).not.toContain('instructions')
+      expect(await response.json()).toEqual({
+        error: 'Invalid or missing Authorization header',
+        status: 401,
+      })
     },
   )
 
@@ -271,3 +274,6 @@ describe('Mastra Auth — real inference routes', () => {
     }
   })
 })
+
+// @new-code-test positive src/plugins/mastra/plugin.ts
+// @new-code-test negative src/plugins/mastra/plugin.ts
