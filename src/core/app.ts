@@ -507,7 +507,9 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
+import { authorizeApiRequest, requiresApiAuthorization } from '~/core/api-authorization'
 import { Cron } from '~/tools/cron/cron'
+import { parseS3Endpoint } from '~/tools/filesystem/s3-endpoint'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
@@ -553,33 +555,19 @@ import { MigrationRunner } from './migrations_runner'
  * The main store is initialized after migrations run, so bucket migrations
  * (MIGRATIONS_BUCKET) construct their own here — they only need list/read.
  */
+function storageSetting(configured: string | undefined, environment: string | undefined): string {
+  return configured || environment || ''
+}
+
 function createMigrationsFileStore(config: AppConfig): IFileStore {
-  const s3Endpoint = config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
-  const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
-  const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
+  const s3Endpoint = storageSetting(config.minioEndpoint, process.env.RUSTFS_ENDPOINT)
+  const s3AccessKey = storageSetting(config.minioAccessKey, process.env.RUSTFS_ACCESS_KEY)
+  const s3SecretKey = storageSetting(config.minioSecretKey, process.env.RUSTFS_SECRET_KEY)
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
-    // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
-    // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
-    let host = s3Endpoint
-    let port = 9000
-    let useSSL = false
-    try {
-      const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
-      host = url.hostname
-      if (url.port) port = Number(url.port)
-      useSSL = url.protocol === 'https:'
-    } catch {
-      // Fallback: treat as bare host:port
-      const parts = s3Endpoint.split(':')
-      host = parts[0] ?? s3Endpoint
-      if (parts[1]) port = Number(parts[1])
-    }
     return new S3FileStore({
-      endpoint: host,
-      port,
+      ...parseS3Endpoint(s3Endpoint),
       accessKey: s3AccessKey,
       secretKey: s3SecretKey,
-      useSSL,
     })
   }
   return new LocalFileStore(config.dataDir ?? './pb_data')
@@ -1276,59 +1264,23 @@ export class Sinopebase {
       // route registered on this chain. Instance-scoped (not global) so plugins
       // and sub-apps are not gated by default — they opt in via their own auth.
       .onRequest(async ({ request, set }) => {
-        const url = new URL(request.url)
-        if (url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/storage/v1/')) {
-          if (request.method === 'OPTIONS') return
-          if (url.pathname.startsWith('/storage/v1/object/public/')) return
-          const authHeader = request.headers.get('authorization') ?? ''
-          const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
-          // M11: timing-safe comparison for service role key
-          if (Equal(token, this.cachedServiceRoleKey)) {
-            // H11: audit log for service_role operations. The request logger
-            // below persists ONE _logs entry per request — flag it as an
-            // audit entry instead of issuing a second DB write.
-            logger.info('audit:service_role', { method: request.method, path: url.pathname })
+        if (!requiresApiAuthorization(request)) return
+        try {
+          const context = await authorizeApiRequest(request, resolveRealtimeContext)
+          if (context.role === 'service_role') {
+            logger.info('audit:service_role', {
+              method: request.method,
+              path: new URL(request.url).pathname,
+            })
             const meta = requestMeta.get(request)
             if (meta) meta.auditServiceRole = true
-            postgrestContexts.set(request, { role: 'service_role' })
-            return
           }
-          if (
-            Equal(token, this.cachedAnonKey) &&
-            (url.pathname.startsWith('/storage/v1/') ||
-              // supabase parity: anon may POST RPC — policies gate the data.
-              (request.method === 'POST' && url.pathname.startsWith('/rest/v1/rpc/')) ||
-              request.method === 'GET' ||
-              request.method === 'HEAD')
-          ) {
-            postgrestContexts.set(request, { role: 'anon' })
-            return
-          }
-          if (!token) {
-            set.status = 401
-            return { message: 'Authorization required', code: '401' }
-          }
-          try {
-            if (this.auth) {
-              const row = await lookupSessionByToken(this.auth, token)
-              if (!row) {
-                set.status = 401
-                return { message: 'Invalid authorization token', code: '401' }
-              }
-              postgrestContexts.set(request, {
-                role: 'authenticated',
-                userId: row.id,
-              })
-            } else {
-              const payload = await verifyAccessToken(token)
-              postgrestContexts.set(request, {
-                role: 'authenticated',
-                userId: payload.sub,
-              })
-            }
-          } catch {
-            set.status = 401
-            return { message: 'Invalid authorization token', code: '401' }
+          postgrestContexts.set(request, context)
+        } catch (error) {
+          set.status = 401
+          return {
+            message: error instanceof Error ? error.message : 'Invalid authorization token',
+            code: '401',
           }
         }
       })

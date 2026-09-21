@@ -234,7 +234,11 @@ export class MastraPlugin {
     // ---- Agent CRUD + chat routes (with request-scoped context) ----
     const agentRoutes = new Elysia({ name: 'sinopebase-mastra-agents' })
       // List agents
-      .get('/api/mastra/agents', async ({ request }) => {
+      .get('/api/mastra/agents', async ({ request, set }) => {
+        if (!(await checkAuth(request))) {
+          set.status = 401
+          return { error: 'Invalid or missing Authorization header', status: 401 }
+        }
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)
           if (user) {

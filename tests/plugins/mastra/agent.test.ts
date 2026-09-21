@@ -19,6 +19,7 @@ describe('Mastra AI Plugin — agents', () => {
   let app: Sinopebase
   let baseUrl: string
   let prevOpenAIKey: string | undefined
+  const fixtureId = crypto.randomUUID()
 
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
@@ -38,11 +39,15 @@ describe('Mastra AI Plugin — agents', () => {
     await portReservation.release()
 
     await app.start()
+    const database = app.getDatabase()
+    if (!database) throw new Error('PostgreSQL is required for the MCP test')
+    await database.insert('todos', { id: fixtureId, task: 'MCP test fixture' })
 
     baseUrl = portReservation.origin
   })
 
   afterAll(async () => {
+    await app.getDatabase()?.delete('todos', [{ column: 'id', operator: 'eq', value: fixtureId }])
     await app.stop()
     if (prevOpenAIKey) process.env.OPENAI_API_KEY = prevOpenAIKey
   })
