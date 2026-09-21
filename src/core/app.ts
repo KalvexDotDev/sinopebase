@@ -1267,6 +1267,13 @@ export class Sinopebase {
         if (url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/storage/v1/')) {
           if (request.method === 'OPTIONS') return
           if (url.pathname.startsWith('/storage/v1/object/public/')) return
+          // Signed downloads authorize their exact object with an expiring HMAC.
+          // Do not exempt signing, uploads, other methods, or nested paths.
+          if (
+            request.method === 'GET' &&
+            /^\/storage\/v1\/object\/signed\/[^/]+$/.test(url.pathname)
+          )
+            return
           const authHeader = request.headers.get('authorization') ?? ''
           const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
           // M11: timing-safe comparison for service role key
