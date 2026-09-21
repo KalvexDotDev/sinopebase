@@ -9,7 +9,15 @@ let app: Sinopebase
 let origin: string
 beforeAll(async () => {
   const port = await reserveLoopbackPort()
-  app = new Sinopebase({ port: port.port, postgresUrl: requirePostgres() })
+  app = new Sinopebase({
+    port: port.port,
+    postgresUrl: requirePostgres(),
+    // Other app fixtures publish their development keys to process.env.
+    // Pin valid production-compatible fixture keys rather than inherit them.
+    serviceRoleKey: crypto.randomUUID() + crypto.randomUUID(),
+    anonKey: crypto.randomUUID() + crypto.randomUUID(),
+    jwtSecret: crypto.randomUUID() + crypto.randomUUID(),
+  })
   await port.release()
   await app.start()
   origin = port.origin

@@ -3,13 +3,13 @@
 //
 // Two test groups:
 //   1. AsyncLocalStorage unit tests (no HTTP needed)
-//   2. HTTP auth gating via Elysia fetch() with mocked session lookup
+//   2. HTTP auth gating via Elysia fetch() with a request-local session adapter
 // ---------------------------------------------------------------------------
 
-import { beforeAll, describe, expect, it, mock } from 'bun:test'
+import { beforeAll, describe, expect, it } from 'bun:test'
 
 // ---------------------------------------------------------------------------
-// Mock lookupSessionByToken — must run before any import of auth-better
+// Session fixture scoped to this suite
 // ---------------------------------------------------------------------------
 
 const MOCK_SESSION = {
@@ -25,16 +25,26 @@ const MOCK_SESSION = {
 
 const VALID_TOKEN = 'sinopebase-valid-test-token'
 
-mock.module('~/tools/auth-better', () => ({
-  lookupSessionByToken: async (_auth: unknown, token: string | null) => {
-    if (token === VALID_TOKEN) return MOCK_SESSION
-    return null
-  },
-}))
-
-// ---------------------------------------------------------------------------
-// Imports — after mock.module so auth-better resolves via the mock
-// ---------------------------------------------------------------------------
+// A private adapter exercises the real lookup without replacing exports used by other suites.
+function fixtureAuth(): import('~/tools/auth-better').SinopebaseAuth {
+  return {
+    __db: {
+      selectFrom() {
+        let token: unknown
+        const query = {
+          innerJoin: () => query,
+          select: () => query,
+          where(column: string, _operator: string, value: unknown) {
+            if (column === 'session.token') token = value
+            return query
+          },
+          execute: async () => (token === VALID_TOKEN ? [MOCK_SESSION] : []),
+        }
+        return query
+      },
+    },
+  } as unknown as import('~/tools/auth-better').SinopebaseAuth
+}
 
 import { Elysia } from 'elysia'
 import type { AuthContext } from '~/plugins/mastra/plugin'
@@ -111,14 +121,9 @@ describe('Mastra Auth — HTTP gating', () => {
   let app: Elysia
 
   beforeAll(() => {
-    // Minimal Elysia app with auth middleware — use a truthy auth object so
-    // validateAIRequest delegates to the mocked lookupSessionByToken.
-    // Minimal Elysia app with auth middleware — cast through unknown because the
-    // mock auth {} doesn't satisfy SinopebaseAuth's full generic type extension.
+    // Pass the private adapter through the real session lookup.
     app = (new Elysia() as unknown as Elysia)
-      .use(
-        createAuthMiddleware({} as unknown as import('~/tools/auth-better').SinopebaseAuth, true),
-      )
+      .use(createAuthMiddleware(fixtureAuth(), true))
       .post('/api/mastra/chat', async ({ request, set: _set }) => {
         const authCtx = (request as unknown as Record<string, unknown>).__authContext as
           | AuthContext
@@ -207,10 +212,7 @@ describe('Mastra Auth — real agent catalogue', () => {
     async (authorization) => {
       const { MastraPlugin } = await import('~/plugins/mastra/plugin')
       const plugin = new MastraPlugin({ requireAuth: true })
-      const app = await plugin.register(
-        new Elysia(),
-        {} as unknown as import('~/tools/auth-better').SinopebaseAuth,
-      )
+      const app = await plugin.register(new Elysia(), fixtureAuth())
       const response = await app.fetch(
         new Request('http://localhost/api/mastra/agents', {
           headers: authorization ? { Authorization: authorization } : {},
@@ -227,10 +229,7 @@ describe('Mastra Auth — real agent catalogue', () => {
   it('retains catalogue access after token verification', async () => {
     const { MastraPlugin } = await import('~/plugins/mastra/plugin')
     const plugin = new MastraPlugin({ requireAuth: true })
-    const app = await plugin.register(
-      new Elysia(),
-      {} as unknown as import('~/tools/auth-better').SinopebaseAuth,
-    )
+    const app = await plugin.register(new Elysia(), fixtureAuth())
     const response = await app.fetch(
       new Request('http://localhost/api/mastra/agents', {
         headers: { Authorization: `Bearer ${VALID_TOKEN}` },
@@ -254,10 +253,7 @@ describe('Mastra Auth — real inference routes', () => {
   it.each(routes)('rejects absent and invalid credentials at %s', async (path) => {
     const { MastraPlugin } = await import('~/plugins/mastra/plugin')
     const plugin = new MastraPlugin({ requireAuth: true })
-    const app = await plugin.register(
-      new Elysia(),
-      {} as unknown as import('~/tools/auth-better').SinopebaseAuth,
-    )
+    const app = await plugin.register(new Elysia(), fixtureAuth())
     for (const authorization of [undefined, 'Bearer invalid-token']) {
       const response = await app.fetch(
         new Request(`http://localhost${path}`, {

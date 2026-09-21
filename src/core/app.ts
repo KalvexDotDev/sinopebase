@@ -507,6 +507,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
+import { authorizeApiRequest, requiresApiAuthorization } from '~/core/api-authorization'
 import { Cron } from '~/tools/cron/cron'
 import { parseS3Endpoint } from '~/tools/filesystem/s3-endpoint'
 import type { Mailer } from '~/tools/mailer/mailer'
@@ -1263,66 +1264,23 @@ export class Sinopebase {
       // route registered on this chain. Instance-scoped (not global) so plugins
       // and sub-apps are not gated by default — they opt in via their own auth.
       .onRequest(async ({ request, set }) => {
-        const url = new URL(request.url)
-        if (url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/storage/v1/')) {
-          if (request.method === 'OPTIONS') return
-          if (url.pathname.startsWith('/storage/v1/object/public/')) return
-          // Signed downloads authorize their exact object with an expiring HMAC.
-          // Do not exempt signing, uploads, other methods, or nested paths.
-          if (
-            request.method === 'GET' &&
-            /^\/storage\/v1\/object\/signed\/[^/]+$/.test(url.pathname)
-          )
-            return
-          const authHeader = request.headers.get('authorization') ?? ''
-          const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
-          // M11: timing-safe comparison for service role key
-          if (Equal(token, this.cachedServiceRoleKey)) {
-            // H11: audit log for service_role operations. The request logger
-            // below persists ONE _logs entry per request — flag it as an
-            // audit entry instead of issuing a second DB write.
-            logger.info('audit:service_role', { method: request.method, path: url.pathname })
+        if (!requiresApiAuthorization(request)) return
+        try {
+          const context = await authorizeApiRequest(request, resolveRealtimeContext)
+          if (context.role === 'service_role') {
+            logger.info('audit:service_role', {
+              method: request.method,
+              path: new URL(request.url).pathname,
+            })
             const meta = requestMeta.get(request)
             if (meta) meta.auditServiceRole = true
-            postgrestContexts.set(request, { role: 'service_role' })
-            return
           }
-          if (
-            Equal(token, this.cachedAnonKey) &&
-            (url.pathname.startsWith('/storage/v1/') ||
-              // supabase parity: anon may POST RPC — policies gate the data.
-              (request.method === 'POST' && url.pathname.startsWith('/rest/v1/rpc/')) ||
-              request.method === 'GET' ||
-              request.method === 'HEAD')
-          ) {
-            postgrestContexts.set(request, { role: 'anon' })
-            return
-          }
-          if (!token) {
-            set.status = 401
-            return { message: 'Authorization required', code: '401' }
-          }
-          try {
-            if (this.auth) {
-              const row = await lookupSessionByToken(this.auth, token)
-              if (!row) {
-                set.status = 401
-                return { message: 'Invalid authorization token', code: '401' }
-              }
-              postgrestContexts.set(request, {
-                role: 'authenticated',
-                userId: row.id,
-              })
-            } else {
-              const payload = await verifyAccessToken(token)
-              postgrestContexts.set(request, {
-                role: 'authenticated',
-                userId: payload.sub,
-              })
-            }
-          } catch {
-            set.status = 401
-            return { message: 'Invalid authorization token', code: '401' }
+          postgrestContexts.set(request, context)
+        } catch (error) {
+          set.status = 401
+          return {
+            message: error instanceof Error ? error.message : 'Invalid authorization token',
+            code: '401',
           }
         }
       })

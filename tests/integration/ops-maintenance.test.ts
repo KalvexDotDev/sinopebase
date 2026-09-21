@@ -111,8 +111,13 @@ describe('Log retention', () => {
     const second = await bootApp()
     const app2 = second.app
     try {
-      // Give the startup prune a chance to remove the stale row.
-      await sleep(1_500)
+      // Startup schedules the prune query; wait for its observable result.
+      await pollUntil(async () => {
+        const result = await adminPool.query(`SELECT 1 FROM _logs WHERE message = $1 LIMIT 1`, [
+          `old-${marker}`,
+        ])
+        return result.rowCount === 0
+      })
       const [oldRow, freshRow] = await Promise.all([
         adminPool.query(`SELECT 1 FROM _logs WHERE message = $1 LIMIT 1`, [`old-${marker}`]),
         adminPool.query(`SELECT 1 FROM _logs WHERE message = $1 LIMIT 1`, [`fresh-${marker}`]),

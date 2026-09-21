@@ -1,10 +1,11 @@
 // @new-code-test positive src/core/app.ts
 // @new-code-test negative src/core/app.ts
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test'
 import { Client } from 'minio'
 import { Pool } from 'pg'
 import { signUrl } from '~/apis/signed-url'
 import { Sinopebase } from '~/core/app'
+import { logger } from '~/core/logger'
 import { createClient, type SinopebaseClient } from '~/sdk/client'
 import { S3FileStore } from '~/tools/filesystem/store-s3'
 import {
@@ -77,6 +78,50 @@ afterAll(async () => {
 })
 
 describe('private storage signed downloads through the complete app', () => {
+  it('audits service-role requests but does not label anonymous-key traffic as privileged', async () => {
+    const audit = spyOn(logger, 'info')
+    const objectPath = `/storage/v1/object/${bucket}/${path}`
+    try {
+      const privileged = await fetch(`${origin}${objectPath}`, {
+        headers: { authorization: `Bearer ${serviceKey}` },
+      })
+      expect(privileged.status).toBe(200)
+      expect(audit).toHaveBeenCalledWith('audit:service_role', { method: 'GET', path: objectPath })
+      audit.mockClear()
+      await fetch(`${origin}${objectPath}`, { headers: { authorization: `Bearer ${anonKey}` } })
+      expect(
+        audit.mock.calls.some(
+          ([message, context]) => message === 'audit:service_role' && context?.path === objectPath,
+        ),
+      ).toBe(false)
+    } finally {
+      audit.mockRestore()
+    }
+  })
+
+  it('fails closed with a stable error response if authorization auditing throws a non-Error', async () => {
+    const objectPath = `/storage/v1/object/${bucket}/${path}`
+    const original = logger.info.bind(logger)
+    const audit = spyOn(logger, 'info').mockImplementation((message, context) => {
+      if (message === 'audit:service_role' && context?.path === objectPath) {
+        throw 'synthetic audit failure'
+      }
+      original(message, context)
+    })
+    try {
+      const response = await fetch(`${origin}/storage/v1/object/${bucket}/${path}`, {
+        headers: { authorization: `Bearer ${serviceKey}` },
+      })
+      expect(response.status).toBe(401)
+      expect(await response.json()).toMatchObject({
+        message: 'Invalid authorization token',
+        code: '401',
+      })
+    } finally {
+      audit.mockRestore()
+    }
+  })
+
   it('accepts a valid signed GET without bearer credentials', async () => {
     const response = await fetch(signedUrl)
     expect(response.status).toBe(200)
@@ -120,6 +165,10 @@ describe('signed download authorization remains narrowly scoped', () => {
         body: request.body === undefined ? undefined : JSON.stringify(request.body),
       })
       expect(response.status).toBe(401)
+      expect(await response.json()).toMatchObject({
+        message: 'Authorization required',
+        code: '401',
+      })
     }
     const unchanged = await admin.storage.from(bucket).download(path)
     expect(unchanged.error).toBeNull()
