@@ -1,3 +1,5 @@
+// @new-code-test positive src/core/db-postgres.ts
+// @new-code-test negative src/core/db-postgres.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import type { IDatabase } from './db-interface'
 import { hasDatabaseSchemaCapability } from './db-interface'
@@ -102,5 +104,20 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       }),
     ).rejects.toThrow('Unsupported filter operator')
     expect(hasDatabaseSchemaCapability(db)).toBe(false)
+  })
+  it('projects explicit and empty column sets while preserving row order and cardinality', async () => {
+    expect(await db.select(table, { columns: ['id'], order: [{ column: 'id' }] })).toEqual([
+      { id: 'a' },
+      { id: 'b' },
+      { id: 'c' },
+    ])
+    expect(await db.select(table, { columns: [], order: [{ column: 'id' }] })).toEqual([{}, {}, {}])
+    expect(
+      await db.select(table, {
+        columns: [],
+        filters: [{ column: 'id', operator: 'eq', value: 'absent' }],
+      }),
+    ).toEqual([])
+    expect((await db.select(table, {}))[0]).toHaveProperty('task')
   })
 })

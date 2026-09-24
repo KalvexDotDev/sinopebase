@@ -38,6 +38,7 @@ interface RangeInfo {
 }
 
 interface PostgrestSelectOptions {
+  columns?: string[]
   filters: ParsedFilter[]
   orFilters: ParsedFilter[][]
   order?: string
@@ -139,7 +140,11 @@ export function mountPostgrestRoutes(
       request,
       resolveContext,
       async (requestDb) => {
+        const columns = query.select
+          ? await selectionColumns(requestDb, table, parseSelect(query.select))
+          : undefined
         const selected = await selectRows(requestDb, table, {
+          columns,
           filters,
           orFilters,
           order,
@@ -460,6 +465,7 @@ async function selectRows(
   options: PostgrestSelectOptions,
 ): Promise<SelectResult> {
   const rows = await db.select(table, {
+    columns: options.columns,
     filters: options.filters,
     orFilters: options.orFilters.filter((group) => group.length > 0),
     order: parseOrderParam(options.order),
@@ -480,7 +486,7 @@ async function countRows(
   const filteredOrGroups = orFilters.filter((group) => group.length > 0)
   if (filteredOrGroups.length > 0) {
     // OR-filtered count requires a select pass (db.count only supports flat filters).
-    const rows = await db.select(table, { filters, orFilters: filteredOrGroups })
+    const rows = await db.select(table, { columns: [], filters, orFilters: filteredOrGroups })
     return rows.length
   }
   return db.count(table, filters)
@@ -504,6 +510,28 @@ function parseOrderParam(rawOrder?: string): OrderBy[] | undefined {
     .filter((part): part is OrderBy => part !== null)
 
   return order.length > 0 ? order : undefined
+}
+
+/** Fetch only requested fields and join keys; PostgreSQL still authorizes every column. */
+async function selectionColumns(
+  db: IDatabase,
+  table: string,
+  selections: Selection[],
+  required: string[] = [],
+): Promise<string[] | undefined> {
+  const columns = new Set(required)
+  for (const selection of selections) {
+    if (selection.kind === 'column') {
+      if (selection.source === '*') return undefined
+      columns.add(selection.source)
+    } else {
+      const relationship = await resolveRelationship(db, table, selection)
+      columns.add(
+        relationship.sourceTable === table ? relationship.sourceColumn : relationship.targetColumn,
+      )
+    }
+  }
+  return [...columns]
 }
 
 async function applySelection(
@@ -531,58 +559,63 @@ async function materializeSelection(
   for (const selection of selections) {
     if (selection.kind !== 'relationship') continue
 
-    const relationship = await resolveRelationship(db, table, selection)
-    const outbound = relationship.sourceTable === table
-    const localColumn = outbound ? relationship.sourceColumn : relationship.targetColumn
-    const relatedTable = outbound ? relationship.targetTable : relationship.sourceTable
-    const relatedColumn = outbound ? relationship.targetColumn : relationship.sourceColumn
-    const localValues = [
-      ...new Set(
-        selectedRows
-          .map(({ source }) => source[localColumn])
-          .filter((value) => value !== null && value !== undefined),
-      ),
-    ]
-
-    const relatedRows =
-      localValues.length === 0
-        ? []
-        : (
-            await selectRows(db, relatedTable, {
-              filters: [
-                {
-                  column: relatedColumn,
-                  operator: 'in',
-                  value: localValues,
-                },
-              ],
-              orFilters: [],
-            })
-          ).rows
-    const selectedRelatedRows = await materializeSelection(
-      db,
-      relatedTable,
-      relatedRows,
-      selection.fields,
-    )
-    const relatedByValue = new Map<unknown, SelectedRow[]>()
-
-    for (const related of selectedRelatedRows) {
-      const value = related.source[relatedColumn]
-      const matches = relatedByValue.get(value) ?? []
-      matches.push(related)
-      relatedByValue.set(value, matches)
-    }
-
-    selectedRows = selectedRows.filter((selectedRow) => {
-      const matches = relatedByValue.get(selectedRow.source[localColumn]) ?? []
-      const embedded = outbound ? (matches[0]?.result ?? null) : matches.map(({ result }) => result)
-      selectedRow.result[selection.output] = embedded
-      return !selection.inner || matches.length > 0
-    })
+    selectedRows = await embedRelationship(db, table, selectedRows, selection)
   }
 
   return selectedRows
+}
+
+async function embedRelationship(
+  db: IDatabase,
+  table: string,
+  selectedRows: SelectedRow[],
+  selection: RelationshipSelection,
+): Promise<SelectedRow[]> {
+  const relationship = await resolveRelationship(db, table, selection)
+  const outbound = relationship.sourceTable === table
+  const localColumn = outbound ? relationship.sourceColumn : relationship.targetColumn
+  const relatedTable = outbound ? relationship.targetTable : relationship.sourceTable
+  const relatedColumn = outbound ? relationship.targetColumn : relationship.sourceColumn
+  const localValues = [
+    ...new Set(
+      selectedRows.map(({ source }) => source[localColumn]).filter((value) => value != null),
+    ),
+  ]
+
+  const relatedRows = (
+    await selectRows(db, relatedTable, {
+      columns: await selectionColumns(db, relatedTable, selection.fields, [relatedColumn]),
+      filters: [{ column: relatedColumn, operator: 'in', value: localValues }],
+      orFilters: [],
+    })
+  ).rows
+  const selectedRelatedRows = await materializeSelection(
+    db,
+    relatedTable,
+    relatedRows,
+    selection.fields,
+  )
+  const relatedByValue = groupRelatedRows(selectedRelatedRows, relatedColumn)
+
+  return selectedRows.filter((selectedRow) => {
+    const matches = relatedByValue.get(selectedRow.source[localColumn]) ?? []
+    const embedded = outbound ? (matches[0]?.result ?? null) : matches.map(({ result }) => result)
+    selectedRow.result[selection.output] = embedded
+    return !selection.inner || matches.length > 0
+  })
+}
+
+function groupRelatedRows(selectedRelatedRows: SelectedRow[], relatedColumn: string) {
+  const relatedByValue = new Map<unknown, SelectedRow[]>()
+
+  for (const related of selectedRelatedRows) {
+    const value = related.source[relatedColumn]
+    const matches = relatedByValue.get(value) ?? []
+    matches.push(related)
+    relatedByValue.set(value, matches)
+  }
+
+  return relatedByValue
 }
 
 function projectColumns(

@@ -16,6 +16,8 @@ export interface OrderBy {
 }
 
 export interface SelectOptions {
+  /** Omit for all columns; an empty list selects no column values. */
+  columns?: string[]
   filters?: Filter[]
   /** OR-of-AND groups: each inner group is ANDed, then the groups are ORed. */
   orFilters?: Filter[][]

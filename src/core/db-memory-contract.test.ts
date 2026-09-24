@@ -1,3 +1,5 @@
+// @new-code-test positive src/core/db-memory-adapter.ts
+// @new-code-test negative src/core/db-memory-adapter.ts
 import { describe, expect, it } from 'bun:test'
 import type { IDatabase } from './db-interface'
 import { hasDatabaseSchemaCapability } from './db-interface'
@@ -85,6 +87,27 @@ describe('MemoryDatabaseAdapter canonical database contract', () => {
         filters: [{ column: 'id', operator: 'unsupported', value: 'a' }],
       }),
     ).rejects.toThrow('Unsupported filter operator')
+  })
+
+  it('projects requested fields after filtering without exposing unrequested values', async () => {
+    const db: IDatabase = new MemoryDatabaseAdapter()
+    await db.createTable('projection')
+    await db.insert('projection', { id: 'one', label: 'first', hidden: 'internal-one' })
+    await db.insert('projection', { id: 'two', label: 'second', hidden: 'internal-two' })
+    expect(
+      await db.select('projection', {
+        columns: ['label'],
+        filters: [{ column: 'id', operator: 'eq', value: 'one' }],
+      }),
+    ).toEqual([{ label: 'first' }])
+    expect(await db.select('projection', { columns: [] })).toEqual([{}, {}])
+    expect(
+      await db.select('projection', {
+        columns: ['label'],
+        filters: [{ column: 'id', operator: 'eq', value: 'missing' }],
+      }),
+    ).toEqual([])
+    expect((await db.select('projection', {}))[0]?.hidden).toBe('internal-one')
   })
 
   it('does not claim unsafe record-table schema mutation support', () => {
