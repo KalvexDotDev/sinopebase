@@ -237,7 +237,7 @@ export class MastraPlugin {
       .get('/api/mastra/agents', async ({ request, set }) => {
         if (!(await checkAuth(request))) {
           set.status = 401
-          return { error: 'Unauthorized' }
+          return { error: 'Invalid or missing Authorization header', status: 401 }
         }
         if (mastraAuth) {
           const user = await mastraAuth.authorize(request)

@@ -53,7 +53,10 @@ test('closed public signup still permits service-authorized ordinary-user provis
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
     expect(response.status).toBe(401)
-    expect(await response.json()).toEqual({ error: 'Unauthorized' })
+    expect(await response.json()).toEqual({
+      error: 'Invalid or missing Authorization header',
+      status: 401,
+    })
   }
   for (const path of ['/auth/v1/signup', '/api/auth/sign-up/email']) {
     expect((await post(path, { email, password, name: 'Test' })).status).toBe(403)
