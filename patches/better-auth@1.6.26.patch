@@ -1,0 +1,10 @@
+diff --git a/dist/api/routes/sign-in.mjs b/dist/api/routes/sign-in.mjs
+--- a/dist/api/routes/sign-in.mjs
++++ b/dist/api/routes/sign-in.mjs
+@@ -180,5 +180,5 @@
+ 				accessToken: c.body.idToken.accessToken
+ 			},
+ 			callbackURL: c.body.callbackURL,
+-			disableSignUp: provider.disableImplicitSignUp && !c.body.requestSignUp || provider.disableSignUp
++			disableSignUp: provider.disableImplicitSignUp && !c.body.requestSignUp || provider.options?.disableSignUp
+ 		});
