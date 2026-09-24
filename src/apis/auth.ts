@@ -69,6 +69,12 @@ export function signupsAllowed(): boolean {
   return process.env.ALLOW_SIGNUPS !== 'false'
 }
 
+function nativeSignupBlocked(request: Request): boolean {
+  if (signupsAllowed()) return false
+  const path = new URL(request.url).pathname
+  return path.startsWith('/api/auth/sign-up/')
+}
+
 function userResponse(user: ReturnType<typeof authStore.toUser>) {
   return user
 }
@@ -456,6 +462,11 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
 
   return (
     new Elysia({ name: 'sinopebase-auth' })
+      .onBeforeHandle(({ request, set }) => {
+        if (!nativeSignupBlocked(request)) return
+        set.status = 403
+        return errorResponse('Signups are currently invite-only.', 403)
+      })
       // List configured OAuth providers for the admin UI login page.
       // Must be registered before the better-auth catch-all below.
       .get('/api/auth/oauth-providers', () => {

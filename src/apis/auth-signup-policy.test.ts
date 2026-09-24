@@ -117,6 +117,115 @@ describe('signup policy', () => {
     })
   })
 
+  it('rejects the native better-auth signup route before dispatch when signup is closed', async () => {
+    process.env.SINOPEBASE_PRODUCTION = 'true'
+    process.env.ALLOW_SIGNUPS = 'false'
+    let dispatched = false
+    const fakeAuth: Parameters<typeof createAuthPlugin>[0] = {
+      api: {
+        signUpEmail: async () => {},
+        signInEmail: async () => {
+          throw new Error('unexpected sign in')
+        },
+        signOut: async () => {},
+        getSession: async () => null,
+      },
+      handler: async () => {
+        dispatched = true
+        return Response.json({ user: { id: 'should-not-exist' } })
+      },
+    }
+    const response = await createAuthPlugin(fakeAuth).handle(
+      new Request('http://localhost/api/auth/sign-up/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email: 'blocked-native@example.invalid',
+          password: 'local-test-password-123',
+          name: 'Local Test',
+        }),
+      }),
+    )
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      message: 'Signups are currently invite-only.',
+      status: 403,
+    })
+    expect(dispatched).toBe(false)
+  })
+
+  it('fails closed on native signup in production when the flag is absent', async () => {
+    process.env.SINOPEBASE_PRODUCTION = 'true'
+    delete process.env.ALLOW_SIGNUPS
+    const fakeAuth: Parameters<typeof createAuthPlugin>[0] = {
+      api: {
+        signUpEmail: async () => {},
+        signInEmail: async () => {
+          throw new Error('unexpected sign in')
+        },
+        signOut: async () => {},
+        getSession: async () => null,
+      },
+      handler: async () => {
+        throw new Error('native signup must not be dispatched')
+      },
+    }
+    const response = await createAuthPlugin(fakeAuth).handle(
+      new Request('http://localhost/api/auth/sign-up/email', { method: 'POST' }),
+    )
+    expect(response.status).toBe(403)
+  })
+
+  it('passes native signup to better-auth when explicitly enabled', async () => {
+    process.env.SINOPEBASE_PRODUCTION = 'true'
+    process.env.ALLOW_SIGNUPS = 'true'
+    let dispatched = false
+    const fakeAuth: Parameters<typeof createAuthPlugin>[0] = {
+      api: {
+        signUpEmail: async () => {},
+        signInEmail: async () => {
+          throw new Error('unexpected sign in')
+        },
+        signOut: async () => {},
+        getSession: async () => null,
+      },
+      handler: async () => {
+        dispatched = true
+        return Response.json({ ok: true })
+      },
+    }
+    const response = await createAuthPlugin(fakeAuth).handle(
+      new Request('http://localhost/api/auth/sign-up/email', { method: 'POST' }),
+    )
+    expect(response.status).toBe(200)
+    expect(dispatched).toBe(true)
+  })
+
+  it('keeps non-signup better-auth routes available when signup is closed', async () => {
+    process.env.SINOPEBASE_PRODUCTION = 'true'
+    process.env.ALLOW_SIGNUPS = 'false'
+    const dispatched: string[] = []
+    const fakeAuth: Parameters<typeof createAuthPlugin>[0] = {
+      api: {
+        signUpEmail: async () => {},
+        signInEmail: async () => {
+          throw new Error('unexpected sign in')
+        },
+        signOut: async () => {},
+        getSession: async () => null,
+      },
+      handler: async (request: Request) => {
+        dispatched.push(new URL(request.url).pathname)
+        return Response.json({ ok: true })
+      },
+    }
+    const response = await createAuthPlugin(fakeAuth).handle(
+      new Request('http://localhost/api/auth/request-password-reset', { method: 'POST' }),
+    )
+    expect(response.status).toBe(200)
+    expect(dispatched).toEqual(['/api/auth/request-password-reset'])
+  })
+
   it('allows an explicitly enabled production signup through better-auth', async () => {
     process.env.SINOPEBASE_PRODUCTION = 'true'
     process.env.ALLOW_SIGNUPS = 'true'
