@@ -10,6 +10,7 @@ WORKDIR /build
 # Install server and admin dependencies from their committed Bun lockfiles
 # before copying source, so dependency layers can be cached independently.
 COPY package.json bun.lock ./
+COPY patches ./patches
 RUN bun install --frozen-lockfile
 
 COPY ui/package.json ui/bun.lock ./ui/

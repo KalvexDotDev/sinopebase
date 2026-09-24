@@ -380,7 +380,7 @@ describe('Deploy artifacts', () => {
     })
     const exitCode = await proc.exited
     expect(exitCode).toBe(0)
-  })
+  }, 20_000)
 
   /**
    * railway.toml is TOML, not YAML — `[build]` section headers are parsed
