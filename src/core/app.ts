@@ -776,6 +776,12 @@ export class Sinopebase {
     }
   }
 
+  private createInstanceAuth(providers?: string[]) {
+    return this.auth
+      ? createAuthPlugin(this.auth, providers, this.cachedServiceRoleKey)
+      : authPlugin
+  }
+
   private async initializeServer(): Promise<void> {
     // Detect runtime mode: explicit config takes precedence, otherwise env auto-detect
     this.mode = this.config.mode ?? detectMode()
@@ -1270,7 +1276,7 @@ export class Sinopebase {
       .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
 
       // ── Auth — /auth/v1/* ──
-      .use(this.auth ? createAuthPlugin(this.auth, mergedProviderIds) : authPlugin)
+      .use((app) => app.use(this.createInstanceAuth(mergedProviderIds)))
 
       // Instance-scoped auth guard: applies to every /rest/v1/* and /storage/v1/*
       // route registered on this chain. Instance-scoped (not global) so plugins

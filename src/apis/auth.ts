@@ -8,7 +8,9 @@
  */
 
 import { Elysia } from 'elysia'
+import type { Kysely } from 'kysely'
 import { lookupSessionByToken } from '~/tools/auth-better'
+import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 import { signupsAllowed } from '~/tools/auth-better/signup-policy'
 import {
   type BetterAuthGetSessionResult,
@@ -16,6 +18,7 @@ import {
   bridgeGetUserResponse,
   bridgeSignInResponse,
 } from '~/tools/auth-better/supabase-bridge'
+import { createAdminUsersPlugin } from './admin-users'
 import {
   ACCESS_TOKEN_TTL,
   generateAccessToken,
@@ -440,7 +443,11 @@ function getSessionToken(result: BetterAuthGetSessionResult | null): string | nu
   return typeof token === 'string' && token.length > 0 ? token : null
 }
 
-export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: string[]) {
+export function createAuthPlugin(
+  auth: BetterAuthInstance,
+  oauthProviderIds?: string[],
+  serviceKey?: string,
+) {
   // Map known provider IDs to display labels and colors.
   // Source of truth: BUILTIN_SOCIAL from auth-better.
   const PROVIDER_LABELS: Record<string, { label: string; color: string }> = {
@@ -460,6 +467,7 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
 
   return (
     new Elysia({ name: 'sinopebase-auth' })
+      .use(createAdminUsersPlugin(auth.__db as unknown as Kysely<BetterAuthDatabase>, serviceKey))
       .onBeforeHandle(({ request, set }) => {
         if (!nativeSignupBlocked(request)) return
         set.status = 403
