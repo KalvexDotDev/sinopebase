@@ -51,9 +51,9 @@ describe('OAuth provider config mapping (createAuth)', () => {
     const auth = await createAuth(pool, { oauthProviders: providers })
 
     expect(auth.options.socialProviders).toEqual({
-      google: { clientId: 'g-cid', clientSecret: 'g-cs' },
-      github: { clientId: 'gh-cid', clientSecret: 'gh-cs' },
-      discord: { clientId: 'd-cid', clientSecret: 'd-cs' },
+      google: { clientId: 'g-cid', clientSecret: 'g-cs', disableSignUp: false },
+      github: { clientId: 'gh-cid', clientSecret: 'gh-cs', disableSignUp: false },
+      discord: { clientId: 'd-cid', clientSecret: 'd-cs', disableSignUp: false },
     })
     expect(genericProviderConfigs(auth)).toEqual([])
   })
