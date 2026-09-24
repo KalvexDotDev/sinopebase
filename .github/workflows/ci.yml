@@ -344,6 +344,14 @@ jobs:
           output: trivy-results.sarif
           exit-code: 1
           severity: CRITICAL,HIGH
+      - name: Build private staging bootstrap image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.staging-bootstrap
+          load: true
+          tags: sinopebase-staging-bootstrap:ci
+          cache-from: type=gha
 
   # ─── Deploy (Railway autodeploy with Wait for CI — no CI steps needed) ──
   # Railway watches `master` and deploys when all CI jobs pass.
