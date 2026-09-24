@@ -61,6 +61,8 @@ export interface CreateAuthOptions {
   extraOrigins?: string[]
   /** Deliver transactional email (password reset, verification). */
   sendEmail?: (mail: { to: string; subject: string; text: string; html?: string }) => Promise<void>
+  /** Disable Better Auth diagnostics only for a private maintenance command handling credentials. */
+  disableLogsForMaintenance?: true
 }
 
 /** Better Auth uses these provider flags at OAuth callback time, including explicit requestSignUp. */
@@ -144,10 +146,15 @@ function trustedOrigins(extraOrigins?: string[]) {
   ]
 }
 
+function maintenanceLogger(disabled?: true) {
+  return disabled ? { disabled: true } : undefined
+}
+
 function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typeof betterAuth>[0] {
   const allProviders = options?.oauthProviders ?? []
   return {
     database: pool,
+    logger: maintenanceLogger(options?.disableLogsForMaintenance),
     basePath: '/api/auth',
     advanced: { database: { generateId: () => crypto.randomUUID() } },
     ...mailerOptions(options?.sendEmail),
