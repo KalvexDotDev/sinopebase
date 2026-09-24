@@ -1,3 +1,9 @@
+// @new-code-test positive src/apis/postgrest.ts
+// @new-code-test negative src/apis/postgrest.ts
+// @new-code-test positive src/core/db-interface.ts
+// @new-code-test negative src/core/db-interface.ts
+// @new-code-test positive src/core/db-postgres.ts
+// @new-code-test negative src/core/db-postgres.ts
 import { afterAll, beforeAll, expect, it } from 'bun:test'
 import { Elysia } from 'elysia'
 import { mountPostgrestRoutes } from '~/apis/postgrest'
@@ -81,7 +87,7 @@ it('preserves owner RLS and anonymous denial', async () => {
 it('supports aliases, ordering and exact counts without reading ungranted values', async () => {
   const response = await app.handle(
     new Request(
-      'http://localhost/rest/v1/column_grant_progress?select=progress:id,phase&order=id.asc&or=(phase.eq.complete,phase.eq.pending)',
+      'http://localhost/rest/v1/column_grant_progress?select=progress:id,phase&limit=1&offset=0&order=id.asc&or=(phase.eq.complete,phase.eq.pending)',
       { headers: { prefer: 'count=exact' } },
     ),
   )

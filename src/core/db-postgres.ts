@@ -287,14 +287,25 @@ export class PostgresDatabase implements IDatabase {
           offset: positionalOffset,
         }
       : optionsOrFilters
-    const source = this.reader.selectFrom(table as never)
-    let query =
-      options.columns === undefined
-        ? source.selectAll()
-        : options.columns.length === 0
-          ? source.select(sql`1`.as('__projection'))
-          : source.select(options.columns.map((column) => sql.ref(column)) as never)
+    let query = this.selectProjection(table, options.columns)
+    query = this.selectFilters(query, options)
+    query = this.selectWindow(query, options)
 
+    const result = await query.execute()
+    return result as unknown as Record<string, unknown>[]
+  }
+
+  private selectProjection(table: string, columns: SelectOptions['columns']) {
+    const source = this.reader.selectFrom(table as never)
+    return columns === undefined
+      ? source.selectAll()
+      : source.select(columns.map((column) => sql.ref(column)) as never)
+  }
+
+  private selectFilters(
+    query: ReturnType<PostgresDatabase['selectProjection']>,
+    options: SelectOptions,
+  ) {
     for (const filter of options.filters ?? []) {
       query = this.applyFilter(query as never, filter) as never
     }
@@ -312,19 +323,30 @@ export class PostgresDatabase implements IDatabase {
       query = query.where(sql<boolean>`(${sql.join(groups, sql` OR `)})`) as never
     }
 
-    if (options.order) {
-      for (const order of options.order) {
-        query = query.orderBy(order.column as never, order.direction ?? 'asc')
-      }
-    }
+    return query
+  }
+
+  private selectWindow(
+    query: ReturnType<PostgresDatabase['selectProjection']>,
+    options: SelectOptions,
+  ) {
+    query = this.selectOrder(query, options.order)
 
     if (options.limit !== undefined) query = query.limit(options.limit)
     if (options.offset !== undefined) query = query.offset(options.offset)
 
-    const result = await query.execute()
-    return options.columns?.length === 0
-      ? result.map(() => ({}))
-      : (result as unknown as Record<string, unknown>[])
+    return query
+  }
+
+  private selectOrder(
+    query: ReturnType<PostgresDatabase['selectProjection']>,
+    orderBy: SelectOptions['order'],
+  ) {
+    for (const order of orderBy ?? []) {
+      query = query.orderBy(order.column as never, order.direction ?? 'asc')
+    }
+
+    return query
   }
 
   async update(
