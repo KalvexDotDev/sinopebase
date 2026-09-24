@@ -9,6 +9,7 @@
 
 import { Elysia } from 'elysia'
 import { lookupSessionByToken } from '~/tools/auth-better'
+import { signupsAllowed } from '~/tools/auth-better/signup-policy'
 import {
   type BetterAuthGetSessionResult,
   type BetterAuthSignInResult,
@@ -64,9 +65,12 @@ function errorResponse(message: string, status: number) {
 
 // Keep direct Supabase-compatible signup closed in production. Existing users
 // can still sign in; local development remains open unless explicitly disabled.
-export function signupsAllowed(): boolean {
-  if (process.env.SINOPEBASE_PRODUCTION === 'true') return process.env.ALLOW_SIGNUPS === 'true'
-  return process.env.ALLOW_SIGNUPS !== 'false'
+export { signupsAllowed }
+
+function nativeSignupBlocked(request: Request): boolean {
+  if (signupsAllowed()) return false
+  const path = new URL(request.url).pathname
+  return path.startsWith('/api/auth/sign-up/')
 }
 
 function userResponse(user: ReturnType<typeof authStore.toUser>) {
@@ -456,6 +460,11 @@ export function createAuthPlugin(auth: BetterAuthInstance, oauthProviderIds?: st
 
   return (
     new Elysia({ name: 'sinopebase-auth' })
+      .onBeforeHandle(({ request, set }) => {
+        if (!nativeSignupBlocked(request)) return
+        set.status = 403
+        return errorResponse('Signups are currently invite-only.', 403)
+      })
       // List configured OAuth providers for the admin UI login page.
       // Must be registered before the better-auth catch-all below.
       .get('/api/auth/oauth-providers', () => {
