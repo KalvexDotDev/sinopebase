@@ -512,7 +512,6 @@ import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
 import type { MigrationDB } from '../../migrations/types'
-import { createAdminUsersPlugin } from '../apis/admin-users'
 import {
   ApiError,
   BadRequestError,
@@ -775,6 +774,12 @@ export class Sinopebase {
       this.auth = null
       throw error
     }
+  }
+
+  private createInstanceAuth(providers?: string[]) {
+    return this.auth
+      ? createAuthPlugin(this.auth, providers, this.cachedServiceRoleKey)
+      : authPlugin
   }
 
   private async initializeServer(): Promise<void> {
@@ -1271,7 +1276,7 @@ export class Sinopebase {
       .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
 
       // ── Auth — /auth/v1/* ──
-      .use(this.auth ? createAuthPlugin(this.auth, mergedProviderIds) : authPlugin)
+      .use((app) => app.use(this.createInstanceAuth(mergedProviderIds)))
 
       // Instance-scoped auth guard: applies to every /rest/v1/* and /storage/v1/*
       // route registered on this chain. Instance-scoped (not global) so plugins
@@ -1367,10 +1372,6 @@ export class Sinopebase {
       const h = req.headers.get('authorization') ?? ''
       const tok = h.startsWith('Bearer ') ? h.slice(7) : h
       return Equal(tok, this.cachedServiceRoleKey)
-    }
-
-    if (this.auth && this.database instanceof PostgresDatabase) {
-      s4.use(createAdminUsersPlugin(this.database.getPool(), isSuperuser))
     }
 
     // ── Backup / restore endpoints — service-role only ──

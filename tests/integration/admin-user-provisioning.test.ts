@@ -48,16 +48,27 @@ function post(path: string, body: unknown, token?: string) {
 }
 
 test('closed public signup still permits service-authorized ordinary-user provisioning and login', async () => {
+  for (const token of [undefined, 'invalid-deployment-probe']) {
+    const response = await fetch(`${origin}/api/mastra/agents`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'Unauthorized' })
+  }
   for (const path of ['/auth/v1/signup', '/api/auth/sign-up/email']) {
     expect((await post(path, { email, password, name: 'Test' })).status).toBe(403)
   }
   for (const token of [undefined, 'provisioning-test-anon-key-at-least-32-chars', 'forged']) {
-    expect((await post('/auth/v1/admin/users', { email, password }, token)).status).toBe(403)
+    const denied = await post('/auth/v1/admin/users', { email, password }, token)
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toEqual({ message: 'Service authorization required.' })
   }
-  expect(
-    (await post('/auth/v1/admin/users', { email, password, role: 'admin' }, serviceKey)).status,
-  ).toBe(400)
-  const created = await post('/auth/v1/admin/users', { email, password }, serviceKey)
+  const invalid = await post('/auth/v1/admin/users', { email, password, role: 'admin' }, serviceKey)
+  expect(invalid.status).toBe(400)
+  expect(await invalid.json()).toEqual({
+    message: 'Valid email and a password between 12 and 128 characters required.',
+  })
+  const created = await post('/auth/v1/admin/users', { email: ` ${email} `, password }, serviceKey)
   expect(created.status).toBe(201)
   expect(created.headers.get('set-cookie')).toBeNull()
   const body = (await created.json()) as { user: { id: string; email: string } }
@@ -70,13 +81,21 @@ test('closed public signup still permits service-authorized ordinary-user provis
     body.user.id,
   ])
   expect(sessions.rowCount).toBe(0)
-  expect(
-    (await post('/auth/v1/admin/users', { email, password: 'Different-password-123!' }, serviceKey))
-      .status,
-  ).toBe(409)
+  const duplicate = await post(
+    '/auth/v1/admin/users',
+    { email, password: 'Different-password-123!' },
+    serviceKey,
+  )
+  expect(duplicate.status).toBe(409)
+  expect(await duplicate.json()).toEqual({ message: 'Account already exists.' })
   const login = await post('/auth/v1/token?grant_type=password', { email, password })
   expect(login.status).toBe(200)
   const signedIn = (await login.json()) as { access_token: string; user: { id: string } }
+  const agentList = await fetch(`${origin}/api/mastra/agents`, {
+    headers: { Authorization: `Bearer ${signedIn.access_token}` },
+  })
+  expect(agentList.status).toBe(200)
+  expect(await agentList.json()).toHaveProperty('data')
   expect(signedIn.user.id).toBe(body.user.id)
   expect(
     (
@@ -116,9 +135,13 @@ test('provisioning fails closed before the owner has installed the identity migr
   const blockedEmail = `missing-migration-${crypto.randomUUID()}@example.com`
   await pool.query('DROP INDEX public.better_auth_user_email_unique')
   try {
-    expect(
-      (await post('/auth/v1/admin/users', { email: blockedEmail, password }, serviceKey)).status,
-    ).toBe(503)
+    const blocked = await post(
+      '/auth/v1/admin/users',
+      { email: blockedEmail, password },
+      serviceKey,
+    )
+    expect(blocked.status).toBe(503)
+    expect(await blocked.json()).toEqual({ message: 'Account creation could not be confirmed.' })
     const result = await pool.query('SELECT id FROM public."user" WHERE email = $1', [blockedEmail])
     expect(result.rowCount).toBe(0)
   } finally {
@@ -127,3 +150,81 @@ test('provisioning fails closed before the owner has installed the identity migr
     )
   }
 })
+
+// @new-code-test positive src/apis/admin-users.ts
+// @new-code-test negative src/apis/admin-users.ts
+// @new-code-test positive src/apis/auth.ts
+// @new-code-test negative src/apis/auth.ts
+
+test('unconfigured provisioning listener denies even a literal undefined bearer key', async () => {
+  const { createAdminUsersPlugin } = await import('~/apis/admin-users')
+  const { createBetterAuthDB } = await import('~/tools/auth-better/adapter')
+  const port = await reserveLoopbackPort()
+  await port.release()
+  const listener = createAdminUsersPlugin(createBetterAuthDB(pool), undefined).listen(port.port)
+  try {
+    const response = await fetch(`${port.origin}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer undefined' },
+      body: JSON.stringify({ email, password }),
+    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ message: 'Service authorization required.' })
+  } finally {
+    await listener.stop()
+  }
+})
+
+// @new-code-test positive src/core/app.ts
+// @new-code-test negative src/core/app.ts
+
+test('provisioning authorization remains bound to its instance when ambient configuration changes', async () => {
+  const { createAuthPlugin } = await import('~/apis/auth')
+  const previousKey = process.env.SINOPEBASE_SERVICE_ROLE_KEY
+  process.env.SINOPEBASE_SERVICE_ROLE_KEY = 'another-instance-service-key-at-least-32-chars'
+  const port = await reserveLoopbackPort()
+  await port.release()
+  const auth = app.getAuth() as unknown as Parameters<typeof createAuthPlugin>[0]
+  const listener = createAuthPlugin(auth, [], serviceKey).listen(port.port)
+  try {
+    for (const [key, status] of [
+      [serviceKey, 400],
+      [process.env.SINOPEBASE_SERVICE_ROLE_KEY, 403],
+    ] as const) {
+      const response = await fetch(`${port.origin}/auth/v1/admin/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: '{}',
+      })
+      expect(response.status).toBe(status)
+    }
+  } finally {
+    await listener.stop()
+    if (previousKey === undefined) delete process.env.SINOPEBASE_SERVICE_ROLE_KEY
+    else process.env.SINOPEBASE_SERVICE_ROLE_KEY = previousKey
+  }
+})
+
+test('memory-only backend does not expose database identity provisioning', async () => {
+  const previousPostgres = process.env.POSTGRES_URL
+  delete process.env.POSTGRES_URL
+  const port = await reserveLoopbackPort()
+  const memory = new Sinopebase({ port: port.port, postgresUrl: '' })
+  await port.release()
+  try {
+    await memory.start()
+    const response = await fetch(`${port.origin}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ email, password }),
+    })
+    expect(response.status).toBe(404)
+  } finally {
+    await memory.stop()
+    if (previousPostgres === undefined) delete process.env.POSTGRES_URL
+    else process.env.POSTGRES_URL = previousPostgres
+  }
+})
+
+// @new-code-test positive src/plugins/mastra/plugin.ts
+// @new-code-test negative src/plugins/mastra/plugin.ts
