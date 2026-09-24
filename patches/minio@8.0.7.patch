@@ -1,0 +1,39 @@
+diff --git a/dist/esm/notification.mjs b/dist/esm/notification.mjs
+index 2fe075b73a9f98ece945993ebc151f601e0d52ee..6a6a926e6647a0ab3f7764920b21d3796f0a310e 100644
+--- a/dist/esm/notification.mjs
++++ b/dist/esm/notification.mjs
+@@ -176,7 +176,7 @@ export class NotificationPoller extends EventEmitter {
+       bucketName: this.bucketName,
+       query
+     }, '', [200], region).then(response => {
+-      const asm = jsonLineParser.make();
++      const asm = jsonLineParser.asStream();
+       pipesetup(response, asm).on('data', data => {
+         // Data is flushed periodically (every 5 seconds), so we should
+         // handle it after flushing from the JSON parser.
+diff --git a/dist/main/notification.js b/dist/main/notification.js
+index 8d8e8b389bc313de072c603b302e4c39d373d345..7c22eef7af4d87e90f116666f54f81cd1ad975d4 100644
+--- a/dist/main/notification.js
++++ b/dist/main/notification.js
+@@ -196,7 +196,7 @@ class NotificationPoller extends _eventemitter.EventEmitter {
+       bucketName: this.bucketName,
+       query
+     }, '', [200], region).then(response => {
+-      const asm = _Parser.make();
++      const asm = _Parser.parser.asStream();
+       (0, _helper.pipesetup)(response, asm).on('data', data => {
+         // Data is flushed periodically (every 5 seconds), so we should
+         // handle it after flushing from the JSON parser.
+diff --git a/src/notification.ts b/src/notification.ts
+index 64c24112d225a234d3b5acf06043020e9fe414af..89bafbf4d28676aaa47937582775ea325a63cfca 100644
+--- a/src/notification.ts
++++ b/src/notification.ts
+@@ -216,7 +216,7 @@ export class NotificationPoller extends EventEmitter<{
+ 
+     this.client.makeRequestAsync({ method, bucketName: this.bucketName, query }, '', [200], region).then(
+       (response) => {
+-        const asm = jsonLineParser.make()
++        const asm = jsonLineParser.asStream()
+ 
+         pipesetup(response, asm)
+           .on('data', (data) => {
