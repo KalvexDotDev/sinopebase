@@ -17,6 +17,7 @@ import type { BetterAuthDatabase } from './adapter'
 let tablesEnsured = false
 
 import { createAuthTables, createBetterAuthDB } from './adapter'
+import { signupsAllowed } from './signup-policy'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,6 +61,41 @@ export interface CreateAuthOptions {
   extraOrigins?: string[]
   /** Deliver transactional email (password reset, verification). */
   sendEmail?: (mail: { to: string; subject: string; text: string; html?: string }) => Promise<void>
+}
+
+/** Better Auth uses these provider flags at OAuth callback time, including explicit requestSignUp. */
+export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
+  const disableSignUp = !signupsAllowed()
+  const socialProviders: Record<
+    string,
+    { clientId: string; clientSecret: string; disableSignUp: boolean }
+  > = {}
+  const genericConfigs: Array<Record<string, unknown>> = []
+
+  for (const p of allProviders) {
+    if (BUILTIN_SOCIAL.has(p.providerId)) {
+      socialProviders[p.providerId] = {
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+        disableSignUp,
+      }
+    } else {
+      const config: Record<string, unknown> = {
+        providerId: p.providerId,
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+        disableSignUp,
+      }
+      if (p.issuer) {
+        const issuer = p.issuer.replace(/\/$/, '')
+        config.discoveryUrl = `${issuer}/.well-known/openid-configuration`
+      }
+      if (p.tenantId) config.tenantId = p.tenantId
+      genericConfigs.push(config)
+    }
+  }
+
+  return { socialProviders, genericConfigs }
 }
 
 // ---------------------------------------------------------------------------
@@ -234,33 +270,7 @@ export async function createAuth(
   // ── OAuth providers: split built-in social vs generic OAuth ──
   const allProviders = options?.oauthProviders ?? []
 
-  const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {}
-  const genericConfigs: Array<Record<string, unknown>> = []
-
-  for (const p of allProviders) {
-    if (BUILTIN_SOCIAL.has(p.providerId)) {
-      socialProviders[p.providerId] = {
-        clientId: p.clientId,
-        clientSecret: p.clientSecret,
-      }
-    } else {
-      // Generic OAuth / OIDC provider
-      const config: Record<string, unknown> = {
-        providerId: p.providerId,
-        clientId: p.clientId,
-        clientSecret: p.clientSecret,
-      }
-      // Map issuer → discoveryUrl (required by genericOAuth v1.6.25+)
-      if (p.issuer) {
-        const issuer = p.issuer.replace(/\/$/, '') // strip trailing slash
-        config.discoveryUrl = `${issuer}/.well-known/openid-configuration`
-      }
-      if (p.tenantId) {
-        config.tenantId = p.tenantId
-      }
-      genericConfigs.push(config)
-    }
-  }
+  const { socialProviders, genericConfigs } = buildOAuthProviderConfigs(allProviders)
 
   // Build plugins array
   const plugins: Record<string, unknown>[] = []
