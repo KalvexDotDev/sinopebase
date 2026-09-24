@@ -38,6 +38,7 @@ interface RangeInfo {
 }
 
 interface PostgrestSelectOptions {
+  columns?: string[]
   filters: ParsedFilter[]
   orFilters: ParsedFilter[][]
   order?: string
@@ -139,7 +140,11 @@ export function mountPostgrestRoutes(
       request,
       resolveContext,
       async (requestDb) => {
+        const columns = query.select
+          ? await selectionColumns(requestDb, table, parseSelect(query.select))
+          : undefined
         const selected = await selectRows(requestDb, table, {
+          columns,
           filters,
           orFilters,
           order,
@@ -460,6 +465,7 @@ async function selectRows(
   options: PostgrestSelectOptions,
 ): Promise<SelectResult> {
   const rows = await db.select(table, {
+    columns: options.columns,
     filters: options.filters,
     orFilters: options.orFilters.filter((group) => group.length > 0),
     order: parseOrderParam(options.order),
@@ -480,7 +486,7 @@ async function countRows(
   const filteredOrGroups = orFilters.filter((group) => group.length > 0)
   if (filteredOrGroups.length > 0) {
     // OR-filtered count requires a select pass (db.count only supports flat filters).
-    const rows = await db.select(table, { filters, orFilters: filteredOrGroups })
+    const rows = await db.select(table, { columns: [], filters, orFilters: filteredOrGroups })
     return rows.length
   }
   return db.count(table, filters)
@@ -504,6 +510,28 @@ function parseOrderParam(rawOrder?: string): OrderBy[] | undefined {
     .filter((part): part is OrderBy => part !== null)
 
   return order.length > 0 ? order : undefined
+}
+
+/** Fetch only requested fields and join keys; PostgreSQL still authorizes every column. */
+async function selectionColumns(
+  db: IDatabase,
+  table: string,
+  selections: Selection[],
+  required: string[] = [],
+): Promise<string[] | undefined> {
+  if (selections.some((selection) => selection.kind === 'column' && selection.source === '*'))
+    return undefined
+  const columns = new Set(required)
+  for (const selection of selections) {
+    if (selection.kind === 'column') columns.add(selection.source)
+    else {
+      const relationship = await resolveRelationship(db, table, selection)
+      columns.add(
+        relationship.sourceTable === table ? relationship.sourceColumn : relationship.targetColumn,
+      )
+    }
+  }
+  return [...columns]
 }
 
 async function applySelection(
@@ -549,6 +577,7 @@ async function materializeSelection(
         ? []
         : (
             await selectRows(db, relatedTable, {
+              columns: await selectionColumns(db, relatedTable, selection.fields, [relatedColumn]),
               filters: [
                 {
                   column: relatedColumn,

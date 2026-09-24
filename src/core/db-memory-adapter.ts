@@ -38,13 +38,17 @@ export class MemoryDatabaseAdapter implements IDatabase {
   }
 
   async select(table: string, options: SelectOptions = {}): Promise<Record<string, unknown>[]> {
-    return this.database.select(table, {
+    const rows = this.database.select(table, {
       filters: toParsedFilters(options.filters),
       orFilters: options.orFilters?.filter((group) => group.length > 0).map(toParsedFilters),
       order: options.order?.map((order) => `${order.column}.${order.direction ?? 'asc'}`).join(','),
       limit: options.limit,
       offset: options.offset,
     }).rows
+    const columns = options.columns
+    return columns === undefined
+      ? rows
+      : rows.map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])))
   }
 
   async update(

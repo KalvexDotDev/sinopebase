@@ -287,7 +287,13 @@ export class PostgresDatabase implements IDatabase {
           offset: positionalOffset,
         }
       : optionsOrFilters
-    let query = this.reader.selectFrom(table as never).selectAll()
+    const source = this.reader.selectFrom(table as never)
+    let query =
+      options.columns === undefined
+        ? source.selectAll()
+        : options.columns.length === 0
+          ? source.select(sql`1`.as('__projection'))
+          : source.select(options.columns.map((column) => sql.ref(column)) as never)
 
     for (const filter of options.filters ?? []) {
       query = this.applyFilter(query as never, filter) as never
@@ -316,7 +322,9 @@ export class PostgresDatabase implements IDatabase {
     if (options.offset !== undefined) query = query.offset(options.offset)
 
     const result = await query.execute()
-    return result as unknown as Record<string, unknown>[]
+    return options.columns?.length === 0
+      ? result.map(() => ({}))
+      : (result as unknown as Record<string, unknown>[])
   }
 
   async update(
