@@ -98,6 +98,66 @@ export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
   return { socialProviders, genericConfigs }
 }
 
+function oauthOptions(allProviders: OAuthProviderConfig[]) {
+  const { socialProviders, genericConfigs } = buildOAuthProviderConfigs(allProviders)
+  return {
+    socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
+    plugins: genericConfigs.length > 0 ? [genericOAuth({ config: genericConfigs })] : [],
+    account: {
+      accountLinking: { enabled: true, trustedProviders: allProviders.map((p) => p.providerId) },
+    },
+  }
+}
+
+function mailerOptions(sendEmail: CreateAuthOptions['sendEmail']) {
+  if (!sendEmail) return { emailAndPassword: { enabled: true } }
+  return {
+    emailAndPassword: {
+      enabled: true,
+      sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
+        await sendEmail({
+          to: user.email,
+          subject: 'Sinopebase password reset',
+          text: `Reset your password: ${url}`,
+          html: `<p>Reset your password: <a href="${url}">${url}</a></p>`,
+        })
+      },
+    },
+    emailVerification: {
+      enabled: true,
+      sendVerificationEmail: async ({ user, url }: { user: { email: string }; url: string }) => {
+        await sendEmail({
+          to: user.email,
+          subject: 'Verify your email',
+          text: `Verify your email: ${url}`,
+        })
+      },
+    },
+  }
+}
+
+function trustedOrigins(extraOrigins?: string[]) {
+  return [
+    'http://localhost:8090',
+    'http://127.0.0.1:8090',
+    ...(extraOrigins?.filter((origin) => origin && origin !== '*') || []),
+  ]
+}
+
+function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typeof betterAuth>[0] {
+  const allProviders = options?.oauthProviders ?? []
+  return {
+    database: pool,
+    basePath: '/api/auth',
+    advanced: { database: { generateId: () => crypto.randomUUID() } },
+    ...mailerOptions(options?.sendEmail),
+    secret: options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK,
+    trustedOrigins: trustedOrigins(options?.extraOrigins),
+    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
+    ...oauthOptions(allProviders),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Refresh tokens table
 // ---------------------------------------------------------------------------
@@ -259,83 +319,9 @@ export async function createAuth(
     tablesEnsured = true
   }
 
-  const secret = options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK
-
-  const trustedOrigins = [
-    'http://localhost:8090',
-    'http://127.0.0.1:8090',
-    ...(options?.extraOrigins?.filter((o) => o && o !== '*') || []),
-  ]
-
-  // ── OAuth providers: split built-in social vs generic OAuth ──
-  const allProviders = options?.oauthProviders ?? []
-
-  const { socialProviders, genericConfigs } = buildOAuthProviderConfigs(allProviders)
-
-  // Build plugins array
-  const plugins: Record<string, unknown>[] = []
-  if (genericConfigs.length > 0) {
-    plugins.push(genericOAuth({ config: genericConfigs }))
-  }
-
-  const allProviderIds = allProviders.map((p) => p.providerId)
-
-  // Transactional email through the host app's mailer. Each sender lives on
-  // the config section better-auth reads it from: reset under
-  // emailAndPassword, verification under emailVerification.
-  const sendEmail = options?.sendEmail
-  const emailSenders = sendEmail
-    ? {
-        sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
-          await sendEmail({
-            to: user.email,
-            subject: 'Sinopebase password reset',
-            text: `Reset your password: ${url}`,
-            html: `<p>Reset your password: <a href="${url}">${url}</a></p>`,
-          })
-        },
-      }
-    : {}
-  const verificationSender = sendEmail
-    ? {
-        sendVerificationEmail: async ({ user, url }: { user: { email: string }; url: string }) => {
-          await sendEmail({
-            to: user.email,
-            subject: 'Verify your email',
-            text: `Verify your email: ${url}`,
-          })
-        },
-      }
-    : {}
-
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
-  const auth = betterAuth({
-    database: pool,
-    basePath: '/api/auth', // Explicit base path
-    advanced: {
-      database: {
-        generateId: () => crypto.randomUUID(),
-      },
-    },
-    emailAndPassword: { enabled: true, ...emailSenders },
-    // Email verification flows are available only when a mailer can deliver
-    // them. requireEmailVerification stays off — signin is not blocked.
-    ...(sendEmail ? { emailVerification: { enabled: true, ...verificationSender } } : {}),
-    secret,
-    trustedOrigins,
-    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
-    // Built-in social providers (Google, GitHub, Discord, etc.)
-    socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
-    plugins,
-    // Social login links accounts by email by default
-    account: {
-      accountLinking: {
-        enabled: true,
-        trustedProviders: allProviderIds,
-      },
-    },
-  })
+  const auth = betterAuth(authOptions(pool, options))
 
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).

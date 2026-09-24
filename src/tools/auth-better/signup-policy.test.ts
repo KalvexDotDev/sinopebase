@@ -1,3 +1,9 @@
+/**
+ * @new-code-test positive src/tools/auth-better/index.ts
+ * @new-code-test negative src/tools/auth-better/index.ts
+ * @new-code-test positive src/tools/auth-better/signup-policy.ts
+ * @new-code-test negative src/tools/auth-better/signup-policy.ts
+ */
 import { afterEach, describe, expect, it } from 'bun:test'
 import { buildOAuthProviderConfigs } from './index'
 
