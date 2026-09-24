@@ -146,11 +146,15 @@ function trustedOrigins(extraOrigins?: string[]) {
   ]
 }
 
+function maintenanceLogger(disabled?: true) {
+  return disabled ? { disabled: true } : undefined
+}
+
 function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typeof betterAuth>[0] {
   const allProviders = options?.oauthProviders ?? []
   return {
     database: pool,
-    logger: options?.disableLogsForMaintenance ? { disabled: true } : undefined,
+    logger: maintenanceLogger(options?.disableLogsForMaintenance),
     basePath: '/api/auth',
     advanced: { database: { generateId: () => crypto.randomUUID() } },
     ...mailerOptions(options?.sendEmail),
