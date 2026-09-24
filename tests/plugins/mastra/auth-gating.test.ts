@@ -3,13 +3,13 @@
 //
 // Two test groups:
 //   1. AsyncLocalStorage unit tests (no HTTP needed)
-//   2. HTTP auth gating via Elysia fetch() with mocked session lookup
+//   2. HTTP auth gating via Elysia fetch() with a request-local session adapter
 // ---------------------------------------------------------------------------
 
-import { beforeAll, describe, expect, it, mock } from 'bun:test'
+import { beforeAll, describe, expect, it } from 'bun:test'
 
 // ---------------------------------------------------------------------------
-// Mock lookupSessionByToken — must run before any import of auth-better
+// Session fixture scoped to this suite
 // ---------------------------------------------------------------------------
 
 const MOCK_SESSION = {
@@ -25,16 +25,26 @@ const MOCK_SESSION = {
 
 const VALID_TOKEN = 'sinopebase-valid-test-token'
 
-mock.module('~/tools/auth-better', () => ({
-  lookupSessionByToken: async (_auth: unknown, token: string | null) => {
-    if (token === VALID_TOKEN) return MOCK_SESSION
-    return null
-  },
-}))
-
-// ---------------------------------------------------------------------------
-// Imports — after mock.module so auth-better resolves via the mock
-// ---------------------------------------------------------------------------
+// A private adapter exercises the real lookup without replacing exports used by other suites.
+function fixtureAuth(): import('~/tools/auth-better').SinopebaseAuth {
+  return {
+    __db: {
+      selectFrom() {
+        let token: unknown
+        const query = {
+          innerJoin: () => query,
+          select: () => query,
+          where(column: string, _operator: string, value: unknown) {
+            if (column === 'session.token') token = value
+            return query
+          },
+          execute: async () => (token === VALID_TOKEN ? [MOCK_SESSION] : []),
+        }
+        return query
+      },
+    },
+  } as unknown as import('~/tools/auth-better').SinopebaseAuth
+}
 
 import { Elysia } from 'elysia'
 import type { AuthContext } from '~/plugins/mastra/plugin'
@@ -111,14 +121,9 @@ describe('Mastra Auth — HTTP gating', () => {
   let app: Elysia
 
   beforeAll(() => {
-    // Minimal Elysia app with auth middleware — use a truthy auth object so
-    // validateAIRequest delegates to the mocked lookupSessionByToken.
-    // Minimal Elysia app with auth middleware — cast through unknown because the
-    // mock auth {} doesn't satisfy SinopebaseAuth's full generic type extension.
+    // Pass the private adapter through the real session lookup.
     app = (new Elysia() as unknown as Elysia)
-      .use(
-        createAuthMiddleware({} as unknown as import('~/tools/auth-better').SinopebaseAuth, true),
-      )
+      .use(createAuthMiddleware(fixtureAuth(), true))
       .post('/api/mastra/chat', async ({ request, set: _set }) => {
         const authCtx = (request as unknown as Record<string, unknown>).__authContext as
           | AuthContext
@@ -173,3 +178,131 @@ describe('Mastra Auth — HTTP gating', () => {
     expect(res.status).toBe(200)
   })
 })
+
+// The real plugin's catalogue must share the inference authentication boundary.
+describe('Mastra Auth — real agent catalogue', () => {
+  it('denies catalogue access when no session adapter is available', async () => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const app = await new MastraPlugin({ requireAuth: true }).register(new Elysia())
+    const response = await app.fetch(new Request('http://localhost/api/mastra/agents'))
+    expect(response.status).toBe(401)
+  })
+
+  it.each([false, true])(
+    'allows the configured service credential with adapter=%s',
+    async (adapter) => {
+      const previous = process.env.SINOPEBASE_SERVICE_ROLE_KEY
+      const serviceKey = 's'.repeat(64)
+      try {
+        process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceKey
+        const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+        const app = await new MastraPlugin({ requireAuth: true }).register(
+          new Elysia(),
+          adapter ? fixtureAuth() : undefined,
+        )
+        const response = await app.fetch(
+          new Request('http://localhost/api/mastra/agents', {
+            headers: { Authorization: `Bearer ${serviceKey}` },
+          }),
+        )
+        expect(response.status).toBe(200)
+        expect((await response.json()).data.length).toBeGreaterThan(0)
+      } finally {
+        if (previous === undefined) delete process.env.SINOPEBASE_SERVICE_ROLE_KEY
+        else process.env.SINOPEBASE_SERVICE_ROLE_KEY = previous
+      }
+    },
+  )
+
+  it.each([undefined, 'Bearer invalid-token'])(
+    'retains deliberately open catalogue access with %s',
+    async (authorization) => {
+      const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+      const app = await new MastraPlugin({ requireAuth: false }).register(
+        new Elysia(),
+        fixtureAuth(),
+      )
+      const response = await app.fetch(
+        new Request('http://localhost/api/mastra/agents', {
+          headers: authorization ? { Authorization: authorization } : {},
+        }),
+      )
+      expect(response.status).toBe(200)
+      expect((await response.json()).data.length).toBeGreaterThan(0)
+    },
+  )
+
+  it('retains deliberately open catalogue access without a session adapter', async () => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const app = await new MastraPlugin({ requireAuth: false }).register(new Elysia())
+    const response = await app.fetch(new Request('http://localhost/api/mastra/agents'))
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.length).toBeGreaterThan(0)
+  })
+
+  it.each([undefined, 'Bearer invalid-token'])(
+    'rejects catalogue access with %s',
+    async (authorization) => {
+      const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+      const plugin = new MastraPlugin({ requireAuth: true })
+      const app = await plugin.register(new Elysia(), fixtureAuth())
+      const response = await app.fetch(
+        new Request('http://localhost/api/mastra/agents', {
+          headers: authorization ? { Authorization: authorization } : {},
+        }),
+      )
+      expect(response.status).toBe(401)
+      expect(await response.json()).toEqual({
+        error: 'Invalid or missing Authorization header',
+        status: 401,
+      })
+    },
+  )
+
+  it('retains catalogue access after token verification', async () => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const plugin = new MastraPlugin({ requireAuth: true })
+    const app = await plugin.register(new Elysia(), fixtureAuth())
+    const response = await app.fetch(
+      new Request('http://localhost/api/mastra/agents', {
+        headers: { Authorization: `Bearer ${VALID_TOKEN}` },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.length).toBeGreaterThan(0)
+  })
+})
+
+// Exercise the real provider routes, including streaming, before any inference can run.
+describe('Mastra Auth — real inference routes', () => {
+  const routes = [
+    '/api/mastra/chat',
+    '/api/mastra/chat/stream',
+    '/api/mastra/embeddings',
+    '/api/mastra/agents/default/chat',
+    '/api/mastra/agents/default/stream',
+  ]
+
+  it.each(routes)('rejects absent and invalid credentials at %s', async (path) => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const plugin = new MastraPlugin({ requireAuth: true })
+    const app = await plugin.register(new Elysia(), fixtureAuth())
+    for (const authorization of [undefined, 'Bearer invalid-token']) {
+      const response = await app.fetch(
+        new Request(`http://localhost${path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello' }], input: 'Hello' }),
+        }),
+      )
+      expect(response.status).toBe(401)
+      await response.body?.cancel()
+    }
+  })
+})
+
+// @new-code-test positive src/plugins/mastra/plugin.ts
+// @new-code-test negative src/plugins/mastra/plugin.ts
