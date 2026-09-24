@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'bun:test'
 import { Readable } from 'node:stream'
 import { Client } from 'minio'
+import queryString from 'query-string'
+
+describe('patched query-string decoder', () => {
+  it('parses encoded query values with the non-vulnerable decoder', () => {
+    expect(queryString.parse('prefix=hello%20world&key=a%2Fb')).toEqual({
+      prefix: 'hello world',
+      key: 'a/b',
+    })
+  })
+})
 
 describe('patched MinIO notification parser', () => {
   it('emits a JSON-line notification with the patched stream-json version', async () => {
