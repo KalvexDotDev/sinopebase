@@ -512,6 +512,7 @@ import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
 import type { MigrationDB } from '../../migrations/types'
+import { createAdminUsersPlugin } from '../apis/admin-users'
 import {
   ApiError,
   BadRequestError,
@@ -1366,6 +1367,10 @@ export class Sinopebase {
       const h = req.headers.get('authorization') ?? ''
       const tok = h.startsWith('Bearer ') ? h.slice(7) : h
       return Equal(tok, this.cachedServiceRoleKey)
+    }
+
+    if (this.auth && this.database instanceof PostgresDatabase) {
+      s4.use(createAdminUsersPlugin(this.database.getPool(), isSuperuser))
     }
 
     // ── Backup / restore endpoints — service-role only ──
