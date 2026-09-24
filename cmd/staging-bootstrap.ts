@@ -4,13 +4,13 @@ import { Pool, type PoolClient } from 'pg'
 import { z } from 'zod'
 import { createAuth } from '../src/tools/auth-better'
 
-const stagingHost = 'pg-sinope-staging.postgres.database.azure.com'
+const stagingHost = 'pg-sinope-staging-g2.postgres.database.azure.com'
 const inputSchema = z.object({
   databaseUrl: z.url(),
   azureResourceId: z
     .string()
     .regex(
-      /^\/subscriptions\/[^/]+\/resourcegroups\/rg-sinope-staging\/providers\/microsoft\.dbforpostgresql\/flexibleservers\/pg-sinope-staging$/i,
+      /^\/subscriptions\/[^/]+\/resourcegroups\/rg-sinope-staging\/providers\/microsoft\.dbforpostgresql\/flexibleservers\/pg-sinope-staging-g2$/i,
     ),
   email: z.email().transform((value) => value.toLowerCase()),
   tenantName: z.string().trim().min(1).max(200),
@@ -128,7 +128,7 @@ export async function bootstrapStaging(
           const password = (await readFile(input.passwordFile, 'utf8')).replace(/\r?\n$/, '')
           if (password.length < 16 || password.length > 128)
             throw new Error('One-time password must contain 16 to 128 characters')
-          const auth = await createAuth(pool)
+          const auth = await createAuth(pool, { disableLogsForMaintenance: true })
           await auth.api.signUpEmail({ body: { email: input.email, password, name: '' } })
           const created = await readIdentity(client, input.email)
           if (

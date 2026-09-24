@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { PoolClient } from 'pg'
-import { assertStagingTarget, checkState } from './staging-bootstrap'
+import { assertStagingTarget, bootstrapStaging, checkState } from './staging-bootstrap'
 
 const input = {
   databaseUrl:
-    'postgres://operator:secret@pg-sinope-staging.postgres.database.azure.com/sinopebase?sslmode=require',
+    'postgres://operator:secret@pg-sinope-staging-g2.postgres.database.azure.com/sinopebase?sslmode=require',
   azureResourceId:
-    '/subscriptions/example/resourceGroups/rg-sinope-staging/providers/Microsoft.DBforPostgreSQL/flexibleServers/pg-sinope-staging',
+    '/subscriptions/example/resourceGroups/rg-sinope-staging/providers/Microsoft.DBforPostgreSQL/flexibleServers/pg-sinope-staging-g2',
   email: 'owner@example.test',
   tenantName: 'Fresh staging tenant',
 }
@@ -45,9 +45,44 @@ describe('private staging bootstrap preflight', () => {
     expect(() =>
       assertStagingTarget({
         ...input,
+        databaseUrl: input.databaseUrl.replace('pg-sinope-staging-g2', 'pg-sinope-staging'),
+      }),
+    ).toThrow()
+    expect(() =>
+      assertStagingTarget({
+        ...input,
         databaseUrl: input.databaseUrl.replace('sslmode=require', 'sslmode=disable'),
       }),
     ).toThrow()
+  })
+
+  test('requires the exact G2 Azure resource identity before opening a connection', async () => {
+    const unreachable = () => {
+      throw new Error('Unexpected database connection')
+    }
+    await expect(
+      bootstrapStaging(
+        {
+          ...input,
+          azureResourceId: input.azureResourceId.replace(
+            'pg-sinope-staging-g2',
+            'pg-sinope-staging',
+          ),
+        },
+        false,
+        unreachable,
+      ),
+    ).rejects.not.toThrow('Unexpected database connection')
+    await expect(
+      bootstrapStaging(
+        {
+          ...input,
+          azureResourceId: input.azureResourceId.replace('rg-sinope-staging', 'rg-sinope-prod'),
+        },
+        false,
+        unreachable,
+      ),
+    ).rejects.not.toThrow('Unexpected database connection')
   })
 
   test('permits an empty staging database and a safe resume after identity creation', async () => {

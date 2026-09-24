@@ -8,8 +8,8 @@ Supply these values from the Pulumi-managed staging job:
 
 | Variable | Source |
 | --- | --- |
-| `DATABASE_URL` | Private staging PostgreSQL URL; host exactly `pg-sinope-staging.postgres.database.azure.com`, database `sinopebase`, `sslmode=require`. Keep the password in Key Vault. |
-| `STAGING_AZURE_POSTGRES_RESOURCE_ID` | Full ARM ID of `pg-sinope-staging` in `rg-sinope-staging`. |
+| `DATABASE_URL` | Private staging PostgreSQL URL; host exactly `pg-sinope-staging-g2.postgres.database.azure.com`, database `sinopebase`, `sslmode=require`. Keep the password in Key Vault. |
+| `STAGING_AZURE_POSTGRES_RESOURCE_ID` | Full ARM ID of `pg-sinope-staging-g2` in `rg-sinope-staging`. |
 | `STAGING_BOOTSTRAP_EMAIL` | Exact independently verified account email. |
 | `STAGING_BOOTSTRAP_TENANT_NAME` | Fresh tenant display name. |
 | `STAGING_BOOTSTRAP_PASSWORD_FILE` | Path to a protected one-time password secret mount. The file may have one final newline. Never pass the password through argv, migration storage, logs, or a committed file. |
