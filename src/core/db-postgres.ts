@@ -82,10 +82,9 @@ function withPostgrestDates(pool: pg.Pool) {
       const query = client.query.bind(client) as (...args: unknown[]) => unknown
       // A view over the pooled client: release() and everything else are inherited.
       return Object.assign(Object.create(client), {
-        query: (text: unknown, values?: unknown[]) =>
-          typeof text === 'string'
-            ? query({ text, values, types: postgrestTypes })
-            : query(text, values),
+        // ponytail: text queries only. Kysely's streaming (Cursor) path is unused on the
+        // request path; pass non-string queries through if .stream() is ever used here.
+        query: (text: string, values?: unknown[]) => query({ text, values, types: postgrestTypes }),
       })
     },
     // The underlying pool is ended by close(), through the primary Kysely instance.
