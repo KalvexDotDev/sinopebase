@@ -35,13 +35,28 @@ export interface ForeignKeyRelationship {
   targetColumn: string
 }
 
+export interface UpsertOptions {
+  /** Conflict target columns; validated identifiers. */
+  onConflict?: string[]
+  /** PostgREST `resolution=ignore-duplicates`: ON CONFLICT DO NOTHING. */
+  ignoreDuplicates?: boolean
+}
+
 export interface IDatabase {
   createTable(table: string): Promise<void>
   hasTable(table: string): Promise<boolean>
   dropTable(table: string): Promise<void>
 
   insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>>
-  upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>>
+  /**
+   * Insert, or resolve a conflict on `onConflict` (default: the primary key).
+   * Returns null when `ignoreDuplicates` skipped the row.
+   */
+  upsert(
+    table: string,
+    record: Record<string, unknown>,
+    options?: UpsertOptions,
+  ): Promise<Record<string, unknown> | null>
 
   select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]>
   update(

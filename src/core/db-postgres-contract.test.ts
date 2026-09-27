@@ -1,6 +1,7 @@
 // @new-code-test positive src/core/db-postgres.ts
 // @new-code-test negative src/core/db-postgres.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { sql } from 'kysely'
 import type { IDatabase } from './db-interface'
 import { hasDatabaseSchemaCapability } from './db-interface'
 import { PostgresDatabase } from './db-postgres'
@@ -39,7 +40,7 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       is_complete: false,
       user_id: 'tenant-one',
     })
-    expect(upserted.task).toBe('updated')
+    expect(upserted?.task).toBe('updated')
     expect(await db.count(table)).toBe(1)
 
     const updated = await db.update(table, [{ column: 'id', operator: 'eq', value: 'one' }], {
@@ -49,6 +50,30 @@ describePostgres('PostgresDatabase canonical database contract', () => {
 
     const deleted = await db.delete(table, [{ column: 'id', operator: 'eq', value: 'one' }])
     expect(deleted.map((row) => row.id)).toEqual(['one'])
+  })
+
+  it('upserts on a named conflict target and skips duplicates when asked', async () => {
+    const keyed = `${table}_keyed`
+    await sql`
+      CREATE TABLE ${sql.table(keyed)} (id serial PRIMARY KEY, tenant text UNIQUE, phone text)
+    `.execute(concrete.getWriter())
+    try {
+      const first = await db.upsert(keyed, { tenant: 't', phone: '1' }, { onConflict: ['tenant'] })
+      const merged = await db.upsert(keyed, { tenant: 't', phone: '2' }, { onConflict: ['tenant'] })
+      expect(merged).toEqual({ id: first?.id, tenant: 't', phone: '2' })
+      const skipped = await db.upsert(
+        keyed,
+        { tenant: 't', phone: '3' },
+        { onConflict: ['tenant'], ignoreDuplicates: true },
+      )
+      expect(skipped).toBeNull()
+      expect(await db.select(keyed, { columns: ['phone'] })).toEqual([{ phone: '2' }])
+      await expect(
+        db.upsert(keyed, { tenant: 't' }, { onConflict: ['tenant"; drop'] }),
+      ).rejects.toThrow('Invalid conflict column')
+    } finally {
+      await sql`DROP TABLE ${sql.table(keyed)}`.execute(concrete.getWriter())
+    }
   })
 
   it('supports options-object filters, structured OR groups, and pagination', async () => {
@@ -119,5 +144,34 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       }),
     ).toEqual([])
     expect((await db.select(table, {}))[0]).toHaveProperty('task')
+  })
+
+  it('writes JS arrays as the target column type, like PostgREST', async () => {
+    const typed = `${table}_typed`
+    await sql`
+      CREATE TABLE ${sql.table(typed)} (
+        id text PRIMARY KEY,
+        facts jsonb NOT NULL CHECK (jsonb_typeof(facts) = 'array'),
+        tags text[] NOT NULL
+      )
+    `.execute(concrete.getWriter())
+    try {
+      const inserted = await db.insert(typed, { id: 'x', facts: [], tags: ['a', 'b'] })
+      expect(inserted.facts).toEqual([])
+      expect(inserted.tags).toEqual(['a', 'b'])
+
+      const upserted = await db.upsert(typed, { id: 'x', facts: [{ topic: 't' }], tags: [] })
+      expect(upserted?.facts).toEqual([{ topic: 't' }])
+      expect(upserted?.tags).toEqual([])
+
+      const updated = await db.update(typed, [{ column: 'id', operator: 'eq', value: 'x' }], {
+        facts: [1, 'two'],
+        tags: ['c'],
+      })
+      expect(updated[0]?.facts).toEqual([1, 'two'])
+      expect(updated[0]?.tags).toEqual(['c'])
+    } finally {
+      await sql`DROP TABLE ${sql.table(typed)}`.execute(concrete.getWriter())
+    }
   })
 })

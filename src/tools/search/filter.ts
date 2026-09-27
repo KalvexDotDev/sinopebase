@@ -976,7 +976,15 @@ export function clearFilterCache(): void {
 // Re-export parseFilterParam from existing code (extending the file)
 // ---------------------------------------------------------------------------
 
-const NON_FILTER_KEYS = new Set(['select', 'order', 'limit', 'offset', 'count', 'apikey'])
+const NON_FILTER_KEYS = new Set([
+  'select',
+  'order',
+  'limit',
+  'offset',
+  'count',
+  'apikey',
+  'on_conflict',
+])
 
 /**
  * Parse a single query-string parameter into a simple filter.
