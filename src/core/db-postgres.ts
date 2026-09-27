@@ -65,7 +65,7 @@ export interface PostgresRequestContext {
 const POSTGREST_DATE_PARSERS = new Map<number, (value: string) => string>([
   [1082, (value) => value], // date
   [1114, (value) => value.replace(' ', 'T')], // timestamp
-  [1184, (value) => value.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00')], // timestamptz
+  [1184, (value) => value.replace(' ', 'T').replace(/([+-]\d\d)( BC)?$/, '$1:00$2')], // timestamptz
 ])
 
 const postgrestTypes = {
@@ -242,6 +242,8 @@ export class PostgresDatabase implements IDatabase {
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
       scoped.reader = transaction as unknown as Kysely<DatabaseSchema>
+      // A nested withRequestContext must fail on the transaction, not open a second connection.
+      scoped.requestWriterInstance = transaction as unknown as Kysely<DatabaseSchema>
       return operation(scoped)
     })
   }

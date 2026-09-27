@@ -212,4 +212,12 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       await sql`DROP TABLE ${sql.table(dated)}`.execute(concrete.getWriter())
     }
   })
+
+  it('refuses a nested request context instead of opening a second connection', async () => {
+    await expect(
+      concrete.withRequestContext({ role: 'service_role' }, (scoped) =>
+        scoped.withRequestContext({ role: 'service_role' }, async () => 'nested'),
+      ),
+    ).rejects.toThrow()
+  })
 })
