@@ -242,6 +242,7 @@ export class PostgresDatabase implements IDatabase {
   // -----------------------------------------------------------------------
 
   async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+    record = this.typedValues(table, record)
     // No client-side id injection — the table's own DEFAULT fills id
     // (gen_random_uuid() on sinopebase tables, identity on f_* tables).
     // returningAll() so the caller still gets the persisted row back.
@@ -254,6 +255,7 @@ export class PostgresDatabase implements IDatabase {
   }
 
   async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+    record = this.typedValues(table, record)
     const rows = await this.writer
       .insertInto(table as never)
       .values(record as never)
@@ -261,6 +263,23 @@ export class PostgresDatabase implements IDatabase {
       .returningAll()
       .execute()
     return (rows[0] ?? record) as Record<string, unknown>
+  }
+
+  /**
+   * node-postgres binds a JS array as a Postgres array literal, so `[]` written
+   * to a jsonb column arrives as `'{}'` — an object. PostgREST reads the body as
+   * JSON and converts it to each column's type, so arrays go through
+   * jsonb_populate_record here: jsonb keeps the array, text[] gets a Postgres array.
+   */
+  private typedValues(table: string, record: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(record).map(([column, value]) => [
+        column,
+        Array.isArray(value)
+          ? sql`(jsonb_populate_record(NULL::${sql.table(table)}, jsonb_build_object(${column}::text, ${JSON.stringify(value)}::jsonb))).${sql.ref(column)}`
+          : value,
+      ]),
+    )
   }
 
   async select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]>
@@ -355,6 +374,7 @@ export class PostgresDatabase implements IDatabase {
     data: Record<string, unknown>,
     orFilters?: Filter[][],
   ): Promise<Record<string, unknown>[]> {
+    data = this.typedValues(table, data)
     // When orFilters are provided, pre-select matching row IDs
     if (orFilters?.length) {
       const selected = await this.select(table, { filters, orFilters })

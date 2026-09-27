@@ -1,6 +1,7 @@
 // @new-code-test positive src/core/db-postgres.ts
 // @new-code-test negative src/core/db-postgres.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { sql } from 'kysely'
 import type { IDatabase } from './db-interface'
 import { hasDatabaseSchemaCapability } from './db-interface'
 import { PostgresDatabase } from './db-postgres'
@@ -119,5 +120,34 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       }),
     ).toEqual([])
     expect((await db.select(table, {}))[0]).toHaveProperty('task')
+  })
+
+  it('writes JS arrays as the target column type, like PostgREST', async () => {
+    const typed = `${table}_typed`
+    await sql`
+      CREATE TABLE ${sql.table(typed)} (
+        id text PRIMARY KEY,
+        facts jsonb NOT NULL CHECK (jsonb_typeof(facts) = 'array'),
+        tags text[] NOT NULL
+      )
+    `.execute(concrete.getWriter())
+    try {
+      const inserted = await db.insert(typed, { id: 'x', facts: [], tags: ['a', 'b'] })
+      expect(inserted.facts).toEqual([])
+      expect(inserted.tags).toEqual(['a', 'b'])
+
+      const upserted = await db.upsert(typed, { id: 'x', facts: [{ topic: 't' }], tags: [] })
+      expect(upserted.facts).toEqual([{ topic: 't' }])
+      expect(upserted.tags).toEqual([])
+
+      const updated = await db.update(typed, [{ column: 'id', operator: 'eq', value: 'x' }], {
+        facts: [1, 'two'],
+        tags: ['c'],
+      })
+      expect(updated[0]?.facts).toEqual([1, 'two'])
+      expect(updated[0]?.tags).toEqual(['c'])
+    } finally {
+      await sql`DROP TABLE ${sql.table(typed)}`.execute(concrete.getWriter())
+    }
   })
 })
