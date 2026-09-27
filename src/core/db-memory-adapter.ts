@@ -1,4 +1,4 @@
-import type { Filter, IDatabase, SelectOptions } from './db-interface'
+import type { Filter, IDatabase, SelectOptions, UpsertOptions } from './db-interface'
 import { MemoryDatabase, type ParsedFilter } from './db-memory'
 
 /** Adapts the legacy batch-oriented MemoryDatabase to the canonical contract. */
@@ -31,7 +31,19 @@ export class MemoryDatabaseAdapter implements IDatabase {
     return inserted
   }
 
-  async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // ponytail: the memory store only resolves conflicts on `id`; onConflict
+  // targets are a PostgreSQL feature.
+  async upsert(
+    table: string,
+    record: Record<string, unknown>,
+    options: UpsertOptions = {},
+  ): Promise<Record<string, unknown> | null> {
+    if (options.ignoreDuplicates && record.id !== undefined) {
+      const existing = this.database.select(table, {
+        filters: [{ column: 'id', operator: 'eq', value: record.id }],
+      }).rows
+      if (existing.length > 0) return null
+    }
     const upserted = this.database.upsert(table, [record])[0]
     if (!upserted) throw new Error('Memory database did not return the upserted record')
     return upserted
