@@ -174,4 +174,50 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       await sql`DROP TABLE ${sql.table(typed)}`.execute(concrete.getWriter())
     }
   })
+
+  it('returns dates and timestamps as PostgREST prints them, so they round-trip as filters', async () => {
+    const dated = `${table}_dated`
+    await sql`
+      CREATE TABLE ${sql.table(dated)} (id text PRIMARY KEY, at timestamptz NOT NULL, local timestamp NOT NULL, day date NOT NULL)
+    `.execute(concrete.getWriter())
+    try {
+      await sql`
+        INSERT INTO ${sql.table(dated)} VALUES ('x', '2026-09-27 22:18:09.497123+00', '2026-09-27 22:18:09.497123', '2026-09-27')
+      `.execute(concrete.getWriter())
+      // Internal callers (auth compares expiry to new Date()) keep getting Dates.
+      const [internal] = await db.select(dated, {})
+      expect(internal?.at).toBeInstanceOf(Date)
+
+      const row = await concrete.withRequestContext({ role: 'service_role' }, async (scoped) => {
+        const [selected] = await scoped.select(dated, {})
+        return selected
+      })
+      expect(row).toMatchObject({
+        at: '2026-09-27T22:18:09.497123+00:00',
+        local: '2026-09-27T22:18:09.497123',
+        day: '2026-09-27',
+      })
+      const guarded = await concrete.withRequestContext({ role: 'service_role' }, (scoped) =>
+        scoped.update(
+          dated,
+          [
+            { column: 'id', operator: 'eq', value: 'x' },
+            { column: 'at', operator: 'eq', value: row?.at },
+          ],
+          { day: '2026-09-28' },
+        ),
+      )
+      expect(guarded).toHaveLength(1)
+    } finally {
+      await sql`DROP TABLE ${sql.table(dated)}`.execute(concrete.getWriter())
+    }
+  })
+
+  it('refuses a nested request context instead of opening a second connection', async () => {
+    await expect(
+      concrete.withRequestContext({ role: 'service_role' }, (scoped) =>
+        scoped.withRequestContext({ role: 'service_role' }, async () => 'nested'),
+      ),
+    ).rejects.toThrow()
+  })
 })

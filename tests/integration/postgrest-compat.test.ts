@@ -2,6 +2,10 @@
 // @new-code-test negative src/apis/postgrest.ts
 // @new-code-test positive src/core/db-postgres.ts
 // @new-code-test negative src/core/db-postgres.ts
+// @new-code-test positive src/core/db-interface.ts
+// @new-code-test negative src/core/db-interface.ts
+// @new-code-test positive src/tools/search/filter.ts
+// @new-code-test negative src/tools/search/filter.ts
 /**
  * PostgREST compatibility over real PostgreSQL: upsert conflict targets,
  * exact counts, SQLSTATE error mapping, mutation projection/embedding and
