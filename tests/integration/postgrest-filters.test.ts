@@ -9,7 +9,7 @@
  *   3. is.null   → IS NULL      semantics
  *   4. or=(...)  in PATCH/DELETE mutates only matching rows
  *   5. in filter with double-quoted comma values ("a,b" is one value)
- *   6. Prefer: count=planned/estimated → Content-Range header
+ *   6. Prefer: count=planned/estimated → Content-Range start-end/total
  *   7. Empty results per operator
  *   8. Type coercion edge cases (numeric strings, booleans, wildcards)
  */
@@ -312,7 +312,7 @@ describe('PostgREST Prefer count=planned/estimated', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-range')).toBe('*/2')
+    expect(response.headers.get('content-range')).toBe('0-1/2')
     expect(idsOf(body)).toEqual(['a1', 'c3'])
   })
 
@@ -326,7 +326,7 @@ describe('PostgREST Prefer count=planned/estimated', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-range')).toBe('*/2')
+    expect(response.headers.get('content-range')).toBe('0-1/2')
     expect(idsOf(body)).toEqual(['a1', 'c3'])
   })
 
@@ -335,7 +335,7 @@ describe('PostgREST Prefer count=planned/estimated', () => {
     const { response } = await get(app, 'items', { active: 'is.true' }, { prefer: 'count=exact' })
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-range')).toBe('*/2')
+    expect(response.headers.get('content-range')).toBe('0-1/2')
   })
 })
 

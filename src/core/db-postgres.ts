@@ -16,6 +16,7 @@ import type {
   IDatabase,
   OrderBy,
   SelectOptions,
+  UpsertOptions,
 } from './db-interface'
 import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
@@ -254,15 +255,52 @@ export class PostgresDatabase implements IDatabase {
     return (rows[0] ?? record) as Record<string, unknown>
   }
 
-  async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
-    record = this.typedValues(table, record)
+  /**
+   * PostgREST upsert: `INSERT … ON CONFLICT (target) DO UPDATE SET <payload
+   * columns> = EXCLUDED.<column>`, or `DO NOTHING` for ignore-duplicates (then
+   * a skipped row returns null). The target defaults to the primary key.
+   */
+  async upsert(
+    table: string,
+    record: Record<string, unknown>,
+    options: UpsertOptions = {},
+  ): Promise<Record<string, unknown> | null> {
+    const target = options.onConflict?.length
+      ? options.onConflict
+      : await this.primaryKeyColumns(table)
+    for (const column of target) {
+      if (!RPC_IDENTIFIER.test(column)) throw new Error(`Invalid conflict column "${column}"`)
+    }
+    const excluded = Object.fromEntries(
+      Object.keys(record).map((column) => [column, sql`excluded.${sql.ref(column)}`]),
+    )
     const rows = await this.writer
       .insertInto(table as never)
-      .values(record as never)
-      .onConflict((oc) => oc.column('id' as never).doUpdateSet(record as never))
+      .values(this.typedValues(table, record) as never)
+      .onConflict((oc) => {
+        const conflict = oc.columns(target as never)
+        return options.ignoreDuplicates || Object.keys(excluded).length === 0
+          ? conflict.doNothing()
+          : conflict.doUpdateSet(excluded as never)
+      })
       .returningAll()
       .execute()
-    return (rows[0] ?? record) as Record<string, unknown>
+    return (rows[0] as Record<string, unknown> | undefined) ?? null
+  }
+
+  private async primaryKeyColumns(table: string): Promise<string[]> {
+    const result = await sql<{ column: string }>`
+      SELECT attribute.attname AS "column"
+      FROM pg_index AS index_info
+      JOIN pg_attribute AS attribute
+        ON attribute.attrelid = index_info.indrelid
+        AND attribute.attnum = ANY (index_info.indkey)
+      WHERE index_info.indrelid = to_regclass(quote_ident(${table}))
+        AND index_info.indisprimary
+      ORDER BY array_position(index_info.indkey::int2[], attribute.attnum)
+    `.execute(this.writer)
+    const columns = result.rows.map((row) => row.column)
+    return columns.length > 0 ? columns : ['id']
   }
 
   /**

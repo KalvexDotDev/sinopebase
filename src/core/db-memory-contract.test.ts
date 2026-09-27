@@ -26,7 +26,7 @@ describe('MemoryDatabaseAdapter canonical database contract', () => {
       rank: 2,
       enabled: false,
     })
-    expect(upserted.state).toBe('closed')
+    expect(upserted?.state).toBe('closed')
     expect(await db.count('records')).toBe(1)
 
     const updated = await db.update('records', [{ column: 'id', operator: 'eq', value: 'one' }], {
