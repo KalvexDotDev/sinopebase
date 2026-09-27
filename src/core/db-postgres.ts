@@ -50,9 +50,53 @@ export interface PostgresRequestContext {
  * When a readReplicaUrl is configured, SELECT and COUNT queries are routed
  * to the replica pool while writes go to the primary.
  */
+/**
+ * PostgREST returns dates and timestamps as Postgres prints them, microseconds
+ * included. node-postgres parses them into JS Dates, which drop microseconds and
+ * turn `date` into a midnight timestamp — so a timestamp read back from the API
+ * never matches the stored value in an `eq` filter (optimistic-concurrency
+ * guards silently update nothing).
+ *
+ * Only the request path (`withRequestContext`, i.e. the PostgREST surface) gets
+ * these parsers. Internal callers such as auth compare timestamps to `new Date()`
+ * and must keep receiving Dates.
+ */
+// ponytail: scalar types only; date/timestamp arrays still parse to Dates.
+const POSTGREST_DATE_PARSERS = new Map<number, (value: string) => string>([
+  [1082, (value) => value], // date
+  [1114, (value) => value.replace(' ', 'T')], // timestamp
+  [1184, (value) => value.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00')], // timestamptz
+])
+
+const postgrestTypes = {
+  getTypeParser: ((oid: number, format?: 'text' | 'binary') =>
+    POSTGREST_DATE_PARSERS.get(oid) ??
+    pg.types.getTypeParser(oid, format as 'text')) as typeof pg.types.getTypeParser,
+}
+
+/** The same pool, but every text query parses dates the way PostgREST prints them. */
+function withPostgrestDates(pool: pg.Pool) {
+  return {
+    async connect() {
+      const client = await pool.connect()
+      const query = client.query.bind(client) as (...args: unknown[]) => unknown
+      // A view over the pooled client: release() and everything else are inherited.
+      return Object.assign(Object.create(client), {
+        query: (text: unknown, values?: unknown[]) =>
+          typeof text === 'string'
+            ? query({ text, values, types: postgrestTypes })
+            : query(text, values),
+      })
+    },
+    // The underlying pool is ended by close(), through the primary Kysely instance.
+    async end() {},
+  }
+}
+
 export class PostgresDatabase implements IDatabase {
   private writer: Kysely<DatabaseSchema>
   private reader: Kysely<DatabaseSchema>
+  private requestWriterInstance: Kysely<DatabaseSchema> | null = null
   private writerPool: pg.Pool
   private readerPool: pg.Pool | null = null
   private closePromise: Promise<void> | null = null
@@ -146,6 +190,16 @@ export class PostgresDatabase implements IDatabase {
     return this.writer
   }
 
+  /** Kysely over the writer pool with PostgREST date parsing, for request contexts only. */
+  private requestWriter(): Kysely<DatabaseSchema> {
+    this.requestWriterInstance ??= new Kysely<DatabaseSchema>({
+      dialect: new PostgresDialect({
+        pool: withPostgrestDates(this.writerPool) as unknown as pg.Pool,
+      }),
+    })
+    return this.requestWriterInstance
+  }
+
   /**
    * Run one HTTP request on a single connection with transaction-local
    * PostgREST role and JWT claims. The transaction boundary guarantees that
@@ -159,7 +213,8 @@ export class PostgresDatabase implements IDatabase {
     context: PostgresRequestContext,
     operation: (db: PostgresDatabase) => Promise<T>,
   ): Promise<T> {
-    return this.writer.transaction().execute(async (transaction) => {
+    const requestWriter = this.requestWriter()
+    return requestWriter.transaction().execute(async (transaction) => {
       const userId = context.userId ?? ''
       const claims = JSON.stringify({
         sub: userId || undefined,
