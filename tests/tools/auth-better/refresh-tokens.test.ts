@@ -323,6 +323,43 @@ describe('exchangeRefreshToken', () => {
     expect(pair?.accessToken).toBe(session.token)
     expect(pair?.refreshToken).toMatch(OPAQUE)
     expect((await tokenRow(pair?.refreshToken as string))?.session_id).toBe(session.id)
+    expect(await exchangeRefreshToken(db, session.token)).toBeNull()
+  })
+
+  it('accepts the session token of a pre-rotation session with a legacy token row', async () => {
+    const session = await createSession()
+    // Before #35, sign-in stored a 32-hex token_id that the client never saw.
+    const legacy = crypto.randomUUID().replace(/-/g, '')
+    await db
+      .insertInto('refresh_tokens')
+      .values({
+        token_id: legacy,
+        user_id: userId,
+        session_id: session.id,
+        family_id: crypto.randomUUID(),
+        parent_token_id: null,
+        consumed: false,
+        compromised: false,
+        expires_at: new Date(Date.now() + WEEK_MS),
+        created_at: new Date(),
+      })
+      .execute()
+
+    const pair = await exchangeRefreshToken(db, session.token)
+    expect(pair).toEqual({ accessToken: session.token, refreshToken: legacy })
+    const rotated = await exchangeRefreshToken(db, legacy)
+    expect(rotated?.refreshToken).toMatch(OPAQUE)
+    expect(await exchangeRefreshToken(db, rotated?.accessToken as string)).toBeNull()
+  })
+
+  it('never exchanges the access token of a session that has an opaque refresh token', async () => {
+    const session = await createSession()
+    const initial = await refreshTokenForSession(db, session.token)
+    expect(await exchangeRefreshToken(db, session.token)).toBeNull()
+
+    const rotated = await exchangeRefreshToken(db, initial)
+    expect(await exchangeRefreshToken(db, rotated?.accessToken as string)).toBeNull()
+    expect((await tokenRow(initial))?.compromised).toBe(false)
   })
 
   it('rejects an unknown token', async () => {

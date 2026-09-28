@@ -470,8 +470,8 @@ interface GrantContext {
 }
 
 async function passwordGrant(auth: BetterAuthInstance, { body, set }: GrantContext) {
-  const { email, password } = body as { email: string; password: string }
   try {
+    const { email, password } = body as { email: string; password: string }
     const signIn = await auth.api.signInEmail({ body: { email, password }, returnHeaders: true })
     forwardSessionCookies(signIn.headers, set)
     return await issueSession(auth, signIn.response)

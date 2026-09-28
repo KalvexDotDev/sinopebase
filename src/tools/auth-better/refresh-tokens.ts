@@ -173,12 +173,26 @@ export async function exchangeRefreshToken(
   return rotated === 'reused' ? reuse(db, row) : rotated
 }
 
+/** Pre-#35 sign-ins stored `randomUUID()` without dashes: 32 hex characters. */
+const LEGACY_TOKEN_ID_LENGTH = 32
+
+/**
+ * Only a session that has never issued an opaque refresh token is a legacy
+ * session. Any other session token is an access token, and accepting it here
+ * would turn a leaked access token into a refresh token.
+ */
 async function exchangeLegacySessionToken(
   db: AuthDb,
   sessionToken: string,
 ): Promise<SessionPair | null> {
   const session = await liveSession(db, 'token', sessionToken)
   if (!session) return null
+  const issued = await db
+    .selectFrom('refresh_tokens')
+    .select('token_id')
+    .where('session_id', '=', session.id)
+    .execute()
+  if (issued.some((t) => t.token_id.length !== LEGACY_TOKEN_ID_LENGTH)) return null
   return { accessToken: sessionToken, refreshToken: await refreshTokenForSession(db, sessionToken) }
 }
 

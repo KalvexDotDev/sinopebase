@@ -351,6 +351,20 @@ describe('Auth API (better-auth)', () => {
     }
   })
 
+  it('does not exchange an access token for a refresh token', async () => {
+    const session = await signIn()
+    const res = await refresh({ refresh_token: session.access_token })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ message: 'Invalid refresh token', status: 400 })
+    expect(await userStatus(session.access_token)).toBe(200)
+  })
+
+  it('rejects a password grant with no body with the GoTrue message', async () => {
+    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, { method: 'POST' })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ message: 'Invalid login credentials', status: 400 })
+  })
+
   // Test 9: Logout
   it('logs out with 204 and revokes the access and refresh tokens', async () => {
     const session = await signIn()
