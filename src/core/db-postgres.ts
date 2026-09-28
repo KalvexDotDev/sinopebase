@@ -61,11 +61,15 @@ export interface PostgresRequestContext {
  * these parsers. Internal callers such as auth compare timestamps to `new Date()`
  * and must keep receiving Dates.
  */
-// ponytail: scalar types only; date/timestamp arrays still parse to Dates.
-const POSTGREST_DATE_PARSERS = new Map<number, (value: string) => string>([
+// ponytail: scalar types only; date/timestamp and bigint arrays keep the pool's parsing.
+const POSTGREST_DATE_PARSERS = new Map<number, (value: string) => unknown>([
   [1082, (value) => value], // date
   [1114, (value) => value.replace(' ', 'T')], // timestamp
   [1184, (value) => value.replace(' ', 'T').replace(/([+-]\d\d)( BC)?$/, '$1:00$2')], // timestamptz
+  // PostgREST emits bigint as a JSON number. Values beyond Number.MAX_SAFE_INTEGER
+  // round to the nearest double here — the same value a JS client gets when it
+  // JSON.parses PostgREST's exact digits. Internal callers keep the string.
+  [20, Number], // int8 / bigint
 ])
 
 const postgrestTypes = {

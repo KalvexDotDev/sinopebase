@@ -33,7 +33,11 @@ beforeAll(async () => {
    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
   END $$;
-  DROP TABLE IF EXISTS compat_child, compat_parent, compat_profile, compat_locked;
+  DROP TABLE IF EXISTS compat_child, compat_parent, compat_profile, compat_locked, compat_sized;
+  CREATE TABLE compat_sized (id text PRIMARY KEY, file_size bigint);
+  CREATE OR REPLACE FUNCTION compat_raise(code text) RETURNS void LANGUAGE plpgsql AS $f$
+  BEGIN RAISE EXCEPTION 'raised %', code USING ERRCODE = code; END $f$;
+  GRANT EXECUTE ON FUNCTION compat_raise(text) TO authenticated, anon;
   CREATE TABLE compat_parent (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text);
   CREATE TABLE compat_child (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,7 +57,7 @@ beforeAll(async () => {
   CREATE TABLE compat_locked (id text PRIMARY KEY, body text);
   ALTER TABLE compat_locked ENABLE ROW LEVEL SECURITY;
   CREATE POLICY locked_read ON compat_locked FOR SELECT USING (true);
-  GRANT ALL ON compat_parent, compat_child, compat_profile, compat_locked TO authenticated, anon;
+  GRANT ALL ON compat_parent, compat_child, compat_profile, compat_locked, compat_sized TO authenticated, anon;
  `)
   app = new Elysia()
   mountPostgrestRoutes(app, db, (request) => ({
@@ -64,7 +68,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.getPool().query(`
-  TRUNCATE compat_child, compat_parent, compat_profile, compat_locked;
+  TRUNCATE compat_child, compat_parent, compat_profile, compat_locked, compat_sized;
   INSERT INTO compat_parent (id, name) VALUES ('${parentA}', 'a'), ('${parentB}', 'b');
   INSERT INTO compat_child (parent_id, label, code) VALUES
     ('${parentA}', 'c1', 'k1'), ('${parentA}', 'c2', 'k2'),
@@ -75,7 +79,9 @@ beforeEach(async () => {
 afterAll(async () => {
   await db
     ?.getPool()
-    .query('DROP TABLE IF EXISTS compat_child, compat_parent, compat_profile, compat_locked')
+    .query(
+      'DROP TABLE IF EXISTS compat_child, compat_parent, compat_profile, compat_locked, compat_sized; DROP FUNCTION IF EXISTS compat_raise(text)',
+    )
   await db?.close()
 })
 
@@ -313,6 +319,21 @@ describe('database errors use PostgREST SQLSTATE responses', () => {
     })
   }
 
+  // PostgREST's table: P0001 → 400, other P0* → 500, 40* → 500. A stale-revision or
+  // not-found RAISE therefore returns 500 from PostgREST too; use `PTxyz` for a
+  // custom status.
+  for (const [code, status] of [
+    ['P0001', 400],
+    ['P0002', 500],
+    ['40001', 500],
+  ] as const) {
+    it(`maps an RPC RAISE with SQLSTATE ${code} to ${status}`, async () => {
+      const { response, body } = await call('POST', 'rpc/compat_raise', { body: { code } })
+      expect(response.status).toBe(status)
+      expect(body).toEqual({ code, message: `raised ${code}`, details: null, hint: null })
+    })
+  }
+
   it('reports the constraint detail like PostgREST', async () => {
     const { body } = await call('POST', 'compat_child', {
       body: { parent_id: missingParent, code: 'kx' },
@@ -382,5 +403,30 @@ describe('single() on mutations', () => {
     })
     expect(response.status).toBe(406)
     expect(await rows('SELECT 1 FROM compat_child')).toHaveLength(5)
+  })
+})
+
+describe('bigint columns', () => {
+  const huge = '9007199254740993' // Number.MAX_SAFE_INTEGER + 2
+
+  it('returns bigint as a JSON number like PostgREST', async () => {
+    await rows(`INSERT INTO compat_sized VALUES ('small', 15), ('huge', ${huge})`)
+    const { response, body } = await call('GET', 'compat_sized?select=id,file_size&order=id')
+    expect(response.status).toBe(200)
+    // Beyond MAX_SAFE_INTEGER the value rounds to the nearest double, as a JS
+    // client JSON.parsing PostgREST's exact digits would see it.
+    expect(body).toEqual([
+      { id: 'huge', file_size: Number(huge) },
+      { id: 'small', file_size: 15 },
+    ])
+    expect(await rows(`SELECT file_size FROM compat_sized WHERE id = 'huge'`)).toEqual([
+      { file_size: huge },
+    ])
+  })
+
+  it('keeps a null bigint null', async () => {
+    await rows(`INSERT INTO compat_sized VALUES ('none', NULL)`)
+    const { body } = await call('GET', 'compat_sized?id=eq.none')
+    expect(body).toEqual([{ id: 'none', file_size: null }])
   })
 })
