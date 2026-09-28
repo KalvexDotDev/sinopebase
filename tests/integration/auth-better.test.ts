@@ -1,3 +1,5 @@
+// @new-code-test positive src/apis/auth.ts
+// @new-code-test negative src/apis/auth.ts
 /**
  * Auth ATDD Tests (better-auth HTTP endpoints)
  *
@@ -11,6 +13,14 @@ import { Sinopebase } from '~/core/app'
 import { createClient } from '~/sdk/client'
 import { lookupSessionByToken } from '~/tools/auth-better'
 import { requirePostgres, reserveLoopbackPort } from '../harness'
+
+const OPAQUE = /^[A-Za-z0-9_-]{43}$/
+
+interface TokenPair {
+  access_token: string
+  refresh_token: string
+  user: { email: string }
+}
 
 describe('Auth API (better-auth)', () => {
   let app: Sinopebase
@@ -40,6 +50,38 @@ describe('Auth API (better-auth)', () => {
   afterAll(async () => {
     await app.stop()
   })
+
+  async function signIn(): Promise<TokenPair> {
+    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testEmail, password: testPassword }),
+    })
+    expect(res.status).toBe(200)
+    return (await res.json()) as TokenPair
+  }
+
+  function refresh(body: unknown): Promise<Response> {
+    return fetch(`${baseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  async function userStatus(accessToken: string): Promise<number> {
+    const res = await fetch(`${baseUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    return res.status
+  }
+
+  function logout(authorization?: string, scope?: string): Promise<Response> {
+    return fetch(`${baseUrl}/auth/v1/logout${scope ? `?scope=${scope}` : ''}`, {
+      method: 'POST',
+      headers: authorization ? { Authorization: authorization } : {},
+    })
+  }
 
   // Test 1: Signup
   it('signs up a new user', async () => {
@@ -106,6 +148,9 @@ describe('Auth API (better-auth)', () => {
     }
     expect(body.data.session?.user.email).toBe(testEmail)
     expect(body.data.session?.access_token).toBeTruthy()
+    const refresh = (body.data.session as unknown as { refresh_token: string }).refresh_token
+    expect(refresh).toMatch(OPAQUE)
+    expect(refresh).not.toBe(body.data.session?.access_token)
   })
 
   it('exchanges a validated browser cookie for an authorization-code session', async () => {
@@ -133,8 +178,37 @@ describe('Auth API (better-auth)', () => {
       user: { email: string }
     }
     expect(body.access_token).toBeTruthy()
-    expect(body.refresh_token).toBe(body.access_token)
+    // The refresh token is a separate opaque value (GoTrue contract), not the session token.
+    expect(body.refresh_token).toMatch(OPAQUE)
+    expect(body.refresh_token).not.toBe(body.access_token)
     expect(body.user.email).toBe(testEmail)
+  })
+
+  it('exchanges a validated browser cookie for a Bearer session at /api/auth/exchange', async () => {
+    const signIn = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: supabaseHeaders,
+      body: JSON.stringify({ email: testEmail, password: testPassword }),
+    })
+    const setCookie = signIn.headers
+      .getSetCookie()
+      .find((value) => value.startsWith('better-auth.session_token='))
+    const cookie = setCookie?.slice(0, setCookie.indexOf(';')) ?? ''
+    const exchange = (headers: Record<string, string>) =>
+      fetch(`${baseUrl}/api/auth/exchange`, { method: 'POST', headers })
+
+    const csrf = await exchange({ cookie })
+    expect(csrf.status).toBe(403)
+    const anonymous = await exchange({ 'x-requested-with': 'sinopebase-admin' })
+    expect(anonymous.status).toBe(401)
+
+    const res = await exchange({ cookie, 'x-requested-with': 'sinopebase-admin' })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as TokenPair
+    expect(body.user.email).toBe(testEmail)
+    expect(body.refresh_token).toMatch(OPAQUE)
+    expect(body.refresh_token).not.toBe(body.access_token)
+    expect((await refresh({ refresh_token: body.refresh_token })).status).toBe(200)
   })
 
   it('rejects a tampered browser cookie during authorization-code exchange', async () => {
@@ -220,35 +294,163 @@ describe('Auth API (better-auth)', () => {
   })
 
   // Test 6: Reject wrong password
-  it('rejects invalid password on signin', async () => {
-    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: testEmail, password: 'wrong-password' }),
-    })
-    expect(res.status).toBe(400)
-    const json = (await res.json()) as { message: string }
-    expect(json.message).toBeTruthy()
+  it('rejects invalid or missing credentials with the GoTrue message', async () => {
+    for (const credentials of [
+      { email: testEmail, password: 'wrong-password' },
+      { email: testEmail },
+      { password: testPassword },
+    ]) {
+      const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+      })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ message: 'Invalid login credentials', status: 400 })
+    }
   })
 
   // Test 7: Refresh session
-  it('refreshes session with refresh token', async () => {
-    const signInRes = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: testEmail, password: testPassword }),
-    })
-    const signInJson = (await signInRes.json()) as { refresh_token: string }
-    const refreshToken = signInJson.refresh_token
+  it('issues an opaque refresh token and rotates both tokens on refresh', async () => {
+    const session = await signIn()
+    expect(session.refresh_token).toMatch(OPAQUE)
+    expect(session.refresh_token).not.toBe(session.access_token)
 
-    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=refresh_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    })
+    const res = await refresh({ refresh_token: session.refresh_token })
     expect(res.status).toBe(200)
-    const json = (await res.json()) as { access_token: string }
-    expect(json.access_token).toBeTruthy()
+    const next = (await res.json()) as TokenPair & { token_type: string; expires_in: number }
+    expect(next.user.email).toBe(testEmail)
+    expect(next.token_type).toBe('bearer')
+    expect(next.expires_in).toBe(3600)
+    expect(next.access_token).toMatch(OPAQUE)
+    expect(next.refresh_token).toMatch(OPAQUE)
+    expect(next.access_token).not.toBe(session.access_token)
+    expect(next.refresh_token).not.toBe(session.refresh_token)
+    expect(await userStatus(next.access_token)).toBe(200)
+    expect(await userStatus(session.access_token)).toBe(401)
+  })
+
+  it('gives parallel refreshes with the same token the same session (no 400 race)', async () => {
+    const session = await signIn()
+    const responses = await Promise.all(
+      [1, 2, 3].map(() => refresh({ refresh_token: session.refresh_token })),
+    )
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200])
+    const bodies = (await Promise.all(responses.map((r) => r.json()))) as TokenPair[]
+    const pairs = bodies.map((b) => [b.access_token, b.refresh_token])
+    expect(pairs[1]).toEqual(pairs[0] as string[])
+    expect(pairs[2]).toEqual(pairs[0] as string[])
+    expect(await userStatus(bodies[0]?.access_token as string)).toBe(200)
+  })
+
+  it('rejects a missing or unknown refresh token', async () => {
+    for (const body of [{}, { refresh_token: '' }, { refresh_token: 'unknown-token' }]) {
+      const res = await refresh(body)
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ message: 'Invalid refresh token', status: 400 })
+    }
+  })
+
+  it('does not exchange an access token for a refresh token', async () => {
+    const session = await signIn()
+    const res = await refresh({ refresh_token: session.access_token })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ message: 'Invalid refresh token', status: 400 })
+    expect(await userStatus(session.access_token)).toBe(200)
+  })
+
+  it('rejects a password grant with no body with the GoTrue message', async () => {
+    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, { method: 'POST' })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ message: 'Invalid login credentials', status: 400 })
+  })
+
+  // Test 9: Logout
+  it('logs out with 204 and revokes the access and refresh tokens', async () => {
+    const session = await signIn()
+    const res = await logout(`Bearer ${session.access_token}`)
+    expect(res.status).toBe(204)
+    expect(await res.text()).toBe('')
+
+    expect(await userStatus(session.access_token)).toBe(401)
+    expect((await refresh({ refresh_token: session.refresh_token })).status).toBe(400)
+    const rest = await fetch(`${baseUrl}/rest/v1/_nonexistent`, {
+      headers: {
+        apikey: 'authbt-anon-key-min-32-chars!!!!!!',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    })
+    expect(rest.status).toBe(401)
+  })
+
+  it('logs out every session by default (GoTrue global scope)', async () => {
+    const first = await signIn()
+    const second = await signIn()
+    expect((await logout(`Bearer ${first.access_token}`)).status).toBe(204)
+    expect(await userStatus(second.access_token)).toBe(401)
+  })
+
+  it('logs out only the current session with scope=local', async () => {
+    const first = await signIn()
+    const second = await signIn()
+    expect((await logout(`Bearer ${first.access_token}`, 'local')).status).toBe(204)
+    expect(await userStatus(first.access_token)).toBe(401)
+    expect(await userStatus(second.access_token)).toBe(200)
+  })
+
+  it('logs out the other sessions with scope=others', async () => {
+    const first = await signIn()
+    const second = await signIn()
+    expect((await logout(`Bearer ${first.access_token}`, 'others')).status).toBe(204)
+    expect(await userStatus(first.access_token)).toBe(200)
+    expect(await userStatus(second.access_token)).toBe(401)
+  })
+
+  it('rejects logout without a Bearer token (401) or without a live session (403)', async () => {
+    const session = await signIn()
+    for (const authorization of [undefined, `Token: ${session.access_token}`, 'Bearer ']) {
+      const res = await logout(authorization)
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({
+        message: 'This endpoint requires a valid Bearer token',
+        status: 401,
+      })
+    }
+    const unknown = await logout('Bearer revoked-or-unknown')
+    expect(unknown.status).toBe(403)
+    expect(await unknown.json()).toEqual({ message: 'Session not found', status: 403 })
+    expect(await userStatus(session.access_token)).toBe(200)
+
+    expect((await logout(`Bearer ${session.access_token}`)).status).toBe(204)
+    expect((await logout(`Bearer ${session.access_token}`)).status).toBe(403)
+  })
+
+  it('rejects an unsupported logout scope', async () => {
+    const session = await signIn()
+    const res = await logout(`Bearer ${session.access_token}`, 'everyone')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ message: 'Unsupported logout scope', status: 400 })
+    expect(await userStatus(session.access_token)).toBe(200)
+  })
+
+  it('rejects signup while signups are closed', async () => {
+    const original = process.env.ALLOW_SIGNUPS
+    process.env.ALLOW_SIGNUPS = 'false'
+    try {
+      const res = await fetch(`${baseUrl}/auth/v1/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: `closed-${testEmail}`, password: testPassword }),
+      })
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({
+        message: 'Signups are currently invite-only.',
+        status: 403,
+      })
+    } finally {
+      if (original === undefined) delete process.env.ALLOW_SIGNUPS
+      else process.env.ALLOW_SIGNUPS = original
+    }
   })
 
   // Test 8: Reject missing email
@@ -261,32 +463,16 @@ describe('Auth API (better-auth)', () => {
     expect(res.status).toBe(400)
   })
 
-  // Test 9: Logout
-  it('logs out successfully', async () => {
-    const signInRes = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: testEmail, password: testPassword }),
-    })
-    const signInJson = (await signInRes.json()) as { access_token: string }
-    const token = signInJson.access_token
-
-    const res = await fetch(`${baseUrl}/auth/v1/logout`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(res.status).toBe(200)
-    const json = (await res.json()) as Record<string, unknown>
-    expect(json).toEqual({})
-  })
-
   // Test 10: Reject unknown grant type
   it('rejects unknown grant type', async () => {
-    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=invalid`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    expect(res.status).toBe(400)
+    for (const query of ['?grant_type=invalid', '?grant_type=constructor', '']) {
+      const res = await fetch(`${baseUrl}/auth/v1/token${query}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ message: 'Invalid grant type', status: 400 })
+    }
   })
 })

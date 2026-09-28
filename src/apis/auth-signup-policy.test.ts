@@ -3,6 +3,10 @@
  * @new-code-test negative src/apis/auth.ts
  */
 import { afterEach, describe, expect, it } from 'bun:test'
+import pg from 'pg'
+import { createRefreshTokensTable } from '~/tools/auth-better'
+import { createAuthTables, createBetterAuthDB } from '~/tools/auth-better/adapter'
+import { requirePostgres } from '../../tests/harness'
 import { authPlugin, createAuthPlugin, signupsAllowed } from './auth'
 
 describe('signup policy', () => {
@@ -229,6 +233,25 @@ describe('signup policy', () => {
   it('allows an explicitly enabled production signup through better-auth', async () => {
     process.env.SINOPEBASE_PRODUCTION = 'true'
     process.env.ALLOW_SIGNUPS = 'true'
+    // The signup issues an opaque refresh token for the better-auth session row.
+    const db = createBetterAuthDB(new pg.Pool({ connectionString: requirePostgres() }))
+    await createAuthTables(db)
+    await createRefreshTokensTable(db)
+    const userId = crypto.randomUUID()
+    const sessionToken = `signup-session-${userId}`
+    await db
+      .insertInto('user')
+      .values({ id: userId, email: `${userId}@example.com` } as never)
+      .execute()
+    await db
+      .insertInto('session')
+      .values({
+        id: crypto.randomUUID(),
+        userId,
+        token: sessionToken,
+        expiresAt: new Date(Date.now() + 60_000),
+      } as never)
+      .execute()
     const sessionHeaders = new Headers()
     sessionHeaders.append('set-cookie', 'session=one; Path=/; HttpOnly')
     sessionHeaders.append('set-cookie', 'csrf=two; Path=/; SameSite=Lax')
@@ -238,9 +261,9 @@ describe('signup policy', () => {
         signInEmail: async () => ({
           headers: sessionHeaders,
           response: {
-            token: 'signup-session-token',
+            token: sessionToken,
             user: {
-              id: 'signup-user-id',
+              id: userId,
               email: 'allowed-postgres@example.com',
             },
           },
@@ -248,6 +271,7 @@ describe('signup policy', () => {
         signOut: async () => {},
         getSession: async () => null,
       },
+      __db: db as unknown as Parameters<typeof createAuthPlugin>[0]['__db'],
     }
     const response = await createAuthPlugin(fakeAuth).handle(
       new Request('http://localhost/auth/v1/signup', {
@@ -256,11 +280,21 @@ describe('signup policy', () => {
         body: JSON.stringify({ email: 'allowed-postgres@example.com', password: 'password-123' }),
       }),
     )
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as { access_token: string; user: { email: string } }
-    expect(body.access_token).toBe('signup-session-token')
-    expect(body.user.email).toBe('allowed-postgres@example.com')
-    expect(response.headers.getSetCookie()).toHaveLength(2)
+    try {
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as {
+        access_token: string
+        refresh_token: string
+        user: { email: string }
+      }
+      expect(body.access_token).toBe(sessionToken)
+      expect(body.refresh_token).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(body.user.email).toBe('allowed-postgres@example.com')
+      expect(response.headers.getSetCookie()).toHaveLength(2)
+    } finally {
+      await db.deleteFrom('user').where('id', '=', userId).execute()
+      await db.destroy()
+    }
   })
 
   it('still validates required fields in the better-auth route when signup is open', async () => {

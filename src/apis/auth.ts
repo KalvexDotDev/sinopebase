@@ -9,8 +9,15 @@
 
 import { Elysia } from 'elysia'
 import type { Kysely } from 'kysely'
-import { lookupSessionByToken } from '~/tools/auth-better'
+import { z } from 'zod'
+import { lookupSessionByToken, type SessionLookup } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
+import {
+  exchangeRefreshToken,
+  LOGOUT_SCOPES,
+  refreshTokenForSession,
+  revokeSessions,
+} from '~/tools/auth-better/refresh-tokens'
 import { signupsAllowed } from '~/tools/auth-better/signup-policy'
 import {
   type BetterAuthGetSessionResult,
@@ -443,6 +450,77 @@ function getSessionToken(result: BetterAuthGetSessionResult | null): string | nu
   return typeof token === 'string' && token.length > 0 ? token : null
 }
 
+/** The better-auth Kysely handle attached by `createAuth`. */
+function authDb(auth: BetterAuthInstance): Kysely<BetterAuthDatabase> {
+  return auth.__db as unknown as Kysely<BetterAuthDatabase>
+}
+
+const refreshGrantBody = z.object({ refresh_token: z.string().min(1) })
+const logoutScope = z.enum(LOGOUT_SCOPES)
+
+/** A GoTrue session for a better-auth sign-in: session token + opaque refresh token. */
+async function issueSession(auth: BetterAuthInstance, result: BetterAuthSignInResult) {
+  return bridgeSignInResponse(result, await refreshTokenForSession(authDb(auth), result.token))
+}
+
+interface GrantContext {
+  body: unknown
+  set: { status?: number | string; headers: Record<string, string | string[] | number | undefined> }
+  request: Request
+}
+
+async function passwordGrant(auth: BetterAuthInstance, { body, set }: GrantContext) {
+  try {
+    const { email, password } = body as { email: string; password: string }
+    const signIn = await auth.api.signInEmail({ body: { email, password }, returnHeaders: true })
+    forwardSessionCookies(signIn.headers, set)
+    return await issueSession(auth, signIn.response)
+  } catch {
+    // GoTrue's message for any failed password sign-in; never better-auth or database text.
+    set.status = 400
+    return errorResponse('Invalid login credentials', 400)
+  }
+}
+
+async function refreshTokenGrant(auth: BetterAuthInstance, { body, set }: GrantContext) {
+  // Database errors propagate to the global handler (masked 500), as in GoTrue.
+  const parsed = refreshGrantBody.safeParse(body)
+  const pair = parsed.success
+    ? await exchangeRefreshToken(authDb(auth), parsed.data.refresh_token)
+    : null
+  if (!pair) {
+    set.status = 400
+    return errorResponse('Invalid refresh token', 400)
+  }
+  // The exchange just read this live session; only a concurrent logout can
+  // remove it, and then the bridge throws (500) rather than returning 200.
+  const user = (await lookupSessionByToken(auth, pair.accessToken)) as SessionLookup
+  return bridgeSignInResponse({ token: pair.accessToken, user }, pair.refreshToken)
+}
+
+/**
+ * OAuth callback: the code was already consumed by better-auth's
+ * /api/auth/callback handler. Read the session cookie that better-auth set
+ * during the callback redirect.
+ */
+async function authorizationCodeGrant(auth: BetterAuthInstance, { set, request }: GrantContext) {
+  const validatedSession = await getValidatedCookieSession(auth, request.headers)
+  const sessionToken = getSessionToken(validatedSession)
+  if (!sessionToken) {
+    set.status = 400
+    return errorResponse('Invalid authorization code', 400)
+  }
+  // A session token implies Better Auth returned the session with its user.
+  const { user } = validatedSession as BetterAuthGetSessionResult
+  return issueSession(auth, { token: sessionToken, user })
+}
+
+const TOKEN_GRANTS = new Map([
+  ['password', passwordGrant],
+  ['refresh_token', refreshTokenGrant],
+  ['authorization_code', authorizationCodeGrant],
+])
+
 export function createAuthPlugin(
   auth: BetterAuthInstance,
   oauthProviderIds?: string[],
@@ -467,7 +545,7 @@ export function createAuthPlugin(
 
   return (
     new Elysia({ name: 'sinopebase-auth' })
-      .use(createAdminUsersPlugin(auth.__db as unknown as Kysely<BetterAuthDatabase>, serviceKey))
+      .use(createAdminUsersPlugin(authDb(auth), serviceKey))
       .onBeforeHandle(({ request, set }) => {
         if (!nativeSignupBlocked(request)) return
         set.status = 403
@@ -563,7 +641,7 @@ export function createAuthPlugin(
             token_type: 'bearer',
             expires_in: expiresIn,
             expires_at: now + expiresIn,
-            refresh_token: sessionToken,
+            refresh_token: await refreshTokenForSession(authDb(auth), sessionToken),
             user: {
               id: result.user.id,
               email: result.user.email,
@@ -587,10 +665,7 @@ export function createAuthPlugin(
         if (!sessionToken || !result?.user) {
           return { data: { session: null, user: null }, error: null }
         }
-        const session = bridgeSignInResponse({ token: sessionToken, user: result.user })
-        if ('message' in session) {
-          return { data: { session: null, user: null }, error: null }
-        }
+        const session = await issueSession(auth, { token: sessionToken, user: result.user })
         return { data: { session, user: session.user }, error: null }
       })
       .post('/auth/v1/signup', async ({ body, set }) => {
@@ -613,239 +688,39 @@ export function createAuthPlugin(
             returnHeaders: true,
           })
           forwardSessionCookies(signIn.headers, set)
-          const signInResult = signIn.response
-          // Store initial refresh token entry for rotation tracking
-          await persistRefreshTokenOnSignIn(auth, signInResult)
-          return bridgeSignInResponse(signInResult)
+          return await issueSession(auth, signIn.response)
         } catch (err: unknown) {
           set.status = 400
           return errorResponse(err instanceof Error ? err.message : 'Signup failed', 400)
         }
       })
-      .post('/auth/v1/token', async ({ body, query, set, request }) => {
-        const q = query as Record<string, string>
-        const grantType = q.grant_type
-        if (grantType === 'password') {
-          const { email, password } = body as { email: string; password: string }
-          if (!email || !password) {
-            set.status = 400
-            return errorResponse('Invalid login credentials', 400)
-          }
-          try {
-            const signIn = await auth.api.signInEmail({
-              body: { email, password },
-              returnHeaders: true,
-            })
-            forwardSessionCookies(signIn.headers, set)
-            const result = signIn.response
-            // Store initial refresh token entry for rotation tracking
-            await persistRefreshTokenOnSignIn(auth, result)
-            return bridgeSignInResponse(result)
-          } catch (err: unknown) {
-            set.status = 400
-            return errorResponse(
-              err instanceof Error ? err.message : 'Invalid login credentials',
-              400,
-            )
-          }
+      .post('/auth/v1/token', ({ body, query, set, request }) => {
+        const grant = TOKEN_GRANTS.get((query as Record<string, string>).grant_type as string)
+        if (!grant) {
+          set.status = 400
+          return errorResponse('Invalid grant type', 400)
         }
-        if (grantType === 'refresh_token') {
-          const { refresh_token } = body as { refresh_token?: string }
-          if (!refresh_token) {
-            set.status = 400
-            return errorResponse('Invalid refresh token', 400)
-          }
-          try {
-            const db = (auth as Record<string, unknown>).__db
-            if (!db) {
-              // No DB available — cannot perform rotation
-              set.status = 400
-              return errorResponse('Invalid refresh token', 400)
-            }
-
-            // 1. Look up refresh token in the dedicated table
-            const typedDb = db as RefreshTokenDb
-
-            const tokenRows = await typedDb
-              .selectFrom('refresh_tokens')
-              .selectAll()
-              .where('token_id', '=', refresh_token)
-              .execute()
-
-            // Fallback: if no refresh_tokens entry exists, check session table directly
-            // (supports sessions created before the refresh_tokens table existed)
-            if (!tokenRows[0]) {
-              const row = await lookupSessionByToken(auth, refresh_token)
-              if (!row) {
-                set.status = 400
-                return errorResponse('Invalid refresh token', 400)
-              }
-              // Legacy rotation: update session token directly
-              const newToken = crypto.randomUUID().replace(/-/g, '')
-              const sessions = await typedDb
-                .selectFrom('session')
-                .select(['id'])
-                .where('token', '=', refresh_token)
-                .execute()
-              const sessionId = (sessions[0] as Record<string, unknown> | undefined)?.id as
-                | string
-                | undefined
-              if (sessionId) {
-                await typedDb
-                  .updateTable('session')
-                  .set({ token: newToken, updatedAt: new Date() } as Record<string, unknown>)
-                  .where('id', '=', sessionId)
-                  .execute()
-              }
-              return bridgeSignInResponse({ token: newToken, user: row } as BetterAuthSignInResult)
-            }
-
-            const tokenRecord = tokenRows[0] as Record<string, unknown>
-            const tokenId = tokenRecord.token_id as string
-            const userId = tokenRecord.user_id as string
-            const sessionId = tokenRecord.session_id as string
-            const familyId = tokenRecord.family_id as string
-            const consumed = tokenRecord.consumed as boolean
-            const compromised = tokenRecord.compromised as boolean
-            const expiresAt = tokenRecord.expires_at as Date
-
-            // 2. Check expiry
-            if (expiresAt < new Date()) {
-              set.status = 400
-              return errorResponse('Invalid refresh token', 400)
-            }
-
-            // 3. Check compromised flag
-            if (compromised) {
-              set.status = 400
-              return errorResponse('Invalid refresh token', 400)
-            }
-
-            // 4. Check consumed flag — REPLAY DETECTION
-            if (consumed) {
-              // Mark entire family as compromised
-              await typedDb
-                .updateTable('refresh_tokens')
-                .set({ compromised: true } as Record<string, unknown>)
-                .where('family_id', '=', familyId)
-                .execute()
-              // Log audit event
-              console.error(
-                `[AUDIT] Refresh token replay detected: token_id=${tokenId}, family=${familyId}, user=${userId}`,
-              )
-              set.status = 400
-              return errorResponse('Invalid refresh token', 400)
-            }
-
-            // 5. Look up session to get user info
-            const sessions = await typedDb
-              .selectFrom('session')
-              .select(['userId'])
-              .where('id', '=', sessionId)
-              .execute()
-            const sessionUserId = (sessions[0] as Record<string, unknown> | undefined)?.userId as
-              | string
-              | undefined
-            if (!sessionUserId) {
-              set.status = 400
-              return errorResponse('Invalid refresh token', 400)
-            }
-
-            // 6. Mark old token as consumed
-            await typedDb
-              .updateTable('refresh_tokens')
-              .set({ consumed: true } as Record<string, unknown>)
-              .where('token_id', '=', tokenId)
-              .execute()
-
-            // 7. Generate new tokens
-            const newToken = crypto.randomUUID().replace(/-/g, '')
-            const newRefreshTokenId = crypto.randomUUID().replace(/-/g, '')
-
-            // Update session token
-            await typedDb
-              .updateTable('session')
-              .set({ token: newToken, updatedAt: new Date() } as Record<string, unknown>)
-              .where('id', '=', sessionId)
-              .execute()
-
-            // Create new refresh token record
-            const expiresAtDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-            await typedDb
-              .insertInto('refresh_tokens')
-              .values({
-                token_id: newRefreshTokenId,
-                user_id: userId,
-                session_id: sessionId,
-                family_id: familyId,
-                parent_token_id: tokenId,
-                consumed: false,
-                compromised: false,
-                expires_at: expiresAtDate,
-                created_at: new Date(),
-              } as Record<string, unknown>)
-              .execute()
-
-            // 8. Return new session with tokens
-            const userRow = await lookupSessionByToken(auth, newToken)
-            return bridgeSignInResponse({
-              token: newToken,
-              user: userRow,
-            } as BetterAuthSignInResult)
-          } catch {
-            set.status = 400
-            return errorResponse('Invalid refresh token', 400)
-          }
-        }
-        if (grantType === 'authorization_code') {
-          // OAuth callback: the code was already consumed by better-auth's
-          // /api/auth/callback handler. Just read the session cookie that
-          // better-auth set during the callback redirect.
-          try {
-            const validatedSession = await getValidatedCookieSession(auth, request.headers)
-            const sessionToken = getSessionToken(validatedSession)
-            if (!sessionToken || !validatedSession?.user) {
-              set.status = 400
-              return errorResponse('Invalid authorization code', 400)
-            }
-            const result = bridgeSignInResponse({
-              token: sessionToken,
-              user: validatedSession.user,
-            })
-            if ('message' in result) {
-              set.status = 400
-              return result
-            }
-            // Store refresh token entry so rotation works
-            await persistRefreshTokenOnSignIn(auth, {
-              token: sessionToken,
-              user: { id: result.user.id },
-            })
-            return result
-          } catch {
-            set.status = 400
-            return errorResponse('Invalid authorization code', 400)
-          }
-        }
-        set.status = 400
-        return errorResponse('Invalid grant type', 400)
+        return grant(auth, { body, set, request })
       })
-      .post('/auth/v1/logout', async ({ headers }) => {
-        const authHeader = headers.authorization
-        if (authHeader?.startsWith('Bearer ')) {
-          const token = authHeader.slice(7).trim()
-          const api = auth.api as unknown as {
-            signOut: (args: { headers: Headers }) => Promise<void>
-            revokeSession: (args: { body: { token: string } }) => Promise<void>
-          }
-          // Revoke the session server-side — signOut alone is cookie-keyed
-          // and does not invalidate Bearer sessions.
-          await api.revokeSession({ body: { token } }).catch(() => {})
-          await api
-            .signOut({ headers: new Headers({ Authorization: `Bearer ${token}` }) })
-            .catch(() => {})
+      // GoTrue logout: revoke sessions for the Bearer token's user, 204 No Content.
+      // Errors surface as 500 (not swallowed) so a failed revocation never reports success.
+      .post('/auth/v1/logout', async ({ headers, query, set }) => {
+        const scope = logoutScope.safeParse((query as Record<string, string>).scope ?? 'global')
+        if (!scope.success) {
+          set.status = 400
+          return errorResponse('Unsupported logout scope', 400)
         }
-        return {}
+        // GoTrue: no Bearer token → 401; a token without a live session → 403.
+        const bearer = headers.authorization
+        if (!bearer?.startsWith('Bearer ')) {
+          set.status = 401
+          return errorResponse('This endpoint requires a valid Bearer token', 401)
+        }
+        if (!(await revokeSessions(authDb(auth), bearer.slice(7), scope.data))) {
+          set.status = 403
+          return errorResponse('Session not found', 403)
+        }
+        return new Response(null, { status: 204 })
       })
       .patch('/auth/v1/user', async ({ headers, body, set }) => {
         const authHeader = headers.authorization
@@ -967,51 +842,4 @@ export function createAuthPlugin(
         }
       })
   )
-}
-
-// ---------------------------------------------------------------------------
-// Refresh token persistence helper
-// ---------------------------------------------------------------------------
-
-/**
- * After a successful sign-in (or sign-up + sign-in), store an initial
- * refresh token entry in the `refresh_tokens` table so the rotation
- * and replay-detection flow works for this session.
- */
-async function persistRefreshTokenOnSignIn(
-  auth: BetterAuthInstance,
-  signInResult: { token: string; user: { id: string } },
-): Promise<void> {
-  const typedDb = (auth as Record<string, unknown>).__db as RefreshTokenDb | undefined
-  if (!typedDb?.selectFrom) return
-
-  try {
-    const sessions = await typedDb
-      .selectFrom('session')
-      .select(['id'])
-      .where('token', '=', signInResult.token)
-      .execute()
-    if (!sessions[0]) return
-
-    const sessionId = sessions[0].id as string
-    const newRefreshTokenId = crypto.randomUUID().replace(/-/g, '')
-    const familyId = crypto.randomUUID().replace(/-/g, '')
-
-    await typedDb
-      .insertInto('refresh_tokens')
-      .values({
-        token_id: newRefreshTokenId,
-        user_id: signInResult.user.id,
-        session_id: sessionId,
-        family_id: familyId,
-        parent_token_id: null,
-        consumed: false,
-        compromised: false,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        created_at: new Date(),
-      } as Record<string, unknown>)
-      .execute()
-  } catch {
-    // Non-fatal — refresh token storage is best-effort during sign-in
-  }
 }

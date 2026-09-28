@@ -1,3 +1,5 @@
+// @new-code-test positive src/sdk/auth-impl.ts
+// @new-code-test negative src/sdk/auth-impl.ts
 /**
  * Auth session handling — setSession verifies tokens against the backend,
  * getSession clears stale in-memory sessions, and SSR cookie providers are
@@ -166,5 +168,41 @@ describe('SSR cookie provider', () => {
     expect(await auth.getAccessToken()).toBe('cookie-token')
     expect(await auth.getAccessToken()).toBe('cookie-token')
     expect(calls).toBe(1)
+  })
+})
+
+describe('signOut', () => {
+  async function signedInClient() {
+    stubJson(200, testUser)
+    const auth = createAuthClient('http://x', 'key')
+    await auth.setSession({ access_token: 'good-token', refresh_token: 'r' })
+    return auth
+  }
+
+  for (const status of [204, 401, 403, 404]) {
+    it(`clears the local session on ${status} (supabase-js parity)`, async () => {
+      const auth = await signedInClient()
+      globalThis.fetch = (async () =>
+        new Response(status === 204 ? null : '{"message":"gone"}', {
+          status,
+        })) as unknown as typeof fetch
+      const events: string[] = []
+      auth.onAuthStateChange((event) => events.push(event))
+
+      expect(await auth.signOut()).toEqual({ error: null })
+      expect(events).toContain('SIGNED_OUT')
+    })
+  }
+
+  it('keeps the session and reports other failures', async () => {
+    const auth = await signedInClient()
+    stubJson(500, { message: 'Error logging out user' })
+    const events: string[] = []
+    auth.onAuthStateChange((event) => events.push(event))
+
+    expect(await auth.signOut()).toEqual({
+      error: { message: 'Error logging out user', status: 500 },
+    })
+    expect(events).not.toContain('SIGNED_OUT')
   })
 })
