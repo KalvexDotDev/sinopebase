@@ -274,7 +274,7 @@ bun run compile && bun run benchmark   # needs Docker PostgreSQL + RustFS
 - **Trivy container scanning** — CRITICAL+HIGH gates in CI
 - **Read-only root filesystem** — Docker runs as UID 10001, all capabilities dropped
 
-> **⚠️ Pre-1.0 caveats:** Production-mode secret enforcement, signed URL cryptography, and supply-chain attestation (SBOM, signed containers) are in progress for v1.0. PostgREST filter operators currently cover 10 operators (`eq/neq/gt/gte/lt/lte/like/ilike/is/in`); full-text search (`fts`), array operators, and `not.` negation are deferred. OAuth social + enterprise OIDC and Realtime presence are shipped (v0.6.2). See [CHANGELOG.md](CHANGELOG.md) for current status.
+> **⚠️ Pre-1.0 caveats:** Production-mode secret enforcement, signed URL cryptography, and supply-chain attestation (SBOM, signed containers) are in progress for v1.0. PostgREST filter operators currently cover 12 operators (`eq/neq/gt/gte/lt/lte/like/ilike/match/imatch/is/in`); regex filters (`match`/`imatch`) are unanchored POSIX regexes, so clients add `^...$` when they want a full-value match. Full-text search (`fts`), array operators, and `not.` negation are deferred. OAuth social + enterprise OIDC and Realtime presence are shipped (v0.6.2). See [CHANGELOG.md](CHANGELOG.md) for current status.
 
 ---
 

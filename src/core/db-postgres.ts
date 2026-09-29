@@ -96,6 +96,71 @@ function withPostgrestDates(pool: pg.Pool) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Filter expression builders
+// ---------------------------------------------------------------------------
+
+/** One operator's SQL expression builder: `filter => WHERE fragment`. */
+type FilterExpressionBuilder = (filter: Filter) => RawBuilder<boolean>
+
+/** The quoted column a filter targets, as a Kysely reference. */
+const filterColumn = (filter: Filter) => sql.ref(filter.column)
+
+/** `is.` values PostgREST accepts, mapped to the SQL predicate they compile to. */
+const IS_KEYWORDS: Record<string, string> = {
+  null: 'IS NULL',
+  true: 'IS TRUE',
+  false: 'IS FALSE',
+}
+
+/**
+ * PostgREST filter operators, one small builder each. `buildFilterExpression`
+ * dispatches here so no single function grows past the complexity budget.
+ */
+const FILTER_EXPRESSION_BUILDERS: Record<string, FilterExpressionBuilder> = {
+  eq: (filter) => sql<boolean>`${filterColumn(filter)} = ${filter.value}`,
+  neq: (filter) => {
+    // PostgREST semantics: neq.null → IS NOT NULL
+    if (filter.value === null || filter.value === 'null')
+      return sql<boolean>`${filterColumn(filter)} IS NOT NULL`
+    return sql<boolean>`${filterColumn(filter)} <> ${filter.value}`
+  },
+  gt: (filter) => sql<boolean>`${filterColumn(filter)} > ${filter.value}`,
+  gte: (filter) => sql<boolean>`${filterColumn(filter)} >= ${filter.value}`,
+  lt: (filter) => sql<boolean>`${filterColumn(filter)} < ${filter.value}`,
+  lte: (filter) => sql<boolean>`${filterColumn(filter)} <= ${filter.value}`,
+  like: (filter) => sql<boolean>`${filterColumn(filter)} LIKE ${filter.value}`,
+  ilike: (filter) => sql<boolean>`${filterColumn(filter)} ILIKE ${filter.value}`,
+  // PostgREST regex filters: case-sensitive `~` and case-insensitive `~*`, unanchored.
+  match: (filter) => sql<boolean>`${filterColumn(filter)} ~ ${filter.value}`,
+  imatch: (filter) => sql<boolean>`${filterColumn(filter)} ~* ${filter.value}`,
+  is: (filter) => {
+    const keyword = IS_KEYWORDS[String(filter.value)]
+    if (!keyword) throw new Error(`Unsupported is-filter value: ${String(filter.value)}`)
+    return sql<boolean>`${filterColumn(filter)} ${sql.raw(keyword)}`
+  },
+  in: (filter) => {
+    const values = Array.isArray(filter.value)
+      ? filter.value
+      : typeof filter.value === 'string'
+        ? parseInValue(filter.value)
+        : [filter.value]
+    if (values.length === 0) return sql<boolean>`FALSE`
+    return sql<boolean>`${filterColumn(filter)} IN (${sql.join(values)})`
+  },
+  // JSONB containment: the column contains, or is contained by, the JSON value.
+  cs: (filter) => sql<boolean>`${filterColumn(filter)} @> ${sql.val(filter.value)}::jsonb`,
+  cd: (filter) => sql<boolean>`${filterColumn(filter)} <@ ${sql.val(filter.value)}::jsonb`,
+  fts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`,
+  plfts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`,
+  phfts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ phraseto_tsquery('english', ${sql.val(filter.value)})`,
+  wfts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ websearch_to_tsquery('english', ${sql.val(filter.value)})`,
+}
+
 export class PostgresDatabase implements IDatabase {
   private writer: Kysely<DatabaseSchema>
   private reader: Kysely<DatabaseSchema>
@@ -623,60 +688,8 @@ export class PostgresDatabase implements IDatabase {
   }
 
   private buildFilterExpression(filter: Filter): RawBuilder<boolean> {
-    const column = sql.ref(filter.column)
-
-    switch (filter.operator) {
-      case 'eq':
-        return sql<boolean>`${column} = ${filter.value}`
-      case 'neq': {
-        // PostgREST semantics: neq.null → IS NOT NULL
-        if (filter.value === null || filter.value === 'null')
-          return sql<boolean>`${column} IS NOT NULL`
-        return sql<boolean>`${column} <> ${filter.value}`
-      }
-      case 'gt':
-        return sql<boolean>`${column} > ${filter.value}`
-      case 'gte':
-        return sql<boolean>`${column} >= ${filter.value}`
-      case 'lt':
-        return sql<boolean>`${column} < ${filter.value}`
-      case 'lte':
-        return sql<boolean>`${column} <= ${filter.value}`
-      case 'like':
-        return sql<boolean>`${column} LIKE ${filter.value}`
-      case 'ilike':
-        return sql<boolean>`${column} ILIKE ${filter.value}`
-      case 'is': {
-        if (filter.value === null || filter.value === 'null') return sql<boolean>`${column} IS NULL`
-        if (filter.value === true || filter.value === 'true') return sql<boolean>`${column} IS TRUE`
-        if (filter.value === false || filter.value === 'false')
-          return sql<boolean>`${column} IS FALSE`
-        throw new Error(`Unsupported is-filter value: ${String(filter.value)}`)
-      }
-      case 'in': {
-        const values = Array.isArray(filter.value)
-          ? filter.value
-          : typeof filter.value === 'string'
-            ? parseInValue(filter.value)
-            : [filter.value]
-        if (values.length === 0) return sql<boolean>`FALSE`
-        return sql<boolean>`${column} IN (${sql.join(values)})`
-      }
-      case 'cs':
-        // JSONB containment: column contains the JSON value
-        return sql<boolean>`${column} @> ${sql.val(filter.value)}::jsonb`
-      case 'cd':
-        // JSONB containment: column is contained by the JSON value
-        return sql<boolean>`${column} <@ ${sql.val(filter.value)}::jsonb`
-      case 'fts':
-      case 'plfts':
-        return sql<boolean>`to_tsvector('english', ${column}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`
-      case 'phfts':
-        return sql<boolean>`to_tsvector('english', ${column}) @@ phraseto_tsquery('english', ${sql.val(filter.value)})`
-      case 'wfts':
-        return sql<boolean>`to_tsvector('english', ${column}) @@ websearch_to_tsquery('english', ${sql.val(filter.value)})`
-      default:
-        throw new Error(`Unsupported filter operator: ${filter.operator}`)
-    }
+    const builder = FILTER_EXPRESSION_BUILDERS[filter.operator]
+    if (!builder) throw new Error(`Unsupported filter operator: ${filter.operator}`)
+    return builder(filter)
   }
 }

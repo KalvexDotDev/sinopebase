@@ -1,7 +1,9 @@
+// @new-code-test positive src/core/db-memory.ts
+// @new-code-test negative src/core/db-memory.ts
 // @new-code-test positive src/core/db-memory-adapter.ts
 // @new-code-test negative src/core/db-memory-adapter.ts
 import { describe, expect, it } from 'bun:test'
-import type { IDatabase } from './db-interface'
+import type { Filter, IDatabase } from './db-interface'
 import { hasDatabaseSchemaCapability } from './db-interface'
 import { MemoryDatabaseAdapter } from './db-memory-adapter'
 
@@ -59,6 +61,190 @@ describe('MemoryDatabaseAdapter canonical database contract', () => {
 
     expect(selected.map((row) => row.id)).toEqual(['b'])
     expect(await db.select('records', {})).toHaveLength(3)
+  })
+
+  it('matches match/imatch filters as unanchored POSIX regexes and rejects invalid patterns', async () => {
+    const db: IDatabase = new MemoryDatabaseAdapter()
+    await db.createTable('versions')
+    await db.insert('versions', { id: 'a', version: '3' })
+    await db.insert('versions', { id: 'b', version: '10' })
+    await db.insert('versions', { id: 'c', version: 'V3' })
+    await db.insert('versions', { id: 'd', version: null })
+
+    const ids = async (filters: Filter[]): Promise<unknown[]> =>
+      (await db.select('versions', { filters })).map((row) => row.id)
+
+    // Anchored pattern: only the numeric versions match.
+    expect(
+      await ids([{ column: 'version', operator: 'match', value: '^[1-9][0-9]{0,8}$' }]),
+    ).toEqual(['a', 'b'])
+    // Unanchored and case-sensitive, like PostgreSQL `~`.
+    expect(await ids([{ column: 'version', operator: 'match', value: 'V' }])).toEqual(['c'])
+    // Case-insensitive, like PostgreSQL `~*`.
+    expect(await ids([{ column: 'version', operator: 'imatch', value: '^v3$' }])).toEqual(['c'])
+    // Null values never match.
+    expect(await ids([{ column: 'version', operator: 'match', value: '.' }])).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+    // Invalid patterns throw, as the SQL `~` operator errors, instead of not matching.
+    await expect(
+      db.select('versions', { filters: [{ column: 'version', operator: 'match', value: '[' }] }),
+    ).rejects.toThrow('Invalid regular expression in match filter')
+  })
+
+  it('matches every operator in memory mode, including negate and the throwing cases', async () => {
+    const db: IDatabase = new MemoryDatabaseAdapter()
+    await db.createTable('ops')
+    await db.insert('ops', {
+      id: 'a',
+      version: '3',
+      label: 'Alpha',
+      flag: false,
+      empty: null,
+      rank: 2,
+      tags: ['x', 'y'],
+      meta: { role: 'admin', active: true },
+      scalar: 'plain',
+    })
+    await db.insert('ops', {
+      id: 'b',
+      version: '10',
+      label: 'alpha',
+      flag: true,
+      empty: null,
+      rank: 11,
+      tags: ['y'],
+      meta: { role: 'user' },
+      scalar: '3',
+    })
+    await db.insert('ops', {
+      id: 'c',
+      version: 'V3',
+      label: 'Beta',
+      flag: true,
+      empty: 'present',
+      rank: 3,
+      tags: ['z'],
+      meta: { role: 'admin' },
+      scalar: 'plain',
+    })
+
+    const ids = async (filters: Filter[]): Promise<unknown[]> =>
+      (await db.select('ops', { filters })).map((row) => row.id)
+
+    // eq / neq (null-safe) / gt / gte / lt / lte
+    expect(await ids([{ column: 'version', operator: 'eq', value: '3' }])).toEqual(['a'])
+    expect(await ids([{ column: 'version', operator: 'neq', value: '3' }])).toEqual(['b', 'c'])
+    expect(await ids([{ column: 'empty', operator: 'neq', value: 'null' }])).toEqual(['c'])
+    expect(await ids([{ column: 'rank', operator: 'gt', value: 3 }])).toEqual(['b'])
+    expect(await ids([{ column: 'rank', operator: 'gte', value: 3 }])).toEqual(['b', 'c'])
+    expect(await ids([{ column: 'rank', operator: 'lt', value: 3 }])).toEqual(['a'])
+    expect(await ids([{ column: 'rank', operator: 'lte', value: 3 }])).toEqual(['a', 'c'])
+    // A missing value orders below everything; non-numeric values compare as strings.
+    expect(await ids([{ column: 'missing', operator: 'gt', value: 0 }])).toEqual([])
+    expect(await ids([{ column: 'label', operator: 'gt', value: 'B' }])).toEqual(['c'])
+    // like / ilike
+    expect(await ids([{ column: 'version', operator: 'like', value: '1%' }])).toEqual(['b'])
+    expect(await ids([{ column: 'version', operator: 'ilike', value: 'v%' }])).toEqual(['c'])
+    // match / imatch
+    expect(await ids([{ column: 'version', operator: 'match', value: '^[0-9]+$' }])).toEqual([
+      'a',
+      'b',
+    ])
+    expect(await ids([{ column: 'version', operator: 'imatch', value: '^v3$' }])).toEqual(['c'])
+    // is: null, booleans, and value equality
+    expect(await ids([{ column: 'empty', operator: 'is', value: null }])).toEqual(['a', 'b'])
+    expect(await ids([{ column: 'flag', operator: 'is', value: false }])).toEqual(['a'])
+    expect(await ids([{ column: 'flag', operator: 'is', value: 'true' }])).toEqual(['b', 'c'])
+    expect(await ids([{ column: 'rank', operator: 'is', value: 2 }])).toEqual(['a'])
+    // in
+    expect(await ids([{ column: 'version', operator: 'in', value: [3, 10] }])).toEqual(['a', 'b'])
+    // cs / cd: array, object, and scalar containment on both sides
+    expect(await ids([{ column: 'tags', operator: 'cs', value: ['y'] }])).toEqual(['a', 'b'])
+    expect(await ids([{ column: 'tags', operator: 'cs', value: 'z' }])).toEqual(['c'])
+    expect(await ids([{ column: 'meta', operator: 'cs', value: { role: 'admin' } }])).toEqual([
+      'a',
+      'c',
+    ])
+    expect(await ids([{ column: 'tags', operator: 'cd', value: ['x', 'y'] }])).toEqual(['a', 'b'])
+    expect(
+      await ids([{ column: 'meta', operator: 'cd', value: { role: 'admin', active: true } }]),
+    ).toEqual(['a', 'c'])
+    expect(await ids([{ column: 'scalar', operator: 'cs', value: 'plain' }])).toEqual(['a', 'c'])
+    // Containment against a missing row value, a non-array container, and a non-object container.
+    expect(await ids([{ column: 'missing', operator: 'cs', value: { role: 'admin' } }])).toEqual([])
+    expect(await ids([{ column: 'scalar', operator: 'cs', value: ['plain'] }])).toEqual([])
+    expect(await ids([{ column: 'scalar', operator: 'cs', value: { role: 'admin' } }])).toEqual([])
+    // negate flips the predicate
+    expect(await ids([{ column: 'version', operator: 'eq', value: '3', negate: true }])).toEqual([
+      'b',
+      'c',
+    ])
+
+    // Unsupported operators and full-text search reject instead of silently not matching.
+    await expect(
+      db.select('ops', { filters: [{ column: 'version', operator: 'bogus', value: '3' }] }),
+    ).rejects.toThrow('Unsupported filter operator: bogus')
+    for (const operator of ['fts', 'plfts', 'phfts', 'wfts']) {
+      await expect(
+        db.select('ops', { filters: [{ column: 'version', operator, value: 'three' }] }),
+      ).rejects.toThrow('Full-text search is not supported in memory mode')
+    }
+  })
+
+  it('distinguishes case sensitivity, is-value spelling, and in-value shapes', async () => {
+    const db: IDatabase = new MemoryDatabaseAdapter()
+    await db.createTable('edges')
+    await db.insert('edges', {
+      id: 'e1',
+      label: 'Alpha',
+      flag: true,
+      empty: null,
+      spelled: 'null',
+      combo: 'a,b',
+    })
+    await db.insert('edges', {
+      id: 'e2',
+      label: 'alpha',
+      flag: 'true',
+      empty: 'x',
+      spelled: 'present',
+      combo: 'ab',
+    })
+    await db.insert('edges', { id: 'e3', label: 'ALPHA', flag: 'false', spelled: 'x', combo: 'a' })
+
+    const ids = async (filters: Filter[]): Promise<unknown[]> =>
+      (await db.select('edges', { filters })).map((row) => row.id)
+
+    // match is case-sensitive, imatch is not; both are unanchored.
+    expect(await ids([{ column: 'label', operator: 'match', value: '^alpha$' }])).toEqual(['e2'])
+    expect(await ids([{ column: 'label', operator: 'imatch', value: '^ALPHA$' }])).toEqual([
+      'e1',
+      'e2',
+      'e3',
+    ])
+    // like is case-sensitive, ilike is not.
+    expect(await ids([{ column: 'label', operator: 'like', value: 'a%' }])).toEqual(['e2'])
+    expect(await ids([{ column: 'label', operator: 'ilike', value: 'A%' }])).toEqual([
+      'e1',
+      'e2',
+      'e3',
+    ])
+    // is.true / is.false compare booleans, not a string spelling of them.
+    expect(await ids([{ column: 'flag', operator: 'is', value: true }])).toEqual(['e1'])
+    expect(await ids([{ column: 'flag', operator: 'is', value: false }])).toEqual([])
+    // is.null covers missing values; the spelling 'null' is not null.
+    expect(await ids([{ column: 'empty', operator: 'is', value: null }])).toEqual(['e1', 'e3'])
+    expect(await ids([{ column: 'spelled', operator: 'is', value: null }])).toEqual([])
+    // in compares whole array elements, commas included.
+    expect(await ids([{ column: 'combo', operator: 'in', value: ['a,b'] }])).toEqual(['e1'])
+    expect(await ids([{ column: 'combo', operator: 'in', value: ['a'] }])).toEqual(['e3'])
+    // neq.null is IS NOT NULL for a real null value too, so a missing value is excluded.
+    expect(await ids([{ column: 'empty', operator: 'neq', value: null }])).toEqual(['e2'])
+    // match never matches a missing value, even against the string 'undefined'.
+    expect(await ids([{ column: 'missing', operator: 'match', value: 'undefined' }])).toEqual([])
   })
 
   it('supports typed is/in filters and rejects unknown operators', async () => {

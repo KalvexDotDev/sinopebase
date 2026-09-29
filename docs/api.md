@@ -64,7 +64,7 @@ curl 'https://your-instance/rest/v1/todos?id=eq.1' \
 | `limit` | `limit=50` | Max rows to return |
 | `offset` | `offset=100` | Pagination offset |
 | `order` | `order=created_at.desc` | Sort by column (`.asc` / `.desc`) |
-| `col=eq.value` | Filter: equals | `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in` |
+| `col=eq.value` | Filter: equals | `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `match`, `imatch`, `is`, `in` |
 | `or` | `or=(col1.eq.1,col2.eq.2)` | OR filter group (comma = OR within group; multiple `or=` = AND across groups) |
 | `count` | Query param or Prefer header | `count=exact` returns `Content-Range: */N` header. `count=planned`/`count=estimated` also supported. |
 
@@ -82,6 +82,8 @@ All operators work on GET, HEAD, POST, PATCH, and DELETE. `or` filter groups are
 | `lte` | `col=lte.5` | `col <= 5` |
 | `like` | `col=like.%pattern%` | `col LIKE '%pattern%'` |
 | `ilike` | `col=ilike.%pattern%` | `col ILIKE '%pattern%'` (case-insensitive) |
+| `match` | `col=match.^v[0-9]+$` | `col ~ '^v[0-9]+$'` (POSIX regex, case-sensitive) |
+| `imatch` | `col=imatch.^v[0-9]+$` | `col ~* '^v[0-9]+$'` (POSIX regex, case-insensitive) |
 | `is` | `col=is.null` | `col IS NULL` / `IS TRUE` / `IS FALSE` |
 | `in` | `col=in.(a,b,c)` | `col IN ('a','b','c')` |
 

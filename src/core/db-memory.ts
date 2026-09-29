@@ -31,6 +31,25 @@ export interface SelectOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Filter predicates
+// ---------------------------------------------------------------------------
+
+/** One operator's predicate: `(rowValue, filter) => row matches`. */
+type FilterPredicate = (rowValue: unknown, filter: ParsedFilter) => boolean
+
+/** `is.` values PostgREST accepts, as predicates over the row value. */
+const IS_TESTS: Record<string, (rowValue: unknown) => boolean> = {
+  null: (rowValue) => rowValue === null || rowValue === undefined,
+  true: (rowValue) => rowValue === true,
+  false: (rowValue) => rowValue === false,
+}
+
+/** Memory mode has no full-text search; every fts-family operator rejects. */
+const UNSUPPORTED_FULL_TEXT_SEARCH: FilterPredicate = () => {
+  throw new Error('Full-text search is not supported in memory mode')
+}
+
+// ---------------------------------------------------------------------------
 // MemoryDatabase
 // ---------------------------------------------------------------------------
 
@@ -238,57 +257,49 @@ export class MemoryDatabase {
     return filter.negate ? !result : result
   }
 
-  private matchesFilterBase(row: Record<string, unknown>, filter: ParsedFilter): boolean {
-    const { column, operator, value } = filter
-    const rowValue = row[column]
+  /**
+   * PostgREST filter operators, one small predicate each. `matchesFilterBase`
+   * dispatches here so no single function grows past the complexity budget.
+   */
+  private readonly filterPredicates: Record<string, FilterPredicate> = {
+    eq: (rowValue, filter) => this.compareEq(rowValue, filter.value),
+    neq: (rowValue, filter) => {
+      // PostgREST semantics: neq.null → IS NOT NULL
+      if (filter.value === null || filter.value === 'null')
+        return rowValue !== null && rowValue !== undefined
+      return !this.compareEq(rowValue, filter.value)
+    },
+    gt: (rowValue, filter) => this.compareOrdered(rowValue, filter.value) > 0,
+    gte: (rowValue, filter) => this.compareOrdered(rowValue, filter.value) >= 0,
+    lt: (rowValue, filter) => this.compareOrdered(rowValue, filter.value) < 0,
+    lte: (rowValue, filter) => this.compareOrdered(rowValue, filter.value) <= 0,
+    like: (rowValue, filter) => this.matchLike(rowValue, filter.value, false),
+    ilike: (rowValue, filter) => this.matchLike(rowValue, filter.value, true),
+    match: (rowValue, filter) => this.matchRegex(rowValue, filter.value, false),
+    imatch: (rowValue, filter) => this.matchRegex(rowValue, filter.value, true),
+    is: (rowValue, filter) => {
+      const test = IS_TESTS[String(filter.value)]
+      if (!test) return String(rowValue) === String(filter.value)
+      return test(rowValue)
+    },
+    in: (rowValue, filter) => {
+      // Parse (val1,val2,...) format; double-quoted values may contain commas
+      const values = Array.isArray(filter.value) ? filter.value : parseInValue(String(filter.value))
+      return values.some((v) => this.compareEq(rowValue, v))
+    },
+    // JSONB containment: the row contains, or is contained by, the filter value.
+    cs: (rowValue, filter) => this.jsonContains(rowValue, filter.value),
+    cd: (rowValue, filter) => this.jsonContains(filter.value, rowValue),
+    fts: UNSUPPORTED_FULL_TEXT_SEARCH,
+    plfts: UNSUPPORTED_FULL_TEXT_SEARCH,
+    phfts: UNSUPPORTED_FULL_TEXT_SEARCH,
+    wfts: UNSUPPORTED_FULL_TEXT_SEARCH,
+  }
 
-    switch (operator) {
-      case 'eq':
-        return this.compareEq(rowValue, value)
-      case 'neq':
-        // PostgREST semantics: neq.null → IS NOT NULL
-        if (value === null || value === 'null') return rowValue !== null && rowValue !== undefined
-        return !this.compareEq(rowValue, value)
-      case 'gt':
-        return this.compareOrdered(rowValue, value) > 0
-      case 'gte':
-        return this.compareOrdered(rowValue, value) >= 0
-      case 'lt':
-        return this.compareOrdered(rowValue, value) < 0
-      case 'lte':
-        return this.compareOrdered(rowValue, value) <= 0
-      case 'like':
-        return this.matchLike(rowValue, value, false)
-      case 'ilike':
-        return this.matchLike(rowValue, value, true)
-      case 'is': {
-        if (value === null || value === 'null') return rowValue === null || rowValue === undefined
-        if (value === true || value === 'true') return rowValue === true
-        if (value === false || value === 'false') return rowValue === false
-        return String(rowValue) === String(value)
-      }
-      case 'in': {
-        // Parse (val1,val2,...) format; double-quoted values may contain commas
-        const values = Array.isArray(value) ? value : parseInValue(String(value))
-        return values.some((v) => this.compareEq(rowValue, v))
-      }
-      case 'cs':
-        // JSONB containment: rowValue contains the filter value
-        return this.jsonContains(rowValue, value)
-      case 'cd':
-        // JSONB containment: rowValue is contained by the filter value
-        return this.jsonContains(value, rowValue)
-      case 'fts':
-      case 'plfts':
-      case 'phfts':
-      case 'wfts':
-        throw new Error('Full-text search is not supported in memory mode')
-      case 'not': {
-        throw new Error(`Unsupported filter operator: ${operator}`)
-      }
-      default:
-        throw new Error(`Unsupported filter operator: ${operator}`)
-    }
+  private matchesFilterBase(row: Record<string, unknown>, filter: ParsedFilter): boolean {
+    const predicate = this.filterPredicates[filter.operator]
+    if (!predicate) throw new Error(`Unsupported filter operator: ${filter.operator}`)
+    return predicate(row[filter.column], filter)
   }
 
   private compareEq(rowValue: unknown, value: unknown): boolean {
@@ -327,6 +338,23 @@ export class MemoryDatabase {
     } catch {
       return false
     }
+  }
+
+  /**
+   * POSIX regex match for the match/imatch operators (PostgreSQL `~` / `~*`).
+   * Unanchored, to match PostgreSQL: the pattern may match anywhere in the value.
+   * An invalid pattern throws, mirroring the SQL error instead of silently not matching.
+   */
+  private matchRegex(rowValue: unknown, pattern: unknown, caseInsensitive: boolean): boolean {
+    if (rowValue === null || rowValue === undefined) return false
+    const source = String(pattern)
+    let regex: RegExp
+    try {
+      regex = new RegExp(source, caseInsensitive ? 'i' : '')
+    } catch {
+      throw new Error(`Invalid regular expression in match filter: ${source}`)
+    }
+    return regex.test(String(rowValue))
   }
 
   /**
