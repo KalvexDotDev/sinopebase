@@ -5,7 +5,7 @@
  * with support for SELECT, INSERT, UPDATE, DELETE, and HEAD operations.
  *
  * Mirrors PostgREST behavior:
- *   - Filter operators: eq, neq, gt, gte, lt, lte, like, ilike, is, in
+ *   - Filter operators: eq, neq, gt, gte, lt, lte, like, ilike, match, imatch, is, in
  *   - Prefer header: count=exact, return=representation,
  *     resolution=merge-duplicates|ignore-duplicates (with on_conflict=)
  *   - Content-Range header for count

@@ -646,6 +646,12 @@ export class PostgresDatabase implements IDatabase {
         return sql<boolean>`${column} LIKE ${filter.value}`
       case 'ilike':
         return sql<boolean>`${column} ILIKE ${filter.value}`
+      case 'match':
+        // PostgREST semantics: POSIX regex, case-sensitive and unanchored
+        return sql<boolean>`${column} ~ ${filter.value}`
+      case 'imatch':
+        // PostgREST semantics: POSIX regex, case-insensitive and unanchored
+        return sql<boolean>`${column} ~* ${filter.value}`
       case 'is': {
         if (filter.value === null || filter.value === 'null') return sql<boolean>`${column} IS NULL`
         if (filter.value === true || filter.value === 'true') return sql<boolean>`${column} IS TRUE`

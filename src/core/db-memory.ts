@@ -261,6 +261,10 @@ export class MemoryDatabase {
         return this.matchLike(rowValue, value, false)
       case 'ilike':
         return this.matchLike(rowValue, value, true)
+      case 'match':
+        return this.matchRegex(rowValue, value, false)
+      case 'imatch':
+        return this.matchRegex(rowValue, value, true)
       case 'is': {
         if (value === null || value === 'null') return rowValue === null || rowValue === undefined
         if (value === true || value === 'true') return rowValue === true
@@ -327,6 +331,23 @@ export class MemoryDatabase {
     } catch {
       return false
     }
+  }
+
+  /**
+   * POSIX regex match for the match/imatch operators (PostgreSQL `~` / `~*`).
+   * Unanchored, to match PostgreSQL: the pattern may match anywhere in the value.
+   * An invalid pattern throws, mirroring the SQL error instead of silently not matching.
+   */
+  private matchRegex(rowValue: unknown, pattern: unknown, caseInsensitive: boolean): boolean {
+    if (rowValue === null || rowValue === undefined) return false
+    const source = String(pattern)
+    let regex: RegExp
+    try {
+      regex = new RegExp(source, caseInsensitive ? 'i' : '')
+    } catch {
+      throw new Error(`Invalid regular expression in match filter: ${source}`)
+    }
+    return regex.test(String(rowValue))
   }
 
   /**

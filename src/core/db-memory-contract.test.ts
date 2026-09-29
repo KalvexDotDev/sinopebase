@@ -1,7 +1,9 @@
+// @new-code-test positive src/core/db-memory.ts
+// @new-code-test negative src/core/db-memory.ts
 // @new-code-test positive src/core/db-memory-adapter.ts
 // @new-code-test negative src/core/db-memory-adapter.ts
 import { describe, expect, it } from 'bun:test'
-import type { IDatabase } from './db-interface'
+import type { Filter, IDatabase } from './db-interface'
 import { hasDatabaseSchemaCapability } from './db-interface'
 import { MemoryDatabaseAdapter } from './db-memory-adapter'
 
@@ -59,6 +61,37 @@ describe('MemoryDatabaseAdapter canonical database contract', () => {
 
     expect(selected.map((row) => row.id)).toEqual(['b'])
     expect(await db.select('records', {})).toHaveLength(3)
+  })
+
+  it('matches match/imatch filters as unanchored POSIX regexes and rejects invalid patterns', async () => {
+    const db: IDatabase = new MemoryDatabaseAdapter()
+    await db.createTable('versions')
+    await db.insert('versions', { id: 'a', version: '3' })
+    await db.insert('versions', { id: 'b', version: '10' })
+    await db.insert('versions', { id: 'c', version: 'V3' })
+    await db.insert('versions', { id: 'd', version: null })
+
+    const ids = async (filters: Filter[]): Promise<unknown[]> =>
+      (await db.select('versions', { filters })).map((row) => row.id)
+
+    // Anchored pattern: only the numeric versions match.
+    expect(
+      await ids([{ column: 'version', operator: 'match', value: '^[1-9][0-9]{0,8}$' }]),
+    ).toEqual(['a', 'b'])
+    // Unanchored and case-sensitive, like PostgreSQL `~`.
+    expect(await ids([{ column: 'version', operator: 'match', value: 'V' }])).toEqual(['c'])
+    // Case-insensitive, like PostgreSQL `~*`.
+    expect(await ids([{ column: 'version', operator: 'imatch', value: '^v3$' }])).toEqual(['c'])
+    // Null values never match.
+    expect(await ids([{ column: 'version', operator: 'match', value: '.' }])).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+    // Invalid patterns throw, as the SQL `~` operator errors, instead of not matching.
+    await expect(
+      db.select('versions', { filters: [{ column: 'version', operator: 'match', value: '[' }] }),
+    ).rejects.toThrow('Invalid regular expression in match filter')
   })
 
   it('supports typed is/in filters and rejects unknown operators', async () => {
