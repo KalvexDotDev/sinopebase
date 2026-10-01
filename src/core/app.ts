@@ -558,22 +558,7 @@ function createMigrationsFileStore(config: AppConfig): IFileStore {
   const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
   const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
-    // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
-    // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
-    let host = s3Endpoint
-    let port = 9000
-    let useSSL = false
-    try {
-      const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
-      host = url.hostname
-      if (url.port) port = Number(url.port)
-      useSSL = url.protocol === 'https:'
-    } catch {
-      // Fallback: treat as bare host:port
-      const parts = s3Endpoint.split(':')
-      host = parts[0] ?? s3Endpoint
-      if (parts[1]) port = Number(parts[1])
-    }
+    const { host, port, useSSL } = parseS3Endpoint(s3Endpoint)
     return new S3FileStore({
       endpoint: host,
       port,
@@ -583,6 +568,25 @@ function createMigrationsFileStore(config: AppConfig): IFileStore {
     })
   }
   return new LocalFileStore(config.dataDir ?? './pb_data')
+}
+
+/**
+ * MinIO client expects a bare hostname, not a URL.
+ * A URL with a scheme and no port uses the scheme default (443/80), so hosted
+ * S3 such as `https://s3.atlascloud.is` works. A bare `host[:port]` keeps the
+ * RustFS default 9000.
+ */
+export function parseS3Endpoint(endpoint: string): { host: string; port: number; useSSL: boolean } {
+  const hasScheme = /^https?:\/\//.test(endpoint)
+  try {
+    const url = new URL(hasScheme ? endpoint : `http://${endpoint}`)
+    const useSSL = url.protocol === 'https:'
+    const port = url.port ? Number(url.port) : hasScheme ? (useSSL ? 443 : 80) : 9000
+    return { host: url.hostname, port, useSSL }
+  } catch {
+    const [host = endpoint, port] = endpoint.split(':')
+    return { host, port: port ? Number(port) : 9000, useSSL: false }
+  }
 }
 
 import { loadSqlMigrationsFromS3 } from './migrations_s3'
@@ -711,6 +715,9 @@ export class Sinopebase {
       host: '0.0.0.0',
       mastraRequireAuth: true,
       backupDir: './backups',
+      trustedProxies: process.env.TRUSTED_PROXIES?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
       ...config,
     }
     const backupDir = this.config.backupDir
