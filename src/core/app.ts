@@ -715,6 +715,9 @@ export class Sinopebase {
       host: '0.0.0.0',
       mastraRequireAuth: true,
       backupDir: './backups',
+      trustedProxies: process.env.TRUSTED_PROXIES?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
       ...config,
     }
     const backupDir = this.config.backupDir
