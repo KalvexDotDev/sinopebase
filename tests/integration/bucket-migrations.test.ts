@@ -1,4 +1,6 @@
 /**
+ * @new-code-test positive src/core/app.ts
+ * @new-code-test negative src/core/app.ts
  * Bucket migration lifecycle integration tests.
  *
  * These tests use real PostgreSQL and RustFS services. They exercise the same

@@ -581,7 +581,7 @@ export function parseS3Endpoint(endpoint: string): { host: string; port: number;
   const useSSL = url.protocol === 'https:'
   return {
     host: url.hostname,
-    port: s3EndpointPort(url, hasScheme),
+    port: s3EndpointPort(endpoint, url, hasScheme),
     useSSL,
   }
 }
@@ -592,9 +592,14 @@ function validateS3EndpointUrl(url: URL): void {
   }
 }
 
-function s3EndpointPort(url: URL, hasScheme: boolean): number {
+function s3EndpointPort(endpoint: string, url: URL, hasScheme: boolean): number {
   if (url.port) return Number(url.port)
-  if (!hasScheme) return 9000
+  // URL removes :80 from an HTTP URL; on a bare host that explicit port wins
+  // over RustFS's historical 9000 default.
+  if (!hasScheme) {
+    const explicitPort = endpoint.match(/:(\d+)$/)?.[1]
+    return explicitPort ? Number(explicitPort) : 9000
+  }
   return url.protocol === 'https:' ? 443 : 80
 }
 
