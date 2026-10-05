@@ -110,6 +110,8 @@ OPENAI_API_KEY=sk-...
 
 See [`.env.railway`](.env.railway) for the full variable reference.
 
+Railway runs the supported single-instance configuration. For multiple Kubernetes replicas, use the same image with the additional settings in the [Kubernetes guide](docs/kubernetes.md). The [generic manifest](deploy/kubernetes.yaml) contains no credentials; create its referenced Secret privately.
+
 ### Docker (production)
 
 ```bash
@@ -274,7 +276,7 @@ bun run compile && bun run benchmark   # needs Docker PostgreSQL + RustFS
 - **Trivy container scanning** — CRITICAL+HIGH gates in CI
 - **Read-only root filesystem** — Docker runs as UID 10001, all capabilities dropped
 
-> **⚠️ Pre-1.0 caveats:** Production-mode secret enforcement, signed URL cryptography, and supply-chain attestation (SBOM, signed containers) are in progress for v1.0. PostgREST filter operators currently cover 12 operators (`eq/neq/gt/gte/lt/lte/like/ilike/match/imatch/is/in`); regex filters (`match`/`imatch`) are unanchored POSIX regexes, so clients add `^...$` when they want a full-value match. Full-text search (`fts`), array operators, and `not.` negation are deferred. OAuth social + enterprise OIDC and Realtime presence are shipped (v0.6.2). See [CHANGELOG.md](CHANGELOG.md) for current status.
+> **⚠️ Pre-1.0 caveats:** Signed URL cryptography and supply-chain attestation (SBOM, signed containers) remain on the roadmap. PostgREST filter operators currently cover 12 operators (`eq/neq/gt/gte/lt/lte/like/ilike/match/imatch/is/in`); regex filters (`match`/`imatch`) are unanchored POSIX regexes, so clients add `^...$` for a full-value match. Full-text search (`fts`), array operators, and `not.` negation are deferred. Multi-replica Kubernetes support is being prepared for release and has [documented limits](docs/kubernetes.md). See [CHANGELOG.md](CHANGELOG.md) for current status.
 
 ---
 
@@ -298,7 +300,7 @@ bun run ci                        # Full CI pipeline locally
 cd ui && bun run dev              # Svelte dev server with hot reload
 ```
 
-**Test-first.** Every feature starts as a failing contract test against real PostgreSQL + RustFS in Docker. No mocks, no SQLite stand-ins.
+**Test-first.** Integration tests exercise PostgreSQL and RustFS in Docker. Focused in-memory tests also cover failure and concurrency paths without those services.
 
 ---
 
@@ -311,8 +313,10 @@ cd ui && bun run dev              # Svelte dev server with hot reload
 | [Edge Functions](docs/edge-functions.md) | Bun Worker functions, deployment |
 | [AI & Mastra](docs/ai.md) | Agents, tools, MCP, RAG |
 | [API Reference](docs/api.md) | REST, Auth, Storage, Realtime APIs |
-| [Deployment](docs/deployment.md) | Railway, Docker, bare metal |
-| [Roadmap](docs/roadmap.md) | v0.7 → v0.8 → v0.9 → 1.0 |
+| [Deployment](docs/deployment.md) | Configuration, Docker, reverse proxies |
+| [Railway](docs/railway.md) | Supported single-instance deployment |
+| [Kubernetes](docs/kubernetes.md) | Multi-replica configuration, checks, and limits |
+| [Roadmap](docs/roadmap.md) | Current release and planned work |
 | [Development](docs/development.md) | Contributing, architecture, patterns |
 
 ---

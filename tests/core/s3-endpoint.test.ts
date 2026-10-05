@@ -39,28 +39,20 @@ describe('parseS3Endpoint', () => {
     expect(parseS3Endpoint('RUSTFS')).toEqual({ host: 'rustfs', port: 9000, useSSL: false })
   })
 
-  test('does not treat a path segment as part of an explicit bare-host port', () => {
-    expect(parseS3Endpoint('localhost:80/path')).toEqual({
-      host: 'localhost',
-      port: 9000,
-      useSSL: false,
-    })
+  test('rejects a path after a bare-host port', () => {
+    expect(() => parseS3Endpoint('localhost:80/path')).toThrow(
+      'S3 endpoint must be a host or origin URL without path or credentials',
+    )
   })
 
-  test('recognizes a URL scheme only at the start of the endpoint', () => {
-    expect(parseS3Endpoint('prefixhttps://s3.example.com')).toEqual({
-      host: 'prefixhttps',
-      port: 9000,
-      useSSL: false,
-    })
+  test('rejects an embedded URL scheme', () => {
+    expect(() => parseS3Endpoint('prefixhttps://s3.example.com')).toThrow(
+      'S3 endpoint must be a host or origin URL without path or credentials',
+    )
   })
 
-  test('malformed endpoint retains the existing bare-host fallback', () => {
-    expect(parseS3Endpoint('not a valid host')).toEqual({
-      host: 'not a valid host',
-      port: 9000,
-      useSSL: false,
-    })
+  test('rejects a malformed host', () => {
+    expect(() => parseS3Endpoint('not a valid host')).toThrow()
   })
 
   test('bare host keeps the RustFS default port 9000', () => {

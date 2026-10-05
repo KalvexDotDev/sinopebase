@@ -39,11 +39,17 @@ export interface DbConfig {
  * Create a database connection — mirrors PocketBase's DefaultDBConnect().
  */
 export async function createDatabase(config: DbConfig): Promise<Database> {
+  const pool = new Pool({
+    connectionString: config.postgresUrl,
+    max: config.maxPoolSize ?? 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+  })
+  pool.on('error', (error: Error) => {
+    console.error('[postgres] idle connection failed:', error.message)
+  })
   const dialect = new PostgresDialect({
-    pool: new Pool({
-      connectionString: config.postgresUrl,
-      max: config.maxPoolSize ?? 10,
-    }),
+    pool,
   })
 
   const db = new Kysely<DatabaseSchema>({ dialect })

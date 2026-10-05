@@ -1,0 +1,96 @@
+# Generic multi-replica example. Supply a private Secret named
+# sinopebase-runtime with the required environment variables; do not commit it.
+# Replace the image digest, public hostname, and ingress class before applying.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sinopebase
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels: { app: sinopebase }
+  template:
+    metadata:
+      labels: { app: sinopebase }
+    spec:
+      securityContext:
+        fsGroup: 10001
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sinopebase
+          image: ghcr.io/kalvexdotdev/sinopebase@sha256:REPLACE_WITH_VERIFIED_DIGEST
+          ports:
+            - { name: http, containerPort: 8090 }
+          envFrom:
+            - secretRef: { name: sinopebase-runtime }
+          env:
+            - { name: PORT, value: '8090' }
+            - { name: SINOPEBASE_PRODUCTION, value: 'true' }
+            - { name: SINOPEBASE_MULTI_REPLICA, value: 'true' }
+            - { name: SINOPEBASE_PG_NOTIFY, value: 'true' }
+            # Set to true only after a shared ingress or edge rate limit exists.
+            - { name: SINOPEBASE_EXTERNAL_RATE_LIMIT, value: 'false' }
+            # The ingress must overwrite client-supplied forwarding headers.
+            # Set TRUSTED_PROXIES for your ingress only after verifying this.
+            - { name: BETTER_AUTH_URL, value: 'https://api.example.com' }
+            - { name: SINOPEBASE_EXTRA_ORIGINS, value: 'https://api.example.com' }
+          startupProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /api/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        # Runtime scratch only. Storage and app migrations live in S3/PG.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sinopebase
+spec:
+  selector: { app: sinopebase }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sinopebase
+spec:
+  ingressClassName: REPLACE_WITH_INGRESS_CLASS
+  tls:
+    - hosts: [api.example.com]
+      secretName: sinopebase-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sinopebase
+                port: { name: http }
