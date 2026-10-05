@@ -25,6 +25,11 @@ export interface StorageAccessPolicy {
     input: StorageBucketInput,
     persist: () => Promise<unknown>,
   ): Promise<void>
+  deleteBucket(
+    context: PostgresRequestContext,
+    name: string,
+    persist: () => Promise<void>,
+  ): Promise<void>
   listObjects(
     context: PostgresRequestContext,
     bucket: string,

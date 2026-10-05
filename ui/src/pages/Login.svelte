@@ -47,17 +47,16 @@
           loading = false
           return
         }
-        setServiceRoleKey(serviceKey.trim())
-        // Verify the key works before proceeding
-        const res = await fetch(window.location.origin + '/api/health', {
+        // The health endpoint is public; verify against a service-role-only API.
+        const res = await fetch(window.location.origin + '/api/admin/tables', {
           headers: { Authorization: `Bearer ${serviceKey.trim()}` },
         })
         if (!res.ok) {
-          setServiceRoleKey('')
           error = 'Invalid service role key'
           loading = false
           return
         }
+        setServiceRoleKey(serviceKey.trim())
         onLogin()
       } else {
         if (!email || !password) {

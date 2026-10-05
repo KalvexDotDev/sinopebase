@@ -34,7 +34,7 @@
 
   async function doSave(id: string) {
     submitting = true
-    const res = await fetch(`${origin}/api/crons/${id}`, { method: 'PATCH', headers: h(), body: JSON.stringify({ label: form.label, schedule: form.schedule }) })
+    const res = await fetch(`${origin}/api/crons/${id}`, { method: 'PATCH', headers: h(), body: JSON.stringify({ label: form.label, schedule: form.schedule, handler: form.handler }) })
     if (res.ok) { editId = ''; load() } else { const j = await res.json().catch(() => ({})); formError = j.message || `Error ${res.status}` }
     submitting = false
   }
@@ -99,10 +99,10 @@
 
 <Modal title="Create Cron Job" open={showCreate} variant="slide" onclose={() => { showCreate = false }}>
   <form style="padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md);" onsubmit={(e) => { e.preventDefault(); doCreate() }}>
-    <div><label class="label" style="margin-bottom: 4px;">ID</label><input class="input" bind:value={form.id} placeholder="cleanup" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Label</label><input class="input" bind:value={form.label} placeholder="Cleanup temp files" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Schedule</label><input class="input" bind:value={form.schedule} placeholder="0 3 * * *" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Handler</label><input class="input" bind:value={form.handler} placeholder="fn:hello or https://..." /></div>
+    <div><label class="label" for="create-cron-id" style="margin-bottom: 4px;">ID</label><input id="create-cron-id" class="input" bind:value={form.id} placeholder="cleanup" /></div>
+    <div><label class="label" for="create-cron-label" style="margin-bottom: 4px;">Label</label><input id="create-cron-label" class="input" bind:value={form.label} placeholder="Cleanup temp files" /></div>
+    <div><label class="label" for="create-cron-schedule" style="margin-bottom: 4px;">Schedule</label><input id="create-cron-schedule" class="input" bind:value={form.schedule} placeholder="0 3 * * *" /></div>
+    <div><label class="label" for="create-cron-handler" style="margin-bottom: 4px;">Handler</label><input id="create-cron-handler" class="input" bind:value={form.handler} placeholder="fn:hello or https://..." /></div>
     {#if formError}<div style="color: var(--danger); font-size: 13px;">{formError}</div>{/if}
     <div class="flex gap-sm"><Button variant="primary" disabled={submitting} onclick={doCreate}>{submitting ? '…' : 'Create'}</Button><Button variant="ghost" onclick={() => { showCreate = false }}>Cancel</Button></div>
   </form>
@@ -110,9 +110,9 @@
 
 <Modal title="Edit Cron Job" open={editId !== ''} variant="slide" onclose={() => { editId = '' }}>
   <form style="padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md);" onsubmit={(e) => { e.preventDefault(); doSave(editId) }}>
-    <div><label class="label" style="margin-bottom: 4px;">Label</label><input class="input" bind:value={form.label} /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Schedule</label><input class="input" bind:value={form.schedule} /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Handler</label><input class="input" bind:value={form.handler} placeholder="fn:hello or https://..." /></div>
+    <div><label class="label" for="edit-cron-label" style="margin-bottom: 4px;">Label</label><input id="edit-cron-label" class="input" bind:value={form.label} /></div>
+    <div><label class="label" for="edit-cron-schedule" style="margin-bottom: 4px;">Schedule</label><input id="edit-cron-schedule" class="input" bind:value={form.schedule} /></div>
+    <div><label class="label" for="edit-cron-handler" style="margin-bottom: 4px;">Handler</label><input id="edit-cron-handler" class="input" bind:value={form.handler} placeholder="fn:hello or https://..." /></div>
     {#if formError}<div style="color: var(--danger); font-size: 13px;">{formError}</div>{/if}
     <div class="flex gap-sm"><Button variant="primary" disabled={submitting} onclick={() => doSave(editId)}>{submitting ? '…' : 'Save'}</Button><Button variant="ghost" onclick={() => { editId = '' }}>Cancel</Button></div>
   </form>

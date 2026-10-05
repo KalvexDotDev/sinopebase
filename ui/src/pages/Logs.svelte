@@ -21,7 +21,7 @@
   function badge(p: string) { if (!p) return '—'; const s = p.split('/').filter(Boolean); return s[0] === 'api' ? s.slice(0,3).join('/') : s[0] === 'rest' ? `rest/${s[1]||''}` : s[0] === 'auth' ? `auth` : s[0] === 'storage' ? `storage` : s[0] || 'root' }
 
   $effect(() => { load() })
-  $effect(() => { if (paused) return; const i = setInterval(load, 2000); return () => clearInterval(i) })
+  $effect(() => { if (paused) return; const i = setInterval(load, 5000); return () => clearInterval(i) })
   $effect(() => { if (atBottom && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight })
 
   function onScroll() { if (scrollEl) atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 30 }

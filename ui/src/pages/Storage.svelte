@@ -1,18 +1,23 @@
 <script lang="ts">
   import { getServiceRoleKey } from '../lib/api'
   import Button from '../components/Button.svelte'
+  import Modal from '../components/Modal.svelte'
 
   let buckets = $state<Array<{ id: string; name: string; public: boolean }>>([])
   let files = $state<Array<{ name: string; size: number; last_modified: string }>>([])
   let selectedBucket = $state('')
+  let bucketSearch = $state('')
   let loading = $state(true)
   let error = $state('')
   let showCreate = $state(false)
   let newBucketName = $state('')
   let newBucketPublic = $state(false)
+  let showDelete = $state(false)
+  let deleteConfirm = $state('')
 
   const token = $derived(getServiceRoleKey())
   function headers(): Record<string, string> { return token ? { Authorization: `Bearer ${token}` } : {} }
+  const filteredBuckets = $derived(buckets.filter((bucket) => bucket.name.toLowerCase().includes(bucketSearch.trim().toLowerCase())))
 
   async function loadBuckets() {
     try {
@@ -46,15 +51,24 @@
       method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newBucketName, public: newBucketPublic }),
     })
-    if (res.ok) { showCreate = false; selectedBucket = newBucketName; newBucketName = ''; loadBuckets() }
+    if (res.ok) { showCreate = false; selectedBucket = newBucketName; files = []; newBucketName = ''; loadBuckets(); loadFiles(selectedBucket) }
     else error = `Create failed: ${res.status}`
   }
 
   async function deleteBucket(name: string) {
-    if (!confirm(`Delete bucket "${name}" and all its files?`)) return
-    await fetch(`${window.location.origin}/storage/v1/bucket/${name}`, { method: 'DELETE', headers: headers() })
-    if (selectedBucket === name) { selectedBucket = ''; files = [] }
-    loadBuckets()
+    if (deleteConfirm !== name) return
+    try {
+      const res = await fetch(`${window.location.origin}/storage/v1/bucket/${encodeURIComponent(name)}`, { method: 'DELETE', headers: headers() })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        error = body.message || `Delete failed: ${res.status}`
+        return
+      }
+      selectedBucket = ''; files = []; showDelete = false; deleteConfirm = ''; error = ''
+      loadBuckets()
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : 'Delete failed'
+    }
   }
 
   async function uploadFile(e: Event) {
@@ -119,10 +133,11 @@
     </div>
   {/if}
 
-  <div class="flex gap-md" style="align-items: flex-start;">
-    <nav style="width: 200px;" class="card p-sm">
+  <div class="flex gap-md" style="align-items: flex-start; min-width: 0;">
+    <nav style="width: 200px; flex-shrink: 0; max-height: calc(100vh - 180px); overflow-y: auto;" class="card p-sm">
       <div class="label mb-sm">Buckets</div>
-      {#each buckets as b (b.name)}
+      <input class="input input-sm" style="margin-bottom: var(--space-sm);" placeholder="Find bucket…" aria-label="Find bucket" bind:value={bucketSearch} />
+      {#each filteredBuckets as b (b.name)}
         <button
           onclick={() => loadFiles(b.name)}
           style="display: block; width: 100%; text-align: left; padding: 6px 8px; border: none;
@@ -134,9 +149,10 @@
           {#if b.public}<span class="chip" style="margin-left: 4px; font-size: 9px; padding: 1px 6px;">public</span>{/if}
         </button>
       {/each}
+      {#if filteredBuckets.length === 0}<p style="color: var(--text-muted); font-size: 12px; padding: 8px;">No matching buckets</p>{/if}
     </nav>
 
-    <div class="flex-1">
+    <div class="flex-1" style="min-width: 0;">
       {#if !selectedBucket}
         <div class="card" style="text-align: center; padding: var(--space-xl);">
           <p style="color: var(--text-secondary);">Select a bucket</p>
@@ -144,10 +160,13 @@
       {:else}
         <div class="flex items-center justify-between mb-sm">
           <span style="font-family: var(--font-mono); font-size: 14px;">{selectedBucket}/</span>
-          <label class="btn-ghost" style="height: 32px; padding: 4px 16px; font-size: 13px; cursor: pointer;">
-            Upload File
-            <input type="file" style="display: none;" onchange={uploadFile} />
-          </label>
+          <div class="flex gap-sm">
+            <label class="btn-ghost" style="height: 32px; padding: 4px 16px; font-size: 13px; cursor: pointer;">
+              Upload File
+              <input type="file" style="display: none;" onchange={uploadFile} />
+            </label>
+            <Button variant="danger" size="sm" onclick={() => { showDelete = true; deleteConfirm = ''; error = '' }}>Delete Bucket</Button>
+          </div>
         </div>
         {#if loading}
           <div class="card" style="padding: var(--space-lg);">
@@ -181,3 +200,15 @@
     </div>
   </div>
 </div>
+
+<Modal title="Delete Bucket" open={showDelete} onclose={() => { showDelete = false; deleteConfirm = '' }}>
+  <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: var(--space-md);">
+    Empty the bucket first. Type <code>{selectedBucket}</code> to confirm deletion.
+  </p>
+  <input class="input" bind:value={deleteConfirm} placeholder={selectedBucket} />
+  {#if error}<p style="color: var(--danger); font-size: 13px; margin-top: var(--space-sm);">{error}</p>{/if}
+  <div class="flex gap-sm" style="justify-content: flex-end; margin-top: var(--space-lg);">
+    <Button variant="ghost" size="sm" onclick={() => { showDelete = false; deleteConfirm = '' }}>Cancel</Button>
+    <Button variant="danger" size="sm" disabled={deleteConfirm !== selectedBucket} onclick={() => deleteBucket(selectedBucket)}>Delete Bucket</Button>
+  </div>
+</Modal>
