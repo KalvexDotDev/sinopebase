@@ -173,6 +173,13 @@ export class PostgresDatabase implements IDatabase {
     this.writerPool = new pg.Pool({
       connectionString: config.postgresUrl,
       max: config.maxPoolSize ?? 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    })
+    // pg emits failures of idle clients on the pool itself. Without a handler
+    // a failover can terminate the process even though future queries recover.
+    this.writerPool.on('error', (error: Error) => {
+      console.error('[postgres] idle writer connection failed:', error.message)
     })
 
     // Apply least-privilege runtime role on each new pool connection.
@@ -208,6 +215,11 @@ export class PostgresDatabase implements IDatabase {
       this.readerPool = new pg.Pool({
         connectionString: config.readReplicaUrl,
         max: config.maxPoolSize ?? 10,
+        idleTimeoutMillis: 30_000,
+        connectionTimeoutMillis: 5_000,
+      })
+      this.readerPool.on('error', (error: Error) => {
+        console.error('[postgres] idle reader connection failed:', error.message)
       })
       this.reader = new Kysely<DatabaseSchema>({
         dialect: new PostgresDialect({ pool: this.readerPool }),

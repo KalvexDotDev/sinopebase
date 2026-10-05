@@ -5,15 +5,17 @@
  * Requires the `mail` service from docker-compose.yml:
  *   SMTP: localhost:1025, API: http://localhost:8025/api/v1
  * Skips when Mailpit is not reachable.
- * @new-code-test positive src/tools/mailer/smtp.ts
- * @new-code-test negative src/tools/mailer/smtp.ts
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { randomUUID } from 'node:crypto'
 import { Sinopebase } from '~/core/app'
 import { Message } from '~/tools/mailer/mailer'
 import { SMTPClient } from '~/tools/mailer/smtp'
 import { reserveLoopbackPort } from '../harness'
+
+// @new-code-test positive src/tools/mailer/smtp.ts
+// @new-code-test negative src/tools/mailer/smtp.ts
 
 const MAILPIT_API = 'http://localhost:8025/api/v1'
 
@@ -23,6 +25,11 @@ interface MailpitMessage {
   To: { Name: string; Address: string }[]
   Subject: string
   Text: string
+}
+
+interface MailpitDetail {
+  Text: string
+  Attachments: { FileName: string; Size: number }[]
 }
 
 async function mailpitAvailable(): Promise<boolean> {
@@ -37,7 +44,7 @@ async function mailpitAvailable(): Promise<boolean> {
 const available = await mailpitAvailable()
 
 let app: Sinopebase
-const subject = `mailer-integration-${Date.now()}`
+const subject = `mailer-integration-${randomUUID()}`
 
 beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
@@ -67,9 +74,10 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
     message.subject = subject
     message.text = 'Mailpit integration test body'
     message.html = '<p>Mailpit integration test body</p>'
-    message.attachments['report.txt'] = new ReadableStream({
+    message.attachments['buffer.txt'] = Buffer.from('buffer attachment')
+    message.attachments['stream.txt'] = new ReadableStream({
       start(controller) {
-        controller.enqueue(new TextEncoder().encode('streamed attachment'))
+        controller.enqueue(new TextEncoder().encode('stream attachment'))
         controller.close()
       },
     })
@@ -90,27 +98,33 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
     expect(found?.To[0]?.Address).toBe('recipient@example.com')
 
     // The body lives on the per-message detail endpoint.
-    const detail = (await (await fetch(`${MAILPIT_API}/message/${found?.ID}`)).json()) as {
-      Text: string
-      Attachments: { FileName: string; Size: number }[]
-    }
+    const detail = (await (
+      await fetch(`${MAILPIT_API}/message/${found?.ID}`)
+    ).json()) as MailpitDetail
     expect(detail.Text).toContain('Mailpit integration test body')
     expect(detail.Attachments).toEqual([
-      expect.objectContaining({ FileName: 'report.txt', Size: 19 }),
+      expect.objectContaining({ FileName: 'buffer.txt', Size: 17 }),
+      expect.objectContaining({ FileName: 'stream.txt', Size: 17 }),
     ])
 
-    // Clean up the mailbox for the next run.
-    await fetch(`${MAILPIT_API}/messages`, { method: 'DELETE' })
+    // Mutation workers share Mailpit, so remove only this test's message.
+    const cleanup = await fetch(`${MAILPIT_API}/messages`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ IDs: [found?.ID] }),
+    })
+    expect(cleanup.ok).toBe(true)
   })
 })
 
-it('reports a failed SMTP connection for a message with a streamed attachment', async () => {
+it('reports an unavailable SMTP server', async () => {
   const mailer = new SMTPClient({ host: '127.0.0.1', port: 1 })
   const message = new Message()
-  message.from = { name: '', address: 'sender@sinopebase.test' }
-  message.to = [{ name: '', address: 'recipient@example.com' }]
-  message.subject = 'unreachable SMTP server'
-  message.attachments['report.txt'] = new ReadableStream({
+  message.from = { name: 'Sender', address: 'sender@sinopebase.test' }
+  message.to = [{ name: 'Recipient', address: 'recipient@example.com' }]
+  message.subject = 'unavailable SMTP server'
+  message.text = 'Delivery should fail'
+  message.attachments['stream.txt'] = new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode('cannot deliver'))
       controller.close()

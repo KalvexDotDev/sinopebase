@@ -40,6 +40,14 @@ export const ProductionConfig = z.object({
 
 export type ValidatedConfig = z.infer<typeof ProductionConfig>
 
+/** Parse the same ingress trust list for CLI and embedded application startup. */
+export function parseTrustedProxies(value: string | undefined): string[] | undefined {
+  return value
+    ?.split(',')
+    .map((proxy) => proxy.trim())
+    .filter(Boolean)
+}
+
 /**
  * Detect the runtime mode.
  *

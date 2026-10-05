@@ -111,6 +111,8 @@ curl -X POST http://localhost:8090/api/functions/v1 \
 curl -X DELETE http://localhost:8090/api/functions/v1/myfn
 ```
 
+These management routes are available in single-instance mode. In multi-replica mode, package identical function files in the image or mount an immutable shared directory and roll every pod after changes. Function creation, editing, and deletion through the API are disabled. Per-function in-memory rate limits apply independently on each pod; configure a shared ingress rate limit before enabling multi-replica mode. See [Kubernetes deployment](kubernetes.md).
+
 ## Paths
 
 | Path | Purpose |

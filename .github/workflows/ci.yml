@@ -55,6 +55,13 @@ jobs:
           category: eslint
       - name: "Validate workflow YAML"
         run: bun run lint:yaml
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Validate Kubernetes manifest
+        run: |
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+          "$(go env GOPATH)/bin/kubeconform" -strict -summary -kubernetes-version 1.31.0 deploy/kubernetes.yaml
 
   typecheck:
     needs: audit

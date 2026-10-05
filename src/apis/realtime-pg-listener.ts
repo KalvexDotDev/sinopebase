@@ -33,6 +33,8 @@ export interface PgRealtimeListenerOptions {
   channel?: string
   /** Logger function. */
   log?: (message: string, data?: Record<string, unknown>) => void
+  /** Heartbeat period in milliseconds (default 15000). */
+  heartbeatIntervalMs?: number
 }
 
 interface NotificationPayload {
@@ -55,9 +57,13 @@ export class PgRealtimeListener {
   private readonly processId: string
   private readonly channel: string
   private readonly log: (message: string, data?: Record<string, unknown>) => void
+  private readonly heartbeatIntervalMs: number
   private running = false
   private reconnectDelay = 1000
   private maxReconnectDelay = 30000
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private checking = false
 
   constructor(options: PgRealtimeListenerOptions) {
     this.pool = options.pool
@@ -65,6 +71,7 @@ export class PgRealtimeListener {
     this.processId = options.processId
     this.channel = options.channel ?? 'sinopebase_changes'
     this.log = options.log ?? (() => {})
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000
   }
 
   /** Start listening. Idempotent — calling start() on a running listener is a no-op. */
@@ -107,29 +114,49 @@ export class PgRealtimeListener {
 
       // Reset reconnect delay on successful connection
       this.reconnectDelay = 1000
+      this.heartbeatTimer = setInterval(() => {
+        const client = this.client
+        if (this.checking || !client) return
+        this.checking = true
+        let timeout: ReturnType<typeof setTimeout> | null = null
+        Promise.race([
+          client.query('SELECT 1'),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('listener heartbeat timed out')), 5000)
+          }),
+        ])
+          .catch((err: Error) => {
+            this.log('[realtime-pg] Heartbeat failed', { error: err.message })
+            if (this.client === client) this.reconnect()
+          })
+          .finally(() => {
+            if (timeout) clearTimeout(timeout)
+            this.checking = false
+          })
+      }, this.heartbeatIntervalMs)
     } catch (err) {
       this.log('[realtime-pg] Failed to start listener', {
         error: (err as Error).message,
       })
-      this.running = false
-      // Retry after delay
-      setTimeout(() => {
-        if (!this.running) this.start()
-      }, this.reconnectDelay)
+      this.client?.release(true)
+      this.client = null
+      if (this.running) this.scheduleReconnect()
+      throw err
     }
+  }
+
+  isConnected(): boolean {
+    return this.running && this.client !== null
   }
 
   /** Stop listening and release the connection. */
   async stop(): Promise<void> {
     this.running = false
-    try {
-      if (this.client) {
-        await this.client.query(`UNLISTEN "${this.channel}"`)
-        this.client.release()
-      }
-    } catch {
-      // ignore release errors
-    }
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    this.heartbeatTimer = null
+    this.client?.release(true)
     this.client = null
   }
 
@@ -165,20 +192,28 @@ export class PgRealtimeListener {
 
   private reconnect(): void {
     if (!this.running) return
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    this.heartbeatTimer = null
     // Release old client if any
     try {
-      this.client?.release()
+      this.client?.release(true)
     } catch {
       /* ignore */
     }
     this.client = null
 
+    this.scheduleReconnect()
+  }
+
+  private scheduleReconnect(): void {
+    if (this.retryTimer) return
     const delay = this.reconnectDelay
     this.log('[realtime-pg] Reconnecting', { delayMs: delay })
-    setTimeout(() => {
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
       if (!this.running) return
       this.running = false // reset so start() can re-enter
-      this.start()
+      this.start().catch(() => {})
     }, delay)
 
     // Exponential backoff
@@ -214,6 +249,7 @@ function normalizeEvent(pgOp: string): PostgresChange['event'] | null {
 export async function attachRealtimeTriggers(
   pool: Pool,
   log?: (msg: string, data?: Record<string, unknown>) => void,
+  strict = false,
 ): Promise<void> {
   const logger = log ?? (() => {})
   try {
@@ -229,25 +265,24 @@ export async function attachRealtimeTriggers(
 
     for (const row of result.rows) {
       const tableName = row.table_name as string
+      const quotedTable = `"${tableName.replaceAll('"', '""')}"`
+      const triggerName = `"${`sinopebase_notify_${tableName}`.replaceAll('"', '""')}"`
       try {
-        // Drop existing trigger if any, then create
-        await pool.query(`
-          DO $$
-          BEGIN
-            IF NOT EXISTS (
-              SELECT 1 FROM pg_trigger
-              WHERE tgname = 'sinopebase_notify_${tableName}'
-                AND tgrelid = '${tableName}'::regclass
-            ) THEN
-              CREATE TRIGGER "sinopebase_notify_${tableName}"
-                AFTER INSERT OR UPDATE OR DELETE ON "${tableName}"
-                FOR EACH ROW EXECUTE FUNCTION sinopebase_notify_change();
-            END IF;
-          END;
-          $$
-        `)
+        // Identifiers originate in the catalog, but still require quoting.
+        const exists = await pool.query(
+          `SELECT 1 FROM pg_trigger WHERE tgname = $1 AND tgrelid = $2::regclass`,
+          [`sinopebase_notify_${tableName}`, `public.${quotedTable}`],
+        )
+        if (exists.rowCount === 0) {
+          await pool.query(`CREATE TRIGGER ${triggerName}
+            AFTER INSERT OR UPDATE OR DELETE ON public.${quotedTable}
+            FOR EACH ROW EXECUTE FUNCTION sinopebase_notify_change()`)
+        }
         logger('[realtime-pg] Attached trigger', { table: tableName })
       } catch (err) {
+        // Another replica may have attached the same trigger after our check.
+        if ((err as { code?: string }).code === '42710') continue
+        if (strict) throw err
         logger('[realtime-pg] Failed to attach trigger', {
           table: tableName,
           error: (err as Error).message,
@@ -255,6 +290,7 @@ export async function attachRealtimeTriggers(
       }
     }
   } catch (err) {
+    if (strict) throw err
     logger('[realtime-pg] Failed to discover tables', {
       error: (err as Error).message,
     })

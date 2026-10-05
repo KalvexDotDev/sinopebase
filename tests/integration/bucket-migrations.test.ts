@@ -13,6 +13,8 @@ import { Sinopebase } from '~/core/app'
 import type { PostgresDatabase } from '~/core/db-postgres'
 import { requirePostgres, requireRustFS, reserveLoopbackPort } from '../harness'
 
+// @new-code-test positive src/core/app.ts
+
 const postgresUrl = requirePostgres()
 const rustfs = requireRustFS()
 const runId = `${Date.now()}_${process.pid}`
