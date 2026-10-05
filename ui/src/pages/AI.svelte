@@ -102,9 +102,9 @@
   $effect(() => { if (selectedId) messages = [] })
 </script>
 
-<div class="flex gap-lg" style="align-items: flex-start; height: calc(100vh - 80px);">
+<div class="ai-layout">
   <!-- Left: Agent sidebar -->
-  <nav style="width: 220px; flex-shrink: 0; overflow-y: auto; max-height: 100%;" class="card p-lg">
+  <nav class="ai-agent-nav card p-lg">
     <div class="flex items-center justify-between mb-sm">
       <span class="label">Agents</span>
       <Button variant="icon" size="sm" onclick={openCreate}>+</Button>
@@ -114,23 +114,21 @@
       <Button variant="primary" size="sm" onclick={openCreate}><span style="margin-right: 4px;">+</span> Create Agent</Button>
     {:else}
       {#each agents as a (a.id)}
-        <div
-          onclick={() => { selectedId = a.id }}
-          style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 10px; cursor: pointer; background: {selectedId === a.id ? 'var(--char)' : 'transparent'}; color: {selectedId === a.id ? 'var(--text)' : 'var(--text-secondary)'}; border-radius: var(--radius-none); margin-bottom: 1px; font-size: 13px;"
-        >
-          <span style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
+        <div class="ai-agent-item" style="background: {selectedId === a.id ? 'var(--char)' : 'transparent'};">
+          <button type="button" class="ai-agent-select" onclick={() => { selectedId = a.id }}
+            style="color: {selectedId === a.id ? 'var(--text)' : 'var(--text-secondary)'};">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--lichen); flex-shrink: 0;"></span>
             <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{a.name}</span>
-          </span>
-          <span style="color: var(--text-muted); font-size: 9px; cursor: pointer; padding: 0 2px; flex-shrink: 0;"
-            onclick={(e: Event) => { e.stopPropagation(); deleteAgent(a.id) }} title="Delete">✕</span>
+          </button>
+          <button type="button" class="ai-agent-delete" aria-label={`Delete ${a.name}`} title={`Delete ${a.name}`}
+            onclick={() => deleteAgent(a.id)}>✕</button>
         </div>
       {/each}
     {/if}
   </nav>
 
   <!-- Center: Chat -->
-  <div class="flex-1" style="display: flex; flex-direction: column; height: 100%; min-width: 0;">
+  <div class="ai-chat">
     {#if !selectedId}
       <div class="card" style="text-align: center; padding: var(--space-2xl); flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;">
         <h3 style="margin-bottom: var(--space-sm);">AI Playground</h3>
@@ -177,7 +175,7 @@
 
   <!-- Right: Agent details -->
   {#if selected}
-    <div style="width: 260px; flex-shrink: 0; overflow-y: auto; max-height: 100%;" class="card p-lg">
+    <div class="ai-details card p-lg">
       <div class="label" style="margin-bottom: var(--space-sm);">Agent Details</div>
       <div style="display: grid; gap: var(--space-sm); font-size: 13px;">
         <div><span style="color: var(--text-muted);">Model</span><br/><code style="font-size: 12px;">{selected.model}</code></div>
@@ -195,14 +193,14 @@
 <Modal title="Edit Agent" open={editingId !== ''} variant="slide" onclose={() => { editingId = '' }}>
   <form style="padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;"
     onsubmit={(e) => { e.preventDefault(); saveEdit() }}>
-    <div><label class="label" style="margin-bottom: 4px;">Name</label>
-      <input class="input" bind:value={editForm.name} /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Description</label>
-      <input class="input" bind:value={editForm.description} placeholder="Short description" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Instructions</label>
-      <textarea class="input" style="min-height: 100px; font-size: 13px;" bind:value={editForm.instructions} placeholder="System prompt / instructions"></textarea></div>
-    <div><label class="label" style="margin-bottom: 4px;">Model</label>
-      <input class="input" bind:value={editForm.model} placeholder="deepseek-chat" /></div>
+    <div><label class="label" for="edit-agent-name" style="margin-bottom: 4px;">Name</label>
+      <input id="edit-agent-name" class="input" bind:value={editForm.name} /></div>
+    <div><label class="label" for="edit-agent-description" style="margin-bottom: 4px;">Description</label>
+      <input id="edit-agent-description" class="input" bind:value={editForm.description} placeholder="Short description" /></div>
+    <div><label class="label" for="edit-agent-instructions" style="margin-bottom: 4px;">Instructions</label>
+      <textarea id="edit-agent-instructions" class="input" style="min-height: 100px; font-size: 13px;" bind:value={editForm.instructions} placeholder="System prompt / instructions"></textarea></div>
+    <div><label class="label" for="edit-agent-model" style="margin-bottom: 4px;">Model</label>
+      <input id="edit-agent-model" class="input" bind:value={editForm.model} placeholder="deepseek-chat" /></div>
     {#if editError}<div style="color: var(--danger); font-size: 13px;">{editError}</div>{/if}
     <div class="flex gap-sm" style="margin-top: var(--space-md);">
       <Button variant="primary" disabled={editSubmitting} onclick={saveEdit}>{editSubmitting ? 'Saving…' : 'Save'}</Button>
@@ -211,18 +209,35 @@
   </form>
 </Modal>
 
+<style>
+  .ai-layout { display: flex; gap: var(--space-lg); align-items: flex-start; height: calc(100vh - 80px); min-width: 0; }
+  .ai-agent-nav { width: 220px; flex-shrink: 0; overflow-y: auto; max-height: 100%; }
+  .ai-chat { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; }
+  .ai-details { width: 260px; flex-shrink: 0; overflow-y: auto; max-height: 100%; }
+  .ai-agent-item { display: flex; align-items: center; width: 100%; margin-bottom: 1px; padding: 2px 4px; }
+  .ai-agent-select { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; padding: 6px; font: inherit; font-size: 13px; cursor: pointer; }
+  .ai-agent-delete { border: 0; background: transparent; color: var(--text-muted); padding: 4px; cursor: pointer; }
+  .ai-agent-delete:hover { color: var(--danger); }
+  @media (max-width: 1150px) {
+    .ai-layout { flex-wrap: wrap; height: auto; }
+    .ai-agent-nav { width: 100%; max-height: 170px; }
+    .ai-chat { flex-basis: 100%; height: min(650px, calc(100vh - 140px)); min-height: 420px; }
+    .ai-details { width: 100%; max-height: none; }
+  }
+</style>
+
 <!-- Create Agent Modal -->
 <Modal title="Create Agent" open={showCreate} variant="slide" onclose={() => { showCreate = false }}>
   <form style="padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;"
     onsubmit={(e) => { e.preventDefault(); createAgent() }}>
-    <div><label class="label" style="margin-bottom: 4px;">Name</label>
-      <input class="input" bind:value={editForm.name} placeholder="My Agent" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Description</label>
-      <input class="input" bind:value={editForm.description} placeholder="What this agent does" /></div>
-    <div><label class="label" style="margin-bottom: 4px;">Instructions</label>
-      <textarea class="input" style="min-height: 100px; font-size: 13px;" bind:value={editForm.instructions} placeholder="System prompt"></textarea></div>
-    <div><label class="label" style="margin-bottom: 4px;">Model</label>
-      <input class="input" bind:value={editForm.model} placeholder="deepseek-chat" /></div>
+    <div><label class="label" for="create-agent-name" style="margin-bottom: 4px;">Name</label>
+      <input id="create-agent-name" class="input" bind:value={editForm.name} placeholder="My Agent" /></div>
+    <div><label class="label" for="create-agent-description" style="margin-bottom: 4px;">Description</label>
+      <input id="create-agent-description" class="input" bind:value={editForm.description} placeholder="What this agent does" /></div>
+    <div><label class="label" for="create-agent-instructions" style="margin-bottom: 4px;">Instructions</label>
+      <textarea id="create-agent-instructions" class="input" style="min-height: 100px; font-size: 13px;" bind:value={editForm.instructions} placeholder="System prompt"></textarea></div>
+    <div><label class="label" for="create-agent-model" style="margin-bottom: 4px;">Model</label>
+      <input id="create-agent-model" class="input" bind:value={editForm.model} placeholder="deepseek-chat" /></div>
     {#if editError}<div style="color: var(--danger); font-size: 13px;">{editError}</div>{/if}
     <div class="flex gap-sm" style="margin-top: var(--space-md);">
       <Button variant="primary" disabled={editSubmitting} onclick={createAgent}>{editSubmitting ? 'Creating…' : 'Create'}</Button>

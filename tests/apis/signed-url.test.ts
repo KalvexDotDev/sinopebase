@@ -99,6 +99,7 @@ class TestFileStore implements IFileStore {
   async createBucket(name: string): Promise<string> {
     return name
   }
+  async deleteBucket(_name: string): Promise<void> {}
   async ensureBucket(_name: string): Promise<void> {}
 }
 

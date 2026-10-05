@@ -172,4 +172,14 @@ export class LocalFileStore implements IFileStore {
     await this.ensureBucket(name)
     return name
   }
+
+  async deleteBucket(name: string): Promise<void> {
+    const bucketPath = this.bucketPath(name)
+    const entries = await fs.readdir(bucketPath)
+    if (entries.some((entry) => entry !== '.bucket.json')) {
+      throw new Error('Bucket is not empty')
+    }
+    if (entries.includes('.bucket.json')) await fs.unlink(join(bucketPath, '.bucket.json'))
+    await fs.rmdir(bucketPath)
+  }
 }

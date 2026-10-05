@@ -47,6 +47,11 @@ class TestFileStore implements IFileStore {
     return name
   }
 
+  async deleteBucket(name: string): Promise<void> {
+    this.buckets.delete(name)
+    this.objects.delete(name)
+  }
+
   async listBuckets(): Promise<Bucket[]> {
     return Array.from(this.buckets).map((name) => ({
       id: name,

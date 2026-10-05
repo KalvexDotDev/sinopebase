@@ -1,3 +1,11 @@
+/**
+ * @new-code-test positive src/apis/file.ts
+ * @new-code-test negative src/apis/file.ts
+ * @new-code-test positive src/apis/storage-access.ts
+ * @new-code-test negative src/apis/storage-access.ts
+ * @new-code-test positive src/tools/filesystem/store-interface.ts
+ * @new-code-test negative src/tools/filesystem/store-interface.ts
+ */
 import { describe, expect, it } from 'bun:test'
 import { Elysia } from 'elysia'
 import type { PostgresRequestContext } from '../core/db-postgres'
@@ -13,6 +21,7 @@ import {
 
 class TestFileStore implements IFileStore {
   readonly files = new Map<string, Buffer>()
+  readonly buckets = new Set<string>()
 
   async save(bucket: string, path: string, data: ArrayBuffer): Promise<void> {
     this.files.set(`${bucket}/${path}`, Buffer.from(data))
@@ -38,10 +47,21 @@ class TestFileStore implements IFileStore {
       }))
   }
   async listBuckets(): Promise<Bucket[]> {
-    return []
+    return [...this.buckets].map((name) => ({
+      id: name,
+      name,
+      owner: '',
+      public: false,
+      created_at: '',
+      updated_at: '',
+    }))
   }
   async createBucket(name: string): Promise<string> {
+    this.buckets.add(name)
     return name
+  }
+  async deleteBucket(name: string): Promise<void> {
+    this.buckets.delete(name)
   }
   async ensureBucket(_name: string): Promise<void> {}
 }
@@ -69,6 +89,13 @@ class TestStorageAccess implements StorageAccessPolicy {
     _context: PostgresRequestContext,
     _input: StorageBucketInput,
     persist: () => Promise<unknown>,
+  ) {
+    await persist()
+  }
+  async deleteBucket(
+    _context: PostgresRequestContext,
+    _name: string,
+    persist: () => Promise<void>,
   ) {
     await persist()
   }
@@ -111,6 +138,41 @@ class TestStorageAccess implements StorageAccessPolicy {
 }
 
 describe('Supabase Storage HTTP compatibility', () => {
+  it('deletes only empty buckets with service_role', async () => {
+    const store = new TestFileStore()
+    store.buckets.add('journey')
+    store.files.set('journey/file.txt', Buffer.from('keep'))
+    const { app } = storageApp(store, new TestStorageAccess())
+    const url = 'http://localhost/storage/v1/bucket/journey'
+
+    const nonEmpty = await app.handle(new Request(url, { method: 'DELETE' }))
+    expect(nonEmpty.status).toBe(409)
+    expect(store.buckets.has('journey')).toBe(true)
+
+    store.files.clear()
+    const deleted = await app.handle(new Request(url, { method: 'DELETE' }))
+    expect(deleted.status).toBe(200)
+    expect(store.buckets.has('journey')).toBe(false)
+
+    const denied = storageApp(store, new TestStorageAccess(), () => ({
+      role: 'authenticated',
+      userId: 'member',
+    }))
+    expect((await denied.app.handle(new Request(url, { method: 'DELETE' }))).status).toBe(403)
+  })
+
+  it('rejects invalid and absent bucket names before deletion', async () => {
+    const { app } = storageApp()
+    const invalid = await app.handle(
+      new Request('http://localhost/storage/v1/bucket/bad%20name', { method: 'DELETE' }),
+    )
+    expect(invalid.status).toBe(400)
+    const missing = await app.handle(
+      new Request('http://localhost/storage/v1/bucket/missing', { method: 'DELETE' }),
+    )
+    expect(missing.status).toBe(404)
+  })
+
   it('accepts the raw binary body sent by storage-js for Buffer uploads', async () => {
     const { app, store } = storageApp()
     const response = await app.handle(
