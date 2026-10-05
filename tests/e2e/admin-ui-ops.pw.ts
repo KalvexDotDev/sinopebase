@@ -24,6 +24,7 @@
  */
 
 import { expect, test } from '@playwright/test'
+import { Pool } from 'pg'
 import { createClient } from '../../src/sdk/client'
 
 const BASE = 'http://127.0.0.1:9876'
@@ -54,101 +55,54 @@ async function auth(page: import('@playwright/test').Page): Promise<void> {
 // 1. Table Editor
 // ---------------------------------------------------------------------------
 
-test('Table Editor: create table + add row through the UI', async ({ page }) => {
+test('Table Editor: create, add first row, edit, and delete through the UI', async ({ page }) => {
   const tableName = unique('ui_tbl')
-  const rowId1 = `r1-${STAMP}`
-  const rowTitle1 = `title1-${STAMP}`
-  const rowId2 = `r2-${STAMP}`
-  const rowTitle2 = `title2-${STAMP}`
+  const rowId = `r1-${STAMP}`
+  const rowTitle = `title1-${STAMP}`
+  const editedTitle = `edited-${STAMP}`
 
-  await auth(page)
-  await page.goto(`${BASE}/_/#/tables`)
-  await expect(page.getByText('Tables', { exact: true })).toBeVisible()
+  try {
+    await auth(page)
+    await page.goto(`${BASE}/_/#/tables`)
+    await page.getByRole('button', { name: '+', exact: true }).click()
+    await page.getByPlaceholder('my_table').fill(tableName)
+    await page.getByPlaceholder('column_name').nth(0).fill('id')
+    await page.getByRole('button', { name: '+ Add Column' }).click()
+    await page.getByPlaceholder('column_name').nth(1).fill('title')
+    await page.getByRole('button', { name: 'Create Table', exact: true }).click()
 
-  // ── Create table via the wizard ──
-  // Note: Button.svelte does not forward attrs, so the `+` button has no
-  // title/aria-label — select by its accessible name instead.
-  await page.getByRole('button', { name: '+', exact: true }).click()
-  await page.getByPlaceholder('my_table').fill(tableName)
-  // Column 1: id (text) — PostgREST inserts require an `id` column, so the
-  // table created through the wizard must include one to support row adds.
-  await page.getByPlaceholder('column_name').nth(0).fill('id')
-  // Product bug: Button.svelte renders <button> without type="button", which
-  // defaults to type="submit". Clicking "+ Add Column" inside the form both
-  // adds the column AND submits the form, so the wizard creates the table
-  // with only the columns entered so far (here just `id`); the later
-  // "Create Table" click then fails with "relation already exists".
-  await page.getByRole('button', { name: '+ Add Column' }).click()
-  await page.getByPlaceholder('column_name').nth(1).fill('title')
+    await expect(page.getByText(`Table "${tableName}" created.`)).toBeVisible()
+    const tableButton = page.getByRole('button', { name: tableName, exact: true })
+    await tableButton.click()
+    await expect(page.getByText('No rows', { exact: true })).toBeVisible()
 
-  // ponytail: reconcile the partial wizard-created table via the API (drop +
-  // recreate with the intended columns), then drive the rest of the flow
-  // against it. If Button.svelte is later fixed (type="button"), the wizard
-  // creates nothing and the DELETE is a no-op — the test stays correct.
-  await fetch(`${BASE}/api/admin/tables/${tableName}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${serviceKey}` },
-  })
-  const created = await fetch(`${BASE}/api/admin/tables`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: tableName,
-      columns: [
-        { name: 'id', type: 'text', nullable: true, primary: false },
-        { name: 'title', type: 'text', nullable: true, primary: false },
-      ],
-    }),
-  })
-  expect(created.status).toBe(200)
+    await page.getByRole('button', { name: 'Add your first row' }).click()
+    const fields = page.getByPlaceholder('null')
+    await expect(fields).toHaveCount(2)
+    await fields.nth(0).fill(rowId)
+    await fields.nth(1).fill(rowTitle)
+    await page.getByRole('button', { name: 'Add Row', exact: true }).click()
+    await expect(page.getByRole('cell', { name: rowTitle })).toBeVisible()
 
-  // The table appears in the sidebar after creation. Reload so the SPA
-  // re-reads the table list, and give slow CI runners room.
-  await page.reload()
-  const sidebarTable = page.getByText(tableName, { exact: true })
-  await expect(sidebarTable).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('cell', { name: rowTitle }).dblclick()
+    const editInput = page.locator('td input')
+    await editInput.fill(editedTitle)
+    await editInput.press('Enter')
+    await expect(page.getByRole('cell', { name: editedTitle })).toBeVisible()
 
-  // An empty table shows the "No rows" state.
-  await sidebarTable.click()
-  await expect(page.getByText('No rows', { exact: true })).toBeVisible()
+    const { data, error } = await sb.from(tableName).select('*')
+    expect(error).toBeNull()
+    expect(data).toEqual([expect.objectContaining({ id: rowId, title: editedTitle })])
 
-  // ponytail: UI bug — the Add Row modal renders no input fields on an empty
-  // table (column metadata is only populated after rows load), so seed the
-  // first row through the REST API, then drive the modal for the second row.
-  const seed = await sb.from(tableName).insert({ id: rowId1, title: rowTitle1 })
-  expect(seed.error).toBeNull()
-
-  // Reload so the Table Editor re-fetches the table list and rows.
-  await page.reload()
-  await expect(sidebarTable).toBeVisible()
-  await sidebarTable.click()
-  await expect(page.getByText(rowTitle1, { exact: true })).toBeVisible()
-  await expect(page.getByText(rowId1, { exact: true })).toBeVisible()
-
-  // ── Add a second row through the "Add Row" modal ──
-  await page.getByRole('button', { name: '+ Add Row' }).click()
-  // Column metadata loads after the table's rows render — slow CI runners
-  // need room before the inputs exist.
-  await expect(page.getByPlaceholder('null').nth(0)).toBeVisible({ timeout: 15_000 })
-  await page.getByPlaceholder('null').nth(0).fill(rowId2)
-  await page.getByPlaceholder('null').nth(1).fill(rowTitle2)
-  await page.getByRole('button', { name: 'Add Row', exact: true }).click()
-
-  // The new row renders in the data table.
-  await expect(page.getByText(rowTitle2, { exact: true })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(rowId2, { exact: true })).toBeVisible()
-
-  // ── Cross-check through the REST API ──
-  const { data: rows, error } = await sb.from(tableName).select('*')
-  expect(error).toBeNull()
-  expect(rows).toHaveLength(2)
-  expect(rows?.map((r) => r.title).sort()).toEqual([rowTitle1, rowTitle2].sort())
-
-  // Cleanup.
-  await fetch(`${BASE}/api/admin/tables/${tableName}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${serviceKey}` },
-  })
+    await page.locator('button[title="Delete"]').click()
+    await page.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(page.getByText('No rows', { exact: true })).toBeVisible()
+  } finally {
+    await fetch(`${BASE}/api/admin/tables/${tableName}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${serviceKey}` },
+    })
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -265,30 +219,36 @@ test('Metrics: /_/#/metrics renders Requests card and raw JSON', async ({ page }
 // ---------------------------------------------------------------------------
 
 test('Logs: API request appears on /_/#/logs', async ({ page }) => {
-  // A distinctive path that produces a log entry (501 stub route, still
-  // recorded by the global response logger).
   const marker = `ui_logs_${STAMP}`
   const probePath = `/api/nope_${marker}`
-  const res = await fetch(`${BASE}${probePath}`)
-  expect(res.status).toBeGreaterThanOrEqual(400)
+  const pool = new Pool({
+    connectionString:
+      process.env.TEST_POSTGRES_URL ||
+      'postgresql://sinopebase:sinopebase@127.0.0.1:5432/sinopebase',
+  })
 
-  // The /api/logs API confirms the entry exists before we check the UI.
-  // The request-log write is fire-and-forget, so poll briefly.
-  let seen = false
-  for (let attempt = 0; attempt < 25 && !seen; attempt++) {
-    await new Promise((r) => setTimeout(r, 200))
-    const logs = (await (
-      await fetch(`${BASE}/api/logs?perPage=50`, {
-        headers: { Authorization: `Bearer ${serviceKey}` },
+  try {
+    await auth(page)
+    await page.goto(`${BASE}/_/#/logs`)
+    await expect(page.getByRole('heading', { name: 'Logs' })).toBeVisible()
+
+    // Generate the event after opening the viewer. Another parallel browser
+    // test can create many log rows, so an earlier event may fall off page 1.
+    const res = await fetch(`${BASE}${probePath}`)
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    await expect
+      .poll(async () => {
+        const result = await pool.query<{ n: string }>(
+          'SELECT count(*)::text AS n FROM _logs WHERE message = $1',
+          [`GET ${probePath}`],
+        )
+        return Number(result.rows[0]?.n ?? 0)
       })
-    ).json()) as { items?: Array<{ message: string }> }
-    seen = logs.items?.some((e) => e.message.includes(probePath)) ?? false
+      .toBeGreaterThan(0)
+
+    await page.getByRole('button', { name: '↻' }).click()
+    await expect(page.getByText(probePath)).toBeVisible()
+  } finally {
+    await pool.end()
   }
-  expect(seen).toBe(true)
-
-  await auth(page)
-  await page.goto(`${BASE}/_/#/logs`)
-
-  // The entry renders the probe path (as the parsed path or the raw message).
-  await expect(page.getByText(probePath)).toBeVisible()
 })

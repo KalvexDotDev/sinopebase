@@ -56,3 +56,16 @@ test('Login page renders without auth', async ({ page }) => {
   const title = await page.title()
   expect(title.length).toBeGreaterThan(0)
 })
+
+test('Service role login rejects an invalid key and accepts a valid one', async ({ page }) => {
+  await page.goto(`${BASE}/_/`)
+  const keyField = page.getByLabel('Service Role Key')
+  await keyField.fill('not-the-service-role-key')
+  await page.getByRole('button', { name: 'Sign In' }).click()
+  await expect(page.getByText('Invalid service role key')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Table Editor/ })).toHaveCount(0)
+
+  await keyField.fill(serviceKey)
+  await page.getByRole('button', { name: 'Sign In' }).click()
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+})

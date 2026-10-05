@@ -5,6 +5,7 @@
  * Layer 1 -- imports from Layer 0 tools and nodemailer.
  */
 
+import { Readable } from 'node:stream'
 import * as nodemailer from 'nodemailer'
 import { Hook } from '~/tools/hook/hook.ts'
 import { PseudorandomString } from '~/tools/security/random.ts'
@@ -194,12 +195,16 @@ export class SMTPClient implements Mailer, SendInterceptor {
     }
 
     // Attachments
-    const attachments: { filename?: string; content?: Buffer | ReadableStream; cid?: string }[] = []
+    const attachments: NonNullable<nodemailer.SendMailOptions['attachments']> = []
+    const content = (stream: Buffer | ReadableStream): Buffer | Readable =>
+      Buffer.isBuffer(stream)
+        ? stream
+        : Readable.fromWeb(stream as unknown as import('node:stream/web').ReadableStream)
 
     for (const [filename, stream] of Object.entries(m.attachments)) {
       attachments.push({
         filename,
-        content: stream,
+        content: content(stream),
       })
     }
 
@@ -207,7 +212,7 @@ export class SMTPClient implements Mailer, SendInterceptor {
     for (const [filename, stream] of Object.entries(m.inlineAttachments)) {
       attachments.push({
         filename,
-        content: stream,
+        content: content(stream),
         cid: filename,
       })
     }

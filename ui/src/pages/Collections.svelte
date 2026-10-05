@@ -42,6 +42,7 @@
   async function loadRows() {
     if (!selectedTable) return
     loading = true; error = ''
+    columns = tables.find((t) => t.name === selectedTable)?.columns ?? []
     const offset = (page - 1) * perPage
     let qs = `select=*&limit=${perPage}&offset=${offset}`
     if (sortCol) qs += `&order=${sortCol}.${sortDir}`
@@ -53,9 +54,8 @@
       if (!dr.ok) { error = `${dr.status} ${dr.statusText}`; rows = []; loading = false; return }
       const data = await dr.json()
       rows = Array.isArray(data) ? data : []
-      if (rows.length > 0) {
-        const existing = tables.find((t) => t.name === selectedTable)
-        columns = existing?.columns ?? (Object.keys(rows[0] as object).map((k) => ({ name: k, type: 'text', nullable: true, isPrimaryKey: k === 'id' })))
+      if (rows.length > 0 && columns.length === 0) {
+        columns = Object.keys(rows[0] as object).map((k) => ({ name: k, type: 'text', nullable: true, isPrimaryKey: k === 'id' }))
       }
       const range = dr.headers.get('content-range')
       totalCount = range ? parseInt(range.split('/').pop() ?? '0', 10) || rows.length : rows.length
@@ -65,13 +65,17 @@
   }
 
   $effect(() => { loadTables() })
-  $effect(() => { if (selectedTable) { page = 1; loadRows() } })
   $effect(() => { if (selectedTable && page) loadRows() })
 
   async function doDropTable() {
     if (dropTableConfirm !== dropTableName) return
     try {
-      await fetch(`${origin}/api/admin/tables/${dropTableName}`, { method: 'DELETE', headers: h() })
+      const res = await fetch(`${origin}/api/admin/tables/${dropTableName}`, { method: 'DELETE', headers: h() })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        error = body.message || `Drop failed: ${res.status}`
+        return
+      }
       if (selectedTable === dropTableName) selectedTable = ''
       showDropTable = false; dropTableConfirm = ''
       loadTables()
@@ -132,7 +136,8 @@
   }
 
   async function doDelete() {
-    await fetch(`${origin}/rest/v1/${selectedTable}?${pkCol}=eq.${encodeURIComponent(deleteId)}`, { method: 'DELETE', headers: h() })
+    const res = await fetch(`${origin}/rest/v1/${selectedTable}?${pkCol}=eq.${encodeURIComponent(deleteId)}`, { method: 'DELETE', headers: h() })
+    if (!res.ok) { error = `Delete failed: ${res.status}`; return }
     deleteId = ''; deleteLabel = ''; loadRows()
   }
 
@@ -144,8 +149,11 @@
     const res = await fetch(`${origin}/rest/v1/${selectedTable}?${pkCol}=eq.${encodeURIComponent(String(pkVal))}`, {
       method: 'PATCH', headers: { ...h(), 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify({ [editCell.col]: val }),
     })
-    if (res.ok) { const u = await res.json(); if (Array.isArray(u) && u[0]) rows[editCell.row] = u[0] as Record<string, unknown> }
-    editCell = null
+    if (res.ok) {
+      const u = await res.json()
+      if (Array.isArray(u) && u[0]) rows[editCell.row] = u[0] as Record<string, unknown>
+      editCell = null
+    } else error = `Update failed: ${res.status}`
   }
 
   function startEdit(rowIdx: number, col: string) { editCell = { row: rowIdx, col, val: fmt(rows[rowIdx]![col]) } }
@@ -183,17 +191,11 @@
       <p style="color: var(--text-muted); font-size: 13px;">No tables</p>
     {:else}
       {#each filteredTables as t (t.name)}
-        <div
-          style="display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 6px 10px; border: none; background: {selectedTable === t.name ? 'var(--char)' : 'transparent'}; color: {selectedTable === t.name ? 'var(--text)' : 'var(--text-secondary)'}; border-radius: var(--radius-none); cursor: pointer; font-family: var(--font-mono); font-size: 12px; margin-bottom: 1px;"
-        >
-          <span style="flex: 1; cursor: pointer;" onclick={() => { selectedTable = t.name; editCell = null }}>{t.name}</span>
-          <span style="display: flex; align-items: center; gap: 4px;">
-            <span style="color: var(--text-muted); font-size: 10px;">{t.columns.length}c</span>
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <span style="color: var(--text-muted); font-size: 9px; cursor: pointer; padding: 0 2px;"
-              onclick={(e: Event) => { e.stopPropagation(); dropTableName = t.name; showDropTable = true; dropTableConfirm = '' }}
-              title="Drop table">✕</span>
-          </span>
+        <div class="table-list-item" style="background: {selectedTable === t.name ? 'var(--char)' : 'transparent'};">
+          <button type="button" class="table-list-select" onclick={() => { selectedTable = t.name; page = 1; editCell = null }}>{t.name}</button>
+          <span style="color: var(--text-muted); font-size: 10px;">{t.columns.length}c</span>
+          <button type="button" class="table-list-drop" aria-label={`Drop ${t.name}`} title={`Drop ${t.name}`}
+            onclick={() => { dropTableName = t.name; showDropTable = true; dropTableConfirm = '' }}>✕</button>
         </div>
       {/each}
     {/if}
@@ -287,19 +289,19 @@
 <Modal title="Add Row" open={showAdd} variant="slide" onclose={closeAdd}>
   <p style="font-size: 13px; color: var(--text-secondary);">{selectedTable}</p>
   <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;" onsubmit={(e) => { e.preventDefault(); doAdd() }}>
-    {#each columns.filter((c) => !c.isPrimaryKey || !['id','uuid'].includes(c.name.toLowerCase())) as col (col.name)}
+    {#each columns as col (col.name)}
       <div>
-        <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">{col.name}
+        <label for={`add-row-${col.name}`} style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">{col.name}
           <span style="color: var(--text-muted); font-weight: 400; margin-left: 6px; font-size: 11px;">{col.type}{col.nullable ? '' : ' *'}</span>
         </label>
         {#if col.type === 'boolean' || col.type === 'bool'}
-          <select bind:value={addForm[col.name]} style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 13px;">
+          <select id={`add-row-${col.name}`} bind:value={addForm[col.name]} style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 13px;">
             <option value="">—</option><option value="true">true</option><option value="false">false</option>
           </select>
         {:else if col.type === 'jsonb' || col.type === 'json'}
-          <textarea class="input" style="min-height: 80px; font-family: var(--font-mono); font-size: 12px;" bind:value={addForm[col.name]} placeholder="JSON value"></textarea>
+          <textarea id={`add-row-${col.name}`} class="input" style="min-height: 80px; font-family: var(--font-mono); font-size: 12px;" bind:value={addForm[col.name]} placeholder="JSON value"></textarea>
         {:else}
-          <input class="input" bind:value={addForm[col.name]} placeholder={col.nullable ? 'null' : 'required'} />
+          <input id={`add-row-${col.name}`} class="input" bind:value={addForm[col.name]} placeholder={col.nullable ? 'null' : 'required'} />
         {/if}
       </div>
     {/each}
@@ -323,24 +325,25 @@
   <form style="flex: 1; padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-md); overflow-y: auto;"
     onsubmit={(e) => { e.preventDefault(); doCreateTable() }}>
     <div>
-      <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">Table name</label>
-      <input class="input" bind:value={newTableName} placeholder="my_table" />
+      <label style="font-size: 13px; font-weight: 500; display: block; margin-bottom: 4px;">Table name
+        <input class="input" bind:value={newTableName} placeholder="my_table" />
+      </label>
     </div>
     <div class="label">Columns</div>
     {#each newColumns as col, i (i)}
-      <div style="display: flex; gap: var(--space-xs); align-items: flex-end;">
-        <div style="flex: 1;"><input class="input input-sm" bind:value={col.name} placeholder="column_name" /></div>
-        <div style="width: 140px;">
-          <select bind:value={col.type} style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 12px;">
+      <div class="table-column-row">
+        <input class="input input-sm" bind:value={col.name} placeholder="column_name" aria-label={`Column ${i + 1} name`} />
+        <div>
+          <select bind:value={col.type} aria-label={`Column ${i + 1} type`} style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-none); font-size: 12px;">
             {#each PG_TYPES as t}<option value={t}>{t}</option>{/each}
           </select>
         </div>
-        <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
-          <input type="checkbox" bind:checked={col.nullable} /> Null</label>
-        <label style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 2px; white-space: nowrap;">
-          <input type="checkbox" bind:checked={col.pk} /> PK</label>
-        <Button variant="icon" size="sm"
+        <Button variant="icon" size="sm" aria-label={`Remove column ${i + 1}`}
           onclick={() => removeColumn(i)} disabled={newColumns.length <= 1}>✕</Button>
+        <div class="table-column-options">
+          <label><input type="checkbox" bind:checked={col.nullable} /> Nullable</label>
+          <label><input type="checkbox" bind:checked={col.pk} /> Primary key</label>
+        </div>
       </div>
     {/each}
     <Button variant="ghost" size="sm"
@@ -355,6 +358,17 @@
     </div>
   </form>
 </Modal>
+
+<style>
+  .table-list-item { display: flex; align-items: center; gap: 4px; width: 100%; margin-bottom: 1px; padding: 2px 4px; font-family: var(--font-mono); font-size: 12px; }
+  .table-list-select { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; padding: 4px 6px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; }
+  .table-list-drop { border: 0; background: transparent; color: var(--text-muted); font-size: 11px; padding: 4px; cursor: pointer; }
+  .table-list-drop:hover { color: var(--danger); }
+  .table-column-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 140px) 32px; gap: var(--space-sm); align-items: center; }
+  .table-column-row > .input { min-width: 0; }
+  .table-column-options { grid-column: 1 / -1; display: flex; gap: var(--space-lg); font-size: 11px; color: var(--text-secondary); }
+  .table-column-options label { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+</style>
 
 <Modal title="Drop Table" open={showDropTable} variant="center" onclose={() => { showDropTable = false; dropTableConfirm = '' }}>
   <p style="color: var(--danger); font-size: 14px; margin-bottom: var(--space-md);">

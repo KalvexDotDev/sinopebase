@@ -5,6 +5,9 @@ export default defineConfig({
   testMatch: '**/*.pw.ts',
   timeout: 15000,
   retries: 1,
+  // Browser journeys share one database and a rate limiter. Parallel workers
+  // can bury a just-written log entry while another test sends 1,000 requests.
+  workers: 1,
   use: {
     baseURL: 'http://127.0.0.1:9876',
     headless: true,

@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 
+const apiTarget = process.env.SINOPEBASE_API_URL || 'http://127.0.0.1:8090'
+
 export default defineConfig({
   base: '/_/',
   plugins: [svelte()],
@@ -10,12 +12,12 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:8090',
-      '/auth': 'http://127.0.0.1:8090',
-      '/rest': 'http://127.0.0.1:8090',
-      '/storage': 'http://127.0.0.1:8090',
-      '/realtime': 'http://127.0.0.1:8090',
-      '/openapi': 'http://127.0.0.1:8090',
+      '/api': apiTarget,
+      '/auth': apiTarget,
+      '/rest': apiTarget,
+      '/storage': apiTarget,
+      '/realtime': { target: apiTarget, ws: true },
+      '/openapi': apiTarget,
     },
   },
 })

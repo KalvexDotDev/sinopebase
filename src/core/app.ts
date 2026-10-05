@@ -690,6 +690,35 @@ export class Sinopebase {
   private cachedServiceRoleKey = ''
   private cachedAnonKey = ''
 
+  private persistRequestLog(
+    request: Request,
+    pathname: string,
+    status: number,
+    duration: number,
+    requestId: string,
+    auditServiceRole: boolean,
+  ): void {
+    // Reading logs must not create more logs or make the viewer self-sustaining.
+    if (pathname === '/api/logs' || !(this.database instanceof PostgresDatabase)) return
+    const message = auditServiceRole ? 'audit:service_role' : `${request.method} ${pathname}`
+    this.database
+      .getPool()
+      .query('INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)', [
+        0,
+        message,
+        JSON.stringify({
+          method: request.method,
+          path: pathname,
+          status,
+          duration_ms: duration,
+          request_id: requestId,
+        }),
+      ])
+      .catch(() => {
+        /* best-effort logging */
+      })
+  }
+
   /**
    * Plugin registration callbacks queued via {@link use}.
    * Executed during {@link initializeServer} after core routes are registered
@@ -1185,30 +1214,14 @@ export class Sinopebase {
           } catch {
             // best-effort — never crash on logging
           }
-          // Persist to _logs table if we have a database (fire-and-forget).
-          // service_role requests write the audit form of the entry so the
-          // trail is queryable by message = 'audit:service_role'.
-          if (this.database instanceof PostgresDatabase) {
-            const pool = this.database.getPool()
-            const message = meta.auditServiceRole
-              ? 'audit:service_role'
-              : `${request.method} ${pathname}`
-            pool
-              .query(`INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`, [
-                0,
-                message,
-                JSON.stringify({
-                  method: request.method,
-                  path: pathname,
-                  status: set.status ?? 200,
-                  duration_ms: duration,
-                  request_id: meta.requestId,
-                }),
-              ])
-              .catch(() => {
-                /* best-effort */
-              })
-          }
+          this.persistRequestLog(
+            request,
+            pathname,
+            Number(set.status ?? 200),
+            duration,
+            meta.requestId,
+            Boolean(meta.auditServiceRole),
+          )
           requestMeta.delete(request)
         }
       })
