@@ -101,3 +101,9 @@ The realtime hub is created with these defaults:
   disableClientBroadcast: false,  // Allow clients to send broadcast messages
 }
 ```
+
+## Multiple replicas
+
+Set `SINOPEBASE_MULTI_REPLICA=true` and `SINOPEBASE_PG_NOTIFY=true` as described in the [Kubernetes guide](kubernetes.md). Each replica listens for committed row changes through PostgreSQL `LISTEN/NOTIFY`, so a client can receive a database change made through another replica or directly in PostgreSQL. Startup attaches triggers to existing public user tables; roll the replicas after creating new tables so they receive triggers.
+
+Notifications are transient: changes committed while a listener is disconnected are not replayed. Payloads over 7900 bytes are skipped so large writes still succeed. Presence, client broadcasts, and per-connection counters remain local to each replica. Use the database for durable events and do not depend on fleet-wide presence or broadcast delivery.

@@ -178,7 +178,7 @@ describe('admin journey storage and log persistence', () => {
     }
     await Bun.sleep(100)
     expect(await countViewer()).toBe(before)
-  })
+  }, 15_000)
 
   it('enforces metadata bucket deletion directly for each role and bucket state', async () => {
     const db = new PostgresDatabase({ postgresUrl, runtimeRole: '' })

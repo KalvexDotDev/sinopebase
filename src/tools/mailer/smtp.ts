@@ -196,7 +196,8 @@ export class SMTPClient implements Mailer, SendInterceptor {
 
     // Attachments
     const attachments: NonNullable<nodemailer.SendMailOptions['attachments']> = []
-    const content = (stream: Buffer | ReadableStream): Buffer | Readable =>
+
+    const attachmentContent = (stream: Buffer | ReadableStream): Buffer | Readable =>
       Buffer.isBuffer(stream)
         ? stream
         : Readable.fromWeb(stream as unknown as import('node:stream/web').ReadableStream)
@@ -204,7 +205,7 @@ export class SMTPClient implements Mailer, SendInterceptor {
     for (const [filename, stream] of Object.entries(m.attachments)) {
       attachments.push({
         filename,
-        content: content(stream),
+        content: attachmentContent(stream),
       })
     }
 
@@ -212,7 +213,7 @@ export class SMTPClient implements Mailer, SendInterceptor {
     for (const [filename, stream] of Object.entries(m.inlineAttachments)) {
       attachments.push({
         filename,
-        content: content(stream),
+        content: attachmentContent(stream),
         cid: filename,
       })
     }

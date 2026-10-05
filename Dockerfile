@@ -32,7 +32,7 @@ RUN bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /ou
 # are copied into the production image.
 FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce AS runtime
 
-ARG VERSION=0.2.1
+ARG VERSION=0.9.0
 ARG REVISION=unknown
 ARG CREATED=unknown
 

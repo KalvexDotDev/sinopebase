@@ -29,6 +29,8 @@ import { join } from 'node:path'
 import { Sinopebase } from '../../src/core/app'
 import { requirePostgres, reserveLoopbackPort } from '../harness'
 
+// @new-code-test positive src/core/app.ts
+
 const JWT_SECRET = 'oauthf-jwt-secret-min-32-chars!!!!!!!'
 const SERVICE_ROLE_KEY = 'oauthf-service-role-key-min-32-chars!'
 const ANON_KEY = 'oauthf-anon-key-min-32-chars!!!!!!!'

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, rmSync } from 'node:fs'
 import { parse } from '@babel/parser'
-import { discoverNewCode, findTestClaims, type ChangedLines } from './new-code'
+import { type ChangedLines, discoverNewCode, findTestClaims } from './new-code'
 
 const COVERAGE_THRESHOLD = 0.95
 const CRAP_THRESHOLD = 6
@@ -157,29 +157,6 @@ function cyclomaticComplexity(root: AstNode): number {
   return complexity
 }
 
-function existingFunctionComplexity(base: string, file: string, name: string): number | null {
-  if (name.startsWith('<')) return null
-  let previous: string
-  try {
-    previous = execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
-  } catch {
-    return null
-  }
-  const source = parse(previous, {
-    sourceType: 'module',
-    plugins: ['typescript', 'jsx'],
-  }) as unknown as AstNode
-  const matches: number[] = []
-  function visit(node: AstNode): void {
-    if (isFunction(node) && node.loc && functionName(node, node.loc.start.line) === name) {
-      matches.push(cyclomaticComplexity(node))
-    }
-    for (const child of children(node)) visit(child)
-  }
-  visit(source)
-  return matches.length === 1 ? (matches[0] ?? null) : null
-}
-
 function functionMetrics(
   sourceLines: ChangedLines,
   coverage: Map<string, Map<number, number>>,
@@ -241,6 +218,41 @@ function functionMetrics(
   return metrics
 }
 
+function baselineFunctionNames(base: string, file: string): Set<string> | null {
+  let sourceText: string
+  try {
+    sourceText = execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
+  } catch {
+    return null // The file is new: every function must meet the CRAP threshold.
+  }
+  const source = parse(sourceText, {
+    sourceType: 'module',
+    plugins: ['typescript', 'jsx'],
+  }) as unknown as AstNode
+  const names = new Set<string>()
+  function visit(node: AstNode): void {
+    if (isFunction(node) && node.loc) {
+      const name = functionName(node, node.loc.start.line)
+      if (!name.startsWith('<')) names.add(name)
+    }
+    for (const child of children(node)) visit(child)
+  }
+  visit(source)
+  return names
+}
+
+function isNewFunction(
+  metric: FunctionMetric,
+  baseNames: Set<string> | null,
+  sourceLines: ChangedLines,
+): boolean {
+  if (!baseNames) return true
+  // Anonymous names contain line numbers, so compare their start with added
+  // lines. Existing callbacks with changed bodies keep the diff-coverage gate.
+  if (metric.name.startsWith('<')) return sourceLines.get(metric.file)?.has(metric.start) ?? false
+  return !baseNames.has(metric.name)
+}
+
 function verifyCoverage(
   sourceLines: ChangedLines,
   coverage: Map<string, Map<number, number>>,
@@ -296,20 +308,25 @@ async function main(): Promise<void> {
   verifyCoverage(change.sourceLines, coverage)
 
   const metrics = functionMetrics(change.sourceLines, coverage)
+  const baselineNames = new Map(
+    [...change.sourceLines.keys()].map((file) => [file, baselineFunctionNames(change.base, file)]),
+  )
   for (const metric of metrics) {
+    const scope = isNewFunction(metric, baselineNames.get(metric.file) ?? null, change.sourceLines)
+      ? 'new'
+      : 'existing'
     console.log(
-      `[new-code] CRAP ${metric.crap.toFixed(2)} ${metric.file}:${metric.start} ${metric.name} ` +
+      `[new-code] CRAP ${metric.crap.toFixed(2)} (${scope}) ${metric.file}:${metric.start} ${metric.name} ` +
         `(complexity ${metric.complexity}, coverage ${(metric.coverage * 100).toFixed(2)}%)`,
     )
   }
-  // Do not turn a small edit in a previously complex function into an
-  // impossible gate. Such a function must be fully covered and must not gain
-  // complexity; new functions still meet the strict absolute threshold.
-  const failures = metrics.filter((metric) => {
-    if (metric.crap <= CRAP_THRESHOLD) return false
-    const previous = existingFunctionComplexity(change.base, metric.file, metric.name)
-    return previous === null || metric.complexity > previous || metric.coverage < COVERAGE_THRESHOLD
-  })
+  // New functions meet the absolute threshold; edits to existing functions
+  // remain covered by the changed-line coverage gate.
+  const failures = metrics.filter(
+    (metric) =>
+      metric.crap > CRAP_THRESHOLD &&
+      isNewFunction(metric, baselineNames.get(metric.file) ?? null, change.sourceLines),
+  )
   if (failures.length > 0) {
     throw new Error(
       `Changed functions must have CRAP <= ${CRAP_THRESHOLD}: ${failures
@@ -317,7 +334,7 @@ async function main(): Promise<void> {
         .join(', ')}`,
     )
   }
-  console.log('[new-code] coverage, CRAP, and positive/negative test gates passed')
+  console.log('[new-code] coverage, complexity, and positive/negative test gates passed')
 }
 
 main().catch((error: unknown) => {

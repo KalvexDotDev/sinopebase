@@ -29,16 +29,23 @@ await app.start()
 | `SINOPEBASE_ANON_KEY` | **Yes** (prod) | Anonymous/public API key (≥32 chars) |
 | `SINOPEBASE_PRODUCTION` | No | Set to `true` for fail-closed production mode. Or `NODE_ENV=production`. |
 | `ALLOW_SIGNUPS` | No | Public email/password signup. Defaults to disabled in production and enabled in development; set explicitly to `true` to allow production signup. |
-| `RUSTFS_ENDPOINT` | **Yes** (prod) | S3-compatible storage URL |
-| `RUSTFS_ACCESS_KEY` | **Yes** (prod) | S3 access key |
-| `RUSTFS_SECRET_KEY` | **Yes** (prod) | S3 secret key |
+| `RUSTFS_ENDPOINT` / `S3_ENDPOINT` | **Yes** (prod) | S3-compatible storage URL; `S3_ENDPOINT` accepts HTTPS URLs without an explicit port (defaults to 443) |
+| `RUSTFS_ACCESS_KEY` / `S3_ACCESS_KEY` | **Yes** (prod) | S3 access key |
+| `RUSTFS_SECRET_KEY` / `S3_SECRET_KEY` | **Yes** (prod) | S3 secret key |
 | `BETTER_AUTH_URL` | No (prod) | Public-facing base URL for OAuth redirects and CORS (default: `http://localhost:8090`) |
 | `OPENAI_API_KEY` | No | Enable real AI responses. Without it, the mock provider echoes back. |
 | `OPENAI_BASE_URL` | No | OpenAI-compatible base URL. Swap for DeepSeek, Groq, Ollama, etc. (default: `https://api.openai.com/v1`) |
 | `PORT` | No | Server port (default: `8090`, or `$PORT` on Railway) |
 | `HOST` | No | Bind address (default: `0.0.0.0`) |
+| `SINOPEBASE_PG_NOTIFY` | Multi-replica | Enable PostgreSQL row-change notifications. |
+| `SINOPEBASE_MULTI_REPLICA` | Multi-replica | Enforce shared storage and disable local admin mutations. |
+| `SINOPEBASE_EXTERNAL_RATE_LIMIT` | Multi-replica | Assert a shared ingress rate limit is configured. |
+| `TRUSTED_PROXIES` | Behind sanitizing ingress | Enable rightmost forwarded IP selection; ingress must overwrite forwarding headers. |
+| `SINOPEBASE_OAUTH_PROVIDERS_JSON` | If OAuth is used across pods | Common provider array from a Secret. |
 
 See `.env.example` for a complete template with placeholder values. Copy with `cp .env.example .env`.
+
+The CLI accepts the `S3_*` names; the existing Railway template continues to use `RUSTFS_*`. For a multi-replica deployment, see [Kubernetes deployment](kubernetes.md). PostgreSQL migration locking runs automatically when PostgreSQL is configured, including concurrent pod starts.
 
 ## TLS / HTTPS
 

@@ -257,3 +257,5 @@ curl 'https://your-instance/api/health'
 curl 'https://your-instance/api/ready'
 # → {"code":200,"status":"ready","db":"connected"}
 ```
+
+`/api/health` checks that the process responds and is suitable for liveness. `/api/ready` queries PostgreSQL when configured and returns HTTP 503 if that query fails. In multi-replica mode it also requires an active PostgreSQL realtime listener; use it as the Kubernetes readiness probe.

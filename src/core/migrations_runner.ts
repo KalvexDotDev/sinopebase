@@ -25,11 +25,15 @@ export class MigrationRunner {
    * @param migrationDB - Raw SQL executor passed to migration up/down functions.
    * @param tableName - The table name for tracking migrations.
    */
-  private db: IDatabase
+  private db: Pick<IDatabase, 'hasTable' | 'select'>
   private migrationDB: MigrationDB
   private tableName: string
 
-  constructor(db: IDatabase, migrationDB: MigrationDB, tableName = '_migrations') {
+  constructor(
+    db: Pick<IDatabase, 'hasTable' | 'select'>,
+    migrationDB: MigrationDB,
+    tableName = '_migrations',
+  ) {
     this.db = db
     this.migrationDB = migrationDB
     this.tableName = tableName
@@ -96,14 +100,18 @@ export class MigrationRunner {
    *
    * @returns The number of migrations applied.
    */
-  async run(): Promise<number> {
+  async run(signal?: AbortSignal): Promise<number> {
+    signal?.throwIfAborted()
     await this.loadApplied()
+    signal?.throwIfAborted()
 
     const pending = this.pending()
     let count = 0
 
     for (const migration of pending) {
+      signal?.throwIfAborted()
       await migration.up(this.migrationDB)
+      signal?.throwIfAborted()
 
       // Track migration as applied. Migration names come from the filename
       // regex (timestamps + snake_case), so string interpolation is safe here.
@@ -111,6 +119,7 @@ export class MigrationRunner {
       await this.migrationDB.raw(
         `INSERT INTO ${this.tableName} (name, applied_at) VALUES ('${migration.name}', '${new Date().toISOString()}')`,
       )
+      signal?.throwIfAborted()
 
       this.applied.add(migration.name)
       count++
