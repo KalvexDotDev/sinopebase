@@ -544,6 +544,7 @@ import {
   type PostgresRequestContext,
 } from './db-postgres'
 import { generateRequestId, logger } from './logger'
+import { withPostgresMigrationLock } from './migration-lock'
 import { loadMigrationsFromDirectory, loadSqlMigrationsFromDirectory } from './migrations_loader'
 import { MigrationRunner } from './migrations_runner'
 
@@ -558,22 +559,7 @@ function createMigrationsFileStore(config: AppConfig): IFileStore {
   const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
   const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
-    // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
-    // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
-    let host = s3Endpoint
-    let port = 9000
-    let useSSL = false
-    try {
-      const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
-      host = url.hostname
-      if (url.port) port = Number(url.port)
-      useSSL = url.protocol === 'https:'
-    } catch {
-      // Fallback: treat as bare host:port
-      const parts = s3Endpoint.split(':')
-      host = parts[0] ?? s3Endpoint
-      if (parts[1]) port = Number(parts[1])
-    }
+    const { host, port, useSSL } = parseS3Endpoint(s3Endpoint)
     return new S3FileStore({
       endpoint: host,
       port,
@@ -583,6 +569,31 @@ function createMigrationsFileStore(config: AppConfig): IFileStore {
     })
   }
   return new LocalFileStore(config.dataDir ?? './pb_data')
+}
+
+/** URL endpoints use their scheme port; bare RustFS hosts keep port 9000. */
+export function parseS3Endpoint(endpoint: string): { host: string; port: number; useSSL: boolean } {
+  const hasScheme = /^https?:\/\//.test(endpoint)
+  const url = new URL(hasScheme ? endpoint : `http://${endpoint}`)
+  validateS3EndpointUrl(url)
+  const useSSL = url.protocol === 'https:'
+  return {
+    host: url.hostname,
+    port: s3EndpointPort(url, hasScheme),
+    useSSL,
+  }
+}
+
+function validateS3EndpointUrl(url: URL): void {
+  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
+    throw new Error('S3 endpoint must be a host or origin URL without path or credentials')
+  }
+}
+
+function s3EndpointPort(url: URL, hasScheme: boolean): number {
+  if (url.port) return Number(url.port)
+  if (!hasScheme) return 9000
+  return url.protocol === 'https:' ? 443 : 80
 }
 
 import { loadSqlMigrationsFromS3 } from './migrations_s3'
@@ -628,8 +639,14 @@ export interface AppConfig {
   host?: string
   /** Enable PG LISTEN/NOTIFY for cross-process realtime fan-out (default false). */
   enablePgNotify?: boolean
+  /** Require shared services and disable local admin mutations for replicated deployments. */
+  multiReplica?: boolean
+  /** Operator assertion that ingress enforces a shared request limit. */
+  externalRateLimit?: boolean
   /** Application name shown in the admin UI. */
   appName?: string
+  /** Minimum password length returned by the single-instance settings API. */
+  minPasswordLength?: number
   /** TLS certificate and key file paths */
   tls?: { cert: string; key: string }
   /** Port for HTTP→HTTPS redirect listener (default 80). Only used when TLS is active. */
@@ -711,6 +728,9 @@ export class Sinopebase {
       host: '0.0.0.0',
       mastraRequireAuth: true,
       backupDir: './backups',
+      trustedProxies: process.env.TRUSTED_PROXIES?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
       ...config,
     }
     const backupDir = this.config.backupDir
@@ -821,6 +841,28 @@ export class Sinopebase {
 
     // Initialize database: PostgreSQL or in-memory fallback
     const postgresUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
+    if (this.config.multiReplica) {
+      if (!this.config.externalRateLimit) {
+        throw new Error(
+          'Multi-replica mode requires a shared ingress rate limit (SINOPEBASE_EXTERNAL_RATE_LIMIT=true)',
+        )
+      }
+      if (!postgresUrl || !this.config.enablePgNotify) {
+        throw new Error('Multi-replica mode requires PostgreSQL and PG notifications')
+      }
+      if (
+        !(this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT) ||
+        !(this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY) ||
+        !(this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY)
+      ) {
+        throw new Error('Multi-replica mode requires shared S3 storage')
+      }
+      if (existsSync(resolve(this.dataDir(), 'oauth_providers.json'))) {
+        throw new Error(
+          'Multi-replica mode requires OAuth providers in common deployment configuration, not local Admin UI files',
+        )
+      }
+    }
 
     // Merge code-configured OAuth providers with file-based ones (for Admin UI management).
     // Hoisted to method scope so both createAuth and createAuthPlugin can reference it.
@@ -1038,8 +1080,13 @@ export class Sinopebase {
         })
         await this._pgListener.start()
         // Attach triggers to existing tables after migrations have run
-        await attachRealtimeTriggers(pool, (msg, data) => logger.info(msg, data))
+        await attachRealtimeTriggers(
+          pool,
+          (msg, data) => logger.info(msg, data),
+          this.config.multiReplica,
+        )
       } catch (err) {
+        if (this.config.multiReplica) throw err
         logger.warn('[realtime-pg] Failed to start PG listener', {
           error: (err as Error).message,
         })
@@ -1261,8 +1308,10 @@ export class Sinopebase {
         if (this.database instanceof PostgresDatabase) {
           try {
             const pool = this.database.getPool()
-            const client = await pool.connect()
-            client.release()
+            await pool.query('SELECT 1')
+            if (this.config.multiReplica && !this._pgListener?.isConnected()) {
+              throw new Error('PostgreSQL realtime listener unavailable')
+            }
             return { code: 200, status: 'ready', db: 'connected' }
           } catch {
             set.status = 503
@@ -1346,7 +1395,7 @@ export class Sinopebase {
       s1,
       this.database,
       (request) => postgrestContexts.get(request),
-      realtime,
+      this.config.enablePgNotify ? undefined : realtime,
     )
 
     // ── Storage — /storage/v1/* ──
@@ -1450,23 +1499,25 @@ export class Sinopebase {
 
     // ── Settings API — GET/PATCH /api/settings (service_role only) ──
     const { createSettingsPlugin } = await import('../apis/settings')
-    s5.use(
-      createSettingsPlugin(
-        () => ({
-          appName: this.config.appName ?? 'Sinopebase',
-          allowSignups: true,
-          requireVerification: false,
-          minPasswordLength: 8,
-        }),
-        async (settings) => {
-          // Persist settings by merging into config
-          if (settings.appName) (this.config as Record<string, unknown>).appName = settings.appName
-          if (settings.minPasswordLength)
-            (this.config as Record<string, unknown>).minPasswordLength = settings.minPasswordLength
-        },
-        isSuperuser,
-      ),
-    )
+    if (!this.config.multiReplica)
+      s5.use(
+        createSettingsPlugin(
+          () => ({
+            appName: this.config.appName ?? 'Sinopebase',
+            allowSignups: true,
+            requireVerification: false,
+            minPasswordLength: this.config.minPasswordLength ?? 8,
+          }),
+          async (settings) => {
+            // Persist settings by merging into config
+            if (settings.appName)
+              (this.config as Record<string, unknown>).appName = settings.appName
+            if (settings.minPasswordLength)
+              this.config.minPasswordLength = settings.minPasswordLength
+          },
+          isSuperuser,
+        ),
+      )
 
     // ── Logs API — GET /api/logs/* (service_role only) ──
     if (this.database) {
@@ -1509,16 +1560,20 @@ export class Sinopebase {
 
     // ── Admin OAuth Providers API — CRUD for OAuth/OIDC providers ──
     const { createAdminOAuthPlugin } = await import('../apis/admin-oauth')
-    s5.use(
-      createAdminOAuthPlugin(
-        this.dataDir(),
-        isSuperuser,
-        this.config.jwtSecret || process.env.JWT_SECRET || '',
-        (providers) => {
-          logger.info('OAuth providers updated', { count: providers.length, restartRequired: true })
-        },
-      ),
-    )
+    if (!this.config.multiReplica)
+      s5.use(
+        createAdminOAuthPlugin(
+          this.dataDir(),
+          isSuperuser,
+          this.config.jwtSecret || process.env.JWT_SECRET || '',
+          (providers) => {
+            logger.info('OAuth providers updated', {
+              count: providers.length,
+              restartRequired: true,
+            })
+          },
+        ),
+      )
 
     // ── Plugins (DropFunctions handles /api/functions/v1 listing + execution) ──
     const { MastraPlugin } = await import('../plugins/mastra/plugin')
@@ -1538,6 +1593,7 @@ export class Sinopebase {
     const { DropFunctionsPlugin } = await import('../plugins/drop-functions/plugin')
     const dropFunctions = new DropFunctionsPlugin({
       functionsDir: this.config.functionsDir ?? './functions',
+      manageEnabled: !this.config.multiReplica,
     })
     await dropFunctions.register(s6, this.auth ?? undefined)
     const s7 = s6
@@ -1616,6 +1672,11 @@ export class Sinopebase {
 
   /** Create a backup of PostgreSQL and the file store. */
   async createBackup(name: string): Promise<void> {
+    if (this.config.multiReplica) {
+      throw new Error(
+        'Local backups are unavailable in multi-replica mode; use an external backup job',
+      )
+    }
     const { mkdir } = await import('node:fs/promises')
     const { join } = await import('node:path')
 
@@ -1653,6 +1714,9 @@ export class Sinopebase {
 
   /** Restore a backup by name. */
   async restoreBackup(name: string): Promise<void> {
+    if (this.config.multiReplica) {
+      throw new Error('Local restores are unavailable in multi-replica mode')
+    }
     const { join } = await import('node:path')
 
     const destDir = join(this.resolvedBackupDir, name)
@@ -1693,6 +1757,9 @@ export class Sinopebase {
 
   /** Schedule a recurring backup using a cron expression. */
   scheduleBackup(cronExpression: string, options?: { intervalMs?: number }): void {
+    if (this.config.multiReplica) {
+      throw new Error('Scheduled backups require a single designated worker in multi-replica mode')
+    }
     this.cancelScheduledBackup()
     const cron = new Cron()
     if (options?.intervalMs) cron.setInterval(options.intervalMs)
@@ -1827,6 +1894,10 @@ export class Sinopebase {
   }
 
   private async closeDatabaseAfterStartupFailure(): Promise<void> {
+    await this._pgListener?.stop()
+    this._pgListener = null
+    this._realtimeHub?.dispose()
+    this._realtimeHub = null
     const database = this.database
     this.database = null
     if (!(database instanceof PostgresDatabase)) return
@@ -1956,8 +2027,11 @@ export class Sinopebase {
 
   /** Apply system migrations first, followed by application migrations. */
   async runAllMigrations(): Promise<void> {
-    await this.runSystemMigrations()
-    await this.runAppMigrations()
+    if (!(this.database instanceof PostgresDatabase)) return
+    await withPostgresMigrationLock(this.database.getPool(), async () => {
+      await this.runSystemMigrations()
+      await this.runAppMigrations()
+    })
   }
 
   /**

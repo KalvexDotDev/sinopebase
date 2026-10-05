@@ -20,6 +20,30 @@
  */
 
 import { type AppConfig, Sinopebase } from '~/core/app.ts'
+import type { OAuthProviderConfig } from '~/tools/auth-better'
+import { deploymentConfigFromEnv } from './deployment-config.ts'
+
+function oauthProvidersFromEnv(): OAuthProviderConfig[] {
+  const value = process.env.SINOPEBASE_OAUTH_PROVIDERS_JSON
+  if (!value) return []
+  const parsed: unknown = JSON.parse(value)
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every(
+      (provider) =>
+        provider &&
+        typeof provider === 'object' &&
+        typeof provider.providerId === 'string' &&
+        typeof provider.clientId === 'string' &&
+        typeof provider.clientSecret === 'string',
+    )
+  ) {
+    throw new Error(
+      'SINOPEBASE_OAUTH_PROVIDERS_JSON must be an array of OAuth provider configurations',
+    )
+  }
+  return parsed as OAuthProviderConfig[]
+}
 
 // ---------------------------------------------------------------------------
 // Argument parser
@@ -165,6 +189,8 @@ async function main(): Promise<void> {
     serviceRoleKey: process.env.SINOPEBASE_SERVICE_ROLE_KEY || undefined,
     anonKey: process.env.SINOPEBASE_ANON_KEY || undefined,
     extraOrigins,
+    oauthProviders: oauthProvidersFromEnv(),
+    ...deploymentConfigFromEnv(process.env),
     tls,
     minioEndpoint: process.env.S3_ENDPOINT || undefined,
     minioAccessKey: process.env.S3_ACCESS_KEY || undefined,

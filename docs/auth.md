@@ -110,6 +110,8 @@ Each provider returns `providerId`, `displayName`, and `iconUrl` for rendering l
 
 Providers can also be managed through the Admin UI at `/_/` → Settings → OAuth Providers. Add, edit, and remove providers without restarting the server. Provider configuration is persisted to `pb_data/oauth_providers.json`.
 
+This file-based management applies to a single instance. In multi-replica mode, provide identical OAuth settings to every pod through `SINOPEBASE_OAUTH_PROVIDERS_JSON` (for example, from a private Kubernetes Secret). Startup rejects a local `oauth_providers.json` file, and Admin UI provider mutations are disabled. Roll all pods when changing providers. See [Kubernetes deployment](kubernetes.md).
+
 ### Account Linking
 
 Accounts are linked by email by default. A user signing in with Google

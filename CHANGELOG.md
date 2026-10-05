@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Kubernetes multi-replica support
+
+### Added
+- Opt-in multi-replica configuration using the existing server image and CLI. Railway remains a single-instance deployment with its existing defaults.
+- PostgreSQL advisory locking around startup migrations and CLI wiring for `LISTEN/NOTIFY` delivery of committed row changes to clients on other replicas.
+- Listener connectivity as a condition of `/api/ready` in multi-replica mode; `/api/health` remains the liveness endpoint.
+- A generic, credential-free Kubernetes manifest and deployment guide, with Kubeconform validation in CI.
+
+### Changed
+- S3 endpoint URLs now use port 443 for HTTPS and 80 for HTTP when no port is specified; bare hosts retain the RustFS default port.
+- Multi-replica mode requires shared PostgreSQL and S3, a shared ingress rate-limit assertion, and common OAuth configuration when OAuth is used. Local OAuth and function management, backups, and restores are unavailable in this mode.
+
+### Tests
+- Added enabled/disabled deployment configuration tests, in-memory migration and listener failure tests, and PostgreSQL integration tests for advisory locking and row-change notifications.
+- The new-code gate now applies its absolute CRAP limit to new functions while continuing to require 95% changed-line coverage and positive/negative test claims for edits to existing functions.
+
 ## v0.9.0 — 2026-08-28
 
 ### Added

@@ -9,8 +9,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Number of replicas for the service. Keep at 1 until Realtime fan-out
-# durability is proven across multiple instances (see v0.4 HANDOFF.md).
+# Railway remains the supported single-instance path. Multi-replica
+# deployments use the separately documented Kubernetes configuration.
 numReplicas = 1
 
 # Health-check path — Railway probes this every ~30s.

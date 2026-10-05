@@ -16,6 +16,8 @@ Deploying on Railway gives you PostgreSQL and S3-compatible storage provisioned 
 
 ## Dependencies for Sinopebase
 
+The supported Railway template remains a **single instance** (`numReplicas = 1`) with the existing image and defaults. Set `POSTGRES_URL`, `JWT_SECRET`, `SINOPEBASE_SERVICE_ROLE_KEY`, `SINOPEBASE_ANON_KEY`, and the existing `RUSTFS_ENDPOINT`/`RUSTFS_ACCESS_KEY`/`RUSTFS_SECRET_KEY` variables. `SINOPEBASE_PG_NOTIFY` and `SINOPEBASE_MULTI_REPLICA` may remain unset. Railway continues to use `/api/health` for its configured health check. `/api/ready` can be used for database-aware checks without changing Railway's deployment contract. See [Kubernetes deployment](kubernetes.md) for multi-replica requirements.
+
 ### Deployment Dependencies
 
 Sinopebase connects to PostgreSQL and S3-compatible storage. Railway provisions both automatically when you deploy from this template.
@@ -35,7 +37,7 @@ Startup takes under a second. System migrations run automatically against your P
 
 The admin UI at `/_/` lets you browse tables, manage users, view logs, and monitor metrics without leaving your browser. API docs are auto-generated at `/api/docs`.
 
-To add OAuth providers, set environment variables like `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in your Railway service settings and redeploy. To add AI features, set `OPENAI_API_KEY` (or swap `OPENAI_BASE_URL` for DeepSeek, Groq, or Ollama).
+To add OAuth providers, use the Admin UI's provider settings and restart the single instance, or set `SINOPEBASE_OAUTH_PROVIDERS_JSON` to an array of provider configurations and redeploy. To add AI features, set `OPENAI_API_KEY` (or swap `OPENAI_BASE_URL` for DeepSeek, Groq, or Ollama).
 
 Scales vertically with bigger Railway instances. For production, enable `SINOPEBASE_PRODUCTION=true` to enforce strong secrets and fail-closed infrastructure checks.
 

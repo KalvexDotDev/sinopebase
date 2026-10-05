@@ -7,6 +7,8 @@ import type { FunctionConfig } from './types'
 export interface DropFunctionsPluginOptions {
   /** Directory containing function files (default: './functions') */
   functionsDir?: string
+  /** Disable file management routes when replicas use immutable function files. */
+  manageEnabled?: boolean
   /** Default execution timeout in ms (default: 5000) */
   defaultTimeout?: number
   /** Require auth by default for all functions (default: false) */
@@ -21,6 +23,7 @@ export interface DropFunctionsPluginOptions {
 /** Resolved defaults for the plugin. */
 export const DEFAULTS: Required<DropFunctionsPluginOptions> = {
   functionsDir: './functions',
+  manageEnabled: true,
   defaultTimeout: 5000,
   defaultAuth: false,
   rateLimit: {

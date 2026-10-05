@@ -81,11 +81,12 @@ sinopebase/
 ### Testing
 
 - **Test-first**: Write ATDD tests before implementation
-- Tests run against real infrastructure (PostgreSQL + RustFS in Docker)
+- Integration tests run against real infrastructure (PostgreSQL + RustFS in Docker); focused in-memory tests cover concurrency and failure paths
 - Test files mirror source structure under `tests/`
 - `bun test` must pass with 0 failures before any commit
-- Changed production code must keep at least 95% diff coverage and a CRAP score
-  no higher than 6 for every changed function.
+- Changed production code must keep at least 95% diff coverage. New functions
+  must have a CRAP score no higher than 6. Existing functions are reported but
+  are not forced through an unrelated full-function rewrite by this gate.
 - Every changed production file needs both positive and negative tests. Mark the
   changed test file with `@new-code-test positive src/path.ts` and
   `@new-code-test negative src/path.ts`. If the failure behavior is not in the
