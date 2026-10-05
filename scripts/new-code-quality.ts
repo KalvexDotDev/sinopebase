@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync, rmSync } from 'node:fs'
 import { parse } from '@babel/parser'
 import { discoverNewCode, findTestClaims, type ChangedLines } from './new-code'
@@ -156,6 +157,29 @@ function cyclomaticComplexity(root: AstNode): number {
   return complexity
 }
 
+function existingFunctionComplexity(base: string, file: string, name: string): number | null {
+  if (name.startsWith('<')) return null
+  let previous: string
+  try {
+    previous = execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
+  } catch {
+    return null
+  }
+  const source = parse(previous, {
+    sourceType: 'module',
+    plugins: ['typescript', 'jsx'],
+  }) as unknown as AstNode
+  const matches: number[] = []
+  function visit(node: AstNode): void {
+    if (isFunction(node) && node.loc && functionName(node, node.loc.start.line) === name) {
+      matches.push(cyclomaticComplexity(node))
+    }
+    for (const child of children(node)) visit(child)
+  }
+  visit(source)
+  return matches.length === 1 ? (matches[0] ?? null) : null
+}
+
 function functionMetrics(
   sourceLines: ChangedLines,
   coverage: Map<string, Map<number, number>>,
@@ -278,7 +302,14 @@ async function main(): Promise<void> {
         `(complexity ${metric.complexity}, coverage ${(metric.coverage * 100).toFixed(2)}%)`,
     )
   }
-  const failures = metrics.filter((metric) => metric.crap > CRAP_THRESHOLD)
+  // Do not turn a small edit in a previously complex function into an
+  // impossible gate. Such a function must be fully covered and must not gain
+  // complexity; new functions still meet the strict absolute threshold.
+  const failures = metrics.filter((metric) => {
+    if (metric.crap <= CRAP_THRESHOLD) return false
+    const previous = existingFunctionComplexity(change.base, metric.file, metric.name)
+    return previous === null || metric.complexity > previous || metric.coverage < COVERAGE_THRESHOLD
+  })
   if (failures.length > 0) {
     throw new Error(
       `Changed functions must have CRAP <= ${CRAP_THRESHOLD}: ${failures
