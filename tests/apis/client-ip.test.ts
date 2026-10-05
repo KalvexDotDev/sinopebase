@@ -19,8 +19,8 @@ describe('TRUSTED_PROXIES env', () => {
     delete process.env.TRUSTED_PROXIES
   })
 
-  test('populates config.trustedProxies', () => {
-    process.env.TRUSTED_PROXIES = 'traefik, 10.0.0.0/8'
+  test('populates config.trustedProxies without empty entries', () => {
+    process.env.TRUSTED_PROXIES = 'traefik, , 10.0.0.0/8'
     const vc = new Sinopebase({ port: 0 }).buildValidatedConfig()
     expect(vc.trustedProxies).toEqual(['traefik', '10.0.0.0/8'])
   })

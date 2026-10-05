@@ -35,6 +35,26 @@ describe('parseS3Endpoint', () => {
     })
   })
 
+  test('normalizes a bare hostname before applying its default port', () => {
+    expect(parseS3Endpoint('RUSTFS')).toEqual({ host: 'rustfs', port: 9000, useSSL: false })
+  })
+
+  test('does not treat a path segment as part of an explicit bare-host port', () => {
+    expect(parseS3Endpoint('localhost:80/path')).toEqual({
+      host: 'localhost',
+      port: 9000,
+      useSSL: false,
+    })
+  })
+
+  test('recognizes a URL scheme only at the start of the endpoint', () => {
+    expect(parseS3Endpoint('prefixhttps://s3.example.com')).toEqual({
+      host: 'prefixhttps',
+      port: 9000,
+      useSSL: false,
+    })
+  })
+
   test('malformed endpoint retains the existing bare-host fallback', () => {
     expect(parseS3Endpoint('not a valid host')).toEqual({
       host: 'not a valid host',
