@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased — Kubernetes multi-replica support
+## v0.10.0 — 2026-10-05
 
 ### Added
-- Opt-in multi-replica configuration using the existing server image and CLI. Railway remains a single-instance deployment with its existing defaults.
+- PostgREST `match` and `imatch` filters for case-sensitive and case-insensitive PostgreSQL regular expressions (#41).
+- CLI support for SMTP settings supplied through environment variables in server deployments (#12).
+- Opt-in multi-replica configuration using the existing server image and CLI. Railway remains a single-instance deployment with its existing defaults (#44).
 - PostgreSQL advisory locking around startup migrations and CLI wiring for `LISTEN/NOTIFY` delivery of committed row changes to clients on other replicas.
 - Migration SQL and ledger writes now run in one transaction on the advisory-lock connection, so losing that connection rolls back the migration; the Kubernetes example makes its scratch volume writable to the non-root process.
 - Listener connectivity as a condition of `/api/ready` in multi-replica mode; `/api/health` remains the liveness endpoint.
@@ -12,6 +14,11 @@
 ### Changed
 - S3 endpoint URLs now use port 443 for HTTPS and 80 for HTTP when no port is specified; bare hosts retain the RustFS default port.
 - Multi-replica mode requires shared PostgreSQL and S3, a shared ingress rate-limit assertion, and common OAuth configuration when OAuth is used. Local OAuth and function management, backups, and restores are unavailable in this mode.
+
+### Fixed
+- Admin UI collection, storage, log, and authentication journeys, with direct API and browser regression coverage (#43).
+- Signed storage downloads and service authorization, while preserving the hardened non-root, read-only production container (#19).
+- Atlas HTTPS S3 endpoint parsing and trusted-proxy client IP handling (#42).
 
 ### Tests
 - Added enabled/disabled deployment configuration tests, in-memory migration and listener failure tests, and PostgreSQL integration tests for advisory locking and row-change notifications.

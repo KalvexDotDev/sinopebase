@@ -137,7 +137,7 @@ docker compose -f docker-compose.prod.yml up -d
 `docker-compose.prod.yml` pulls `ghcr.io/kalvexdotdev/sinopebase:latest` and starts PostgreSQL, RustFS, and PgBouncer alongside it. For production, pin a specific version:
 
 ```bash
-SINOPEBASE_VERSION=v0.6.2 docker compose -f docker-compose.prod.yml up -d
+SINOPEBASE_VERSION=v0.10.0 docker compose -f docker-compose.prod.yml up -d
 ```
 
 The compose file uses `${VAR:?message}` syntax — Docker will refuse to start if required secrets are missing.

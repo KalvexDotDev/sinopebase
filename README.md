@@ -132,7 +132,7 @@ docker run -p 8090:8090 \
   ghcr.io/kalvexdotdev/sinopebase:latest
 ```
 
-Pin to a specific version for production: `ghcr.io/kalvexdotdev/sinopebase:v0.6.2`
+Pin to a specific version for production: `ghcr.io/kalvexdotdev/sinopebase:v0.10.0`
 
 ### Bare Metal
 
@@ -276,7 +276,7 @@ bun run compile && bun run benchmark   # needs Docker PostgreSQL + RustFS
 - **Trivy container scanning** — CRITICAL+HIGH gates in CI
 - **Read-only root filesystem** — Docker runs as UID 10001, all capabilities dropped
 
-> **⚠️ Pre-1.0 caveats:** Signed URL cryptography and supply-chain attestation (SBOM, signed containers) remain on the roadmap. PostgREST filter operators currently cover 12 operators (`eq/neq/gt/gte/lt/lte/like/ilike/match/imatch/is/in`); regex filters (`match`/`imatch`) are unanchored POSIX regexes, so clients add `^...$` for a full-value match. Full-text search (`fts`), array operators, and `not.` negation are deferred. Multi-replica Kubernetes support is being prepared for release and has [documented limits](docs/kubernetes.md). See [CHANGELOG.md](CHANGELOG.md) for current status.
+> **⚠️ Pre-1.0 caveats:** Signed URL cryptography and supply-chain attestation (SBOM, signed containers) remain on the roadmap. PostgREST filter operators currently cover 12 operators (`eq/neq/gt/gte/lt/lte/like/ilike/match/imatch/is/in`); regex filters (`match`/`imatch`) are unanchored POSIX regexes, so clients add `^...$` for a full-value match. Full-text search (`fts`), array operators, and `not.` negation are deferred. Multi-replica Kubernetes support is available in v0.10.0 with [documented limits](docs/kubernetes.md). See [CHANGELOG.md](CHANGELOG.md) for current status.
 
 ---
 

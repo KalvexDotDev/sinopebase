@@ -2,7 +2,7 @@
 # Start with: docker compose -f docker-compose.prod.yml up -d
 #
 # Uses the prebuilt GHCR image — no local build needed.
-# Pulls ghcr.io/kalvexdotdev/sinopebase:latest (currently v0.6.2).
+# Pulls ghcr.io/kalvexdotdev/sinopebase:latest unless SINOPEBASE_VERSION pins a tag.
 #
 # Requires these env vars (set in .env or shell):
 #   JWT_SECRET                — ≥32 char random string (required)
