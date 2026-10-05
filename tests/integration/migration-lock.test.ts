@@ -93,14 +93,19 @@ describe('PostgreSQL migration advisory lock', () => {
       (error: unknown) => error,
     )
     const pid = await lockPid
+    let observedActive = false
     for (let attempt = 0; attempt < 50; attempt++) {
       const activity = await second.query<{ active: boolean }>(
         "SELECT state = 'active' AND query LIKE '%pg_sleep(10)%' AS active FROM pg_stat_activity WHERE pid = $1",
         [pid],
       )
-      if (activity.rows[0]?.active) break
+      if (activity.rows[0]?.active) {
+        observedActive = true
+        break
+      }
       await Bun.sleep(20)
     }
+    expect(observedActive).toBe(true)
     const terminated = await second.query('SELECT pg_terminate_backend($1) AS terminated', [pid])
     expect(terminated.rows[0]?.terminated).toBe(true)
     expect(await workOutcome).toBeInstanceOf(Error)
