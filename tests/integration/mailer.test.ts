@@ -22,6 +22,11 @@ interface MailpitMessage {
   Text: string
 }
 
+interface MailpitDetail {
+  Text: string
+  Attachments: { FileName: string }[]
+}
+
 async function mailpitAvailable(): Promise<boolean> {
   try {
     const res = await fetch(`${MAILPIT_API}/messages`, { signal: AbortSignal.timeout(1500) })
@@ -64,6 +69,13 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
     message.subject = subject
     message.text = 'Mailpit integration test body'
     message.html = '<p>Mailpit integration test body</p>'
+    message.attachments['buffer.txt'] = Buffer.from('buffer attachment')
+    message.attachments['stream.txt'] = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('stream attachment'))
+        controller.close()
+      },
+    })
 
     await app.mailer?.send(message)
 
@@ -81,10 +93,14 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
     expect(found?.To[0]?.Address).toBe('recipient@example.com')
 
     // The body lives on the per-message detail endpoint.
-    const detail = (await (await fetch(`${MAILPIT_API}/message/${found?.ID}`)).json()) as {
-      Text: string
-    }
+    const detail = (await (
+      await fetch(`${MAILPIT_API}/message/${found?.ID}`)
+    ).json()) as MailpitDetail
     expect(detail.Text).toContain('Mailpit integration test body')
+    expect(detail.Attachments.map((attachment) => attachment.FileName)).toEqual([
+      'buffer.txt',
+      'stream.txt',
+    ])
 
     // Clean up the mailbox for the next run.
     await fetch(`${MAILPIT_API}/messages`, { method: 'DELETE' })
