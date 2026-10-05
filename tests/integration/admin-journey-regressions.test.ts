@@ -9,7 +9,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
+import { PostgresStorageAccessPolicy } from '../../src/apis/storage-postgres'
 import { Sinopebase } from '../../src/core/app'
+import { PostgresDatabase } from '../../src/core/db-postgres'
 import { reserveLoopbackPort } from '../harness'
 
 const postgresUrl =
@@ -73,6 +75,11 @@ describe('admin journey storage and log persistence', () => {
         headers: auth,
       })
       expect(occupied.status).toBe(409)
+      expect(await occupied.json()).toEqual({
+        statusCode: '409',
+        error: '409',
+        message: 'Bucket is not empty',
+      })
       const stillThere = await pool.query('SELECT id FROM storage.buckets WHERE id = $1', [name])
       expect(stillThere.rows).toHaveLength(1)
 
@@ -87,8 +94,19 @@ describe('admin journey storage and log persistence', () => {
         headers: auth,
       })
       expect(deleted.status).toBe(200)
+      expect(await deleted.json()).toEqual({ message: `Deleted bucket "${name}".` })
       const metadata = await pool.query('SELECT id FROM storage.buckets WHERE id = $1', [name])
       expect(metadata.rows).toHaveLength(0)
+      const missing = await fetch(`${origin}/storage/v1/bucket/${name}`, {
+        method: 'DELETE',
+        headers: auth,
+      })
+      expect(missing.status).toBe(404)
+      expect(await missing.json()).toEqual({
+        statusCode: '404',
+        error: '404',
+        message: 'Bucket not found',
+      })
     } finally {
       await fetch(`${origin}/storage/v1/object/${name}`, {
         method: 'DELETE',
@@ -111,8 +129,41 @@ describe('admin journey storage and log persistence', () => {
       if (Number(result.rows[0]?.n ?? 0) > 0) break
       await Bun.sleep(50)
     }
-    const saved = await pool.query('SELECT id FROM _logs WHERE message = $1', [`GET ${path}`])
+    const saved = await pool.query<{ data: Record<string, unknown> }>(
+      'SELECT data FROM _logs WHERE message = $1',
+      [`GET ${path}`],
+    )
     expect(saved.rows.length).toBeGreaterThan(0)
+    expect(JSON.parse(String(saved.rows[0]?.data))).toEqual({
+      method: 'GET',
+      path,
+      status: probe.status,
+      duration_ms: expect.any(Number),
+      request_id: expect.any(String),
+    })
+
+    const auditPath = `/storage/v1/bucket/${unique('audit')}`
+    const audited = await fetch(`${origin}${auditPath}`, { headers: auth })
+    expect(audited.status).toBeGreaterThanOrEqual(400)
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const result = await pool.query<{ n: string }>(
+        "SELECT count(*)::text AS n FROM _logs WHERE message = $1 AND data::jsonb->>'path' = $2",
+        ['audit:service_role', auditPath],
+      )
+      if (Number(result.rows[0]?.n ?? 0) > 0) break
+      await Bun.sleep(50)
+    }
+    const auditLog = await pool.query<{ data: Record<string, unknown> }>(
+      "SELECT data FROM _logs WHERE message = $1 AND data::jsonb->>'path' = $2",
+      ['audit:service_role', auditPath],
+    )
+    expect(JSON.parse(String(auditLog.rows[0]?.data))).toEqual({
+      method: 'GET',
+      path: auditPath,
+      status: audited.status,
+      duration_ms: expect.any(Number),
+      request_id: expect.any(String),
+    })
 
     const countViewer = async () => {
       const result = await pool.query<{ n: string }>(
@@ -127,5 +178,46 @@ describe('admin journey storage and log persistence', () => {
     }
     await Bun.sleep(100)
     expect(await countViewer()).toBe(before)
+  })
+
+  it('enforces metadata bucket deletion directly for each role and bucket state', async () => {
+    const db = new PostgresDatabase({ postgresUrl, runtimeRole: '' })
+    const policy = new PostgresStorageAccessPolicy(db)
+    const name = `policy-delete-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    let persisted = 0
+    const persist = async () => {
+      persisted++
+    }
+    try {
+      await expect(
+        policy.deleteBucket({ role: 'authenticated', userId: 'member' }, name, persist),
+      ).rejects.toMatchObject({
+        status: 403,
+        code: '403',
+        message: 'Only service_role can delete buckets',
+      })
+      await expect(
+        policy.deleteBucket({ role: 'service_role' }, name, persist),
+      ).rejects.toMatchObject({ status: 404, code: '404', message: 'Bucket not found' })
+      expect(persisted).toBe(0)
+
+      await pool.query('INSERT INTO storage.buckets (id, name) VALUES ($1, $1)', [name])
+      await pool.query('INSERT INTO storage.objects (bucket_id, name) VALUES ($1, $2)', [
+        name,
+        'keep.txt',
+      ])
+      await expect(
+        policy.deleteBucket({ role: 'service_role' }, name, persist),
+      ).rejects.toMatchObject({ status: 409, code: '409', message: 'Bucket is not empty' })
+      expect(persisted).toBe(0)
+      await pool.query('DELETE FROM storage.objects WHERE bucket_id = $1', [name])
+      await policy.deleteBucket({ role: 'service_role' }, name, persist)
+      expect(persisted).toBe(1)
+      const deleted = await pool.query('SELECT id FROM storage.buckets WHERE id = $1', [name])
+      expect(deleted.rows).toHaveLength(0)
+    } finally {
+      await pool.query('DELETE FROM storage.buckets WHERE id = $1', [name])
+      await db.close()
+    }
   })
 })

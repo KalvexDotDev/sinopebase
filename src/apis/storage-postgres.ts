@@ -260,7 +260,9 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
       const objects = await sql<{ count: string }>`
         SELECT count(*) AS count FROM storage.objects WHERE bucket_id = ${name}
       `.execute(db.getWriter())
-      if (Number(objects.rows[0]?.count ?? 0) > 0) {
+      // COUNT always returns one row, including when the bucket has no objects.
+      const [countRow] = objects.rows as [{ count: string }]
+      if (Number(countRow.count) > 0) {
         throw new StorageAccessError(409, '409', 'Bucket is not empty')
       }
       await persist()

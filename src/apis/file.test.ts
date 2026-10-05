@@ -147,18 +147,30 @@ describe('Supabase Storage HTTP compatibility', () => {
 
     const nonEmpty = await app.handle(new Request(url, { method: 'DELETE' }))
     expect(nonEmpty.status).toBe(409)
+    expect(await nonEmpty.json()).toEqual({
+      statusCode: '409',
+      error: '409',
+      message: 'Bucket is not empty',
+    })
     expect(store.buckets.has('journey')).toBe(true)
 
     store.files.clear()
     const deleted = await app.handle(new Request(url, { method: 'DELETE' }))
     expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({ message: 'Deleted bucket "journey".' })
     expect(store.buckets.has('journey')).toBe(false)
 
     const denied = storageApp(store, new TestStorageAccess(), () => ({
       role: 'authenticated',
       userId: 'member',
     }))
-    expect((await denied.app.handle(new Request(url, { method: 'DELETE' }))).status).toBe(403)
+    const forbidden = await denied.app.handle(new Request(url, { method: 'DELETE' }))
+    expect(forbidden.status).toBe(403)
+    expect(await forbidden.json()).toEqual({
+      statusCode: '403',
+      error: '403',
+      message: 'Only service_role can delete buckets',
+    })
   })
 
   it('rejects invalid and absent bucket names before deletion', async () => {
@@ -167,10 +179,39 @@ describe('Supabase Storage HTTP compatibility', () => {
       new Request('http://localhost/storage/v1/bucket/bad%20name', { method: 'DELETE' }),
     )
     expect(invalid.status).toBe(400)
+    expect(await invalid.json()).toEqual({
+      statusCode: '400',
+      error: '400',
+      message: 'Invalid bucket name',
+    })
     const missing = await app.handle(
       new Request('http://localhost/storage/v1/bucket/missing', { method: 'DELETE' }),
     )
     expect(missing.status).toBe(404)
+    expect(await missing.json()).toEqual({
+      statusCode: '404',
+      error: '404',
+      message: 'Bucket not found',
+    })
+  })
+
+  it('checks bucket existence before deletion without a metadata policy', async () => {
+    const { app, store } = storageApp()
+    store.buckets.add('another-bucket')
+    const url = 'http://localhost/storage/v1/bucket/existing'
+    const absent = await app.handle(new Request(url, { method: 'DELETE' }))
+    expect(absent.status).toBe(404)
+    expect(await absent.json()).toEqual({
+      statusCode: '404',
+      error: '404',
+      message: 'Bucket not found',
+    })
+    store.buckets.add('existing')
+    const deleted = await app.handle(new Request(url, { method: 'DELETE' }))
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({ message: 'Deleted bucket "existing".' })
+    expect(store.buckets.has('existing')).toBe(false)
+    expect(store.buckets.has('another-bucket')).toBe(true)
   })
 
   it('accepts the raw binary body sent by storage-js for Buffer uploads', async () => {

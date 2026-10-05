@@ -109,6 +109,108 @@ describe('admin table DDL validation', () => {
     expect(response.status).toBe(200)
     expect(queries).toHaveLength(1)
     expect(queries[0]).toContain('CREATE TABLE "items"')
+    expect(queries[0]).toContain('"id" UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid()')
+    expect(queries[0]).toContain('"title" TEXT')
+    expect(await response.json()).toEqual({ message: 'Table "items" created.' })
+  })
+
+  it('accepts every table-wizard type', async () => {
+    const types = [
+      'text',
+      'varchar',
+      'integer',
+      'bigint',
+      'real',
+      'double precision',
+      'boolean',
+      'timestamp with time zone',
+      'date',
+      'jsonb',
+      'uuid',
+    ]
+    for (const type of types) {
+      const { handler, queries } = app()
+      const response = await handler.handle(
+        create({ name: 'items', columns: [{ name: 'value', type, nullable: true }] }),
+      )
+      expect(response.status).toBe(200)
+      expect(queries[0]).toContain(`"value" ${type.toUpperCase()}`)
+    }
+  })
+
+  it('enforces the column-count boundary and column name rules', async () => {
+    const valid = app()
+    const columns = Array.from({ length: 100 }, (_, i) => ({
+      name: `column_${i}`,
+      type: 'text',
+      nullable: true,
+    }))
+    expect((await valid.handler.handle(create({ name: 'items', columns }))).status).toBe(200)
+    expect(valid.queries).toHaveLength(1)
+    const tooMany = app()
+    const response = await tooMany.handler.handle(
+      create({ name: 'items', columns: [...columns, { name: 'extra', type: 'text' }] }),
+    )
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ code: 400, message: 'Specify 1 to 100 columns.' })
+    for (const column of [
+      null,
+      { name: 'bad name', type: 'text' },
+      { name: 42, type: 'text' },
+      { name: ['value'], type: 'text' },
+    ]) {
+      const invalid = app()
+      const result = await invalid.handler.handle(create({ name: 'items', columns: [column] }))
+      expect(result.status).toBe(400)
+      expect(await result.json()).toEqual({
+        code: 400,
+        message: 'Column names must be unique SQL identifiers.',
+      })
+    }
+  })
+
+  it('rejects non-string column types with a validation response', async () => {
+    const { handler, queries } = app()
+    const response = await handler.handle(
+      create({ name: 'items', columns: [{ name: 'value', type: 42 }] }),
+    )
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ code: 400, message: 'Unsupported column type.' })
+    expect(queries).toEqual([])
+  })
+
+  it('accepts safe numeric, string, and function defaults and rejects SQL fragments', async () => {
+    for (const value of [
+      '123',
+      '-12',
+      '123.45',
+      'true',
+      'false',
+      'null',
+      'now()',
+      'gen_random_uuid()',
+      'current_timestamp',
+      "'hello'",
+      "'it''s safe'",
+    ]) {
+      const valid = app()
+      const response = await valid.handler.handle(
+        create({
+          name: 'items',
+          columns: [{ name: 'value', type: 'text', nullable: true, default: ` ${value} ` }],
+        }),
+      )
+      expect(response.status).toBe(200)
+      expect(valid.queries[0]).toContain(`DEFAULT ${value}`)
+    }
+    for (const value of ['abc123', '123abc', '1.2x', '1.2.3', "'unsafe' --", 123]) {
+      const invalid = app()
+      const response = await invalid.handler.handle(
+        create({ name: 'items', columns: [{ name: 'value', type: 'text', default: value }] }),
+      )
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ code: 400, message: 'Unsupported column default.' })
+    }
   })
 
   it('drops a valid table for service_role and reports database failures', async () => {

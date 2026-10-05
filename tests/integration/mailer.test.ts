@@ -92,8 +92,12 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
     // The body lives on the per-message detail endpoint.
     const detail = (await (await fetch(`${MAILPIT_API}/message/${found?.ID}`)).json()) as {
       Text: string
+      Attachments: { FileName: string; Size: number }[]
     }
     expect(detail.Text).toContain('Mailpit integration test body')
+    expect(detail.Attachments).toEqual([
+      expect.objectContaining({ FileName: 'report.txt', Size: 19 }),
+    ])
 
     // Clean up the mailbox for the next run.
     await fetch(`${MAILPIT_API}/messages`, { method: 'DELETE' })
