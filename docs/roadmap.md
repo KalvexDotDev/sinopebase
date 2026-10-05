@@ -1,18 +1,18 @@
 # Roadmap
 
-Sinopebase prioritizes compatibility and production use. See the [changelog](../CHANGELOG.md) for released versions; the package is currently at v0.9.0.
+Sinopebase prioritizes compatibility and production use. See the [changelog](../CHANGELOG.md) for release details.
 
-## Current release: v0.9.0
+## v0.10.0 release
 
 - PostgreSQL, S3-compatible storage, email/password and OAuth/OIDC auth, realtime channels and presence, edge functions, AI features, and the admin UI.
-- Railway single-instance and Docker deployment paths.
+- Railway single-instance and Docker deployment paths remain supported with the existing defaults.
+- PostgREST `match`/`imatch` regex filters, improved admin journeys, server-side SMTP environment configuration, and signed-download fixes.
+- Opt-in Kubernetes multi-replica support on the same image: serialized PostgreSQL migrations, cross-replica row-change notifications, database-aware readiness, HTTPS S3 endpoint defaults, and a generic manifest validated in CI.
 - Production signup is closed unless explicitly enabled. CI includes new-code coverage, test-polarity, and changed-line mutation gates.
 
-## Next: Kubernetes multi-replica release
+## After the release
 
-The in-progress release uses the existing image with opt-in configuration. It adds serialized PostgreSQL startup migrations, cross-replica database-change notifications, PostgreSQL-aware readiness, S3 HTTPS endpoint defaults, and a generic Kubernetes manifest validated in CI. Railway's existing single-instance defaults remain supported.
-
-Before publishing, complete the release tests and produce a versioned image with an immutable registry digest. Cluster-specific configuration and deployment happen separately after release. [Kubernetes deployment](kubernetes.md) documents the required shared services and current limits, including process-local presence, broadcasts, and rate limits.
+Record the versioned image's immutable registry digest before adopting it. Cluster-specific Atlas configuration and deployment happen privately after release. [Kubernetes deployment](kubernetes.md) documents the required shared services and current limits, including process-local presence, broadcasts, and rate limits.
 
 ## Toward 1.0
 
@@ -22,7 +22,7 @@ Before publishing, complete the release tests and produce a versioned image with
 
 ## Longer term
 
-- AI-assisted backend creation, payments, one-command self-hosting, local development options, and offline sync remain ideas for later releases; they are not part of the Kubernetes release.
+- AI-assisted backend creation, payments, one-command self-hosting, local development options, and offline sync remain ideas for later releases; they are not part of v0.10.0.
 
 ## Explicitly outside the current scope
 
