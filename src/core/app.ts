@@ -555,7 +555,7 @@ import { MigrationRunner } from './migrations_runner'
  * (MIGRATIONS_BUCKET) construct their own here — they only need list/read.
  */
 function createMigrationsFileStore(config: AppConfig): IFileStore {
-  const s3Endpoint = config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
+  const s3Endpoint = config.minioEndpoint ?? process.env.RUSTFS_ENDPOINT ?? ''
   const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
   const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
@@ -838,7 +838,7 @@ export class Sinopebase {
             'Set NODE_ENV=development or SINOPEBASE_PRODUCTION=false to use the in-memory database.',
         )
       }
-      const s3CheckEndpoint = this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
+      const s3CheckEndpoint = this.config.minioEndpoint ?? process.env.RUSTFS_ENDPOINT ?? ''
       const s3CheckKey = this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
       const s3CheckSecret = this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
       if (!s3CheckEndpoint || !s3CheckKey || !s3CheckSecret) {
@@ -2016,7 +2016,7 @@ export class Sinopebase {
       host: this.config.host ?? '0.0.0.0',
       tls: this.config.tls,
       httpRedirectPort: this.config.httpRedirectPort ?? 80,
-      s3Endpoint: this.config.minioEndpoint || process.env.RUSTFS_ENDPOINT || undefined,
+      s3Endpoint: this.config.minioEndpoint ?? process.env.RUSTFS_ENDPOINT ?? undefined,
       s3AccessKey: this.config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || undefined,
       s3SecretKey: this.config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || undefined,
       oauthProviders: this.config.oauthProviders ?? [],

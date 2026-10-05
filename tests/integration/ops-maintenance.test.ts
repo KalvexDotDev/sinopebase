@@ -58,7 +58,10 @@ async function pollUntil(
 }
 
 /** Boot a full Sinopebase server on a free loopback port against PostgreSQL. */
-async function bootApp(dataDir?: string): Promise<{ app: Sinopebase; origin: string }> {
+async function bootApp(
+  dataDir?: string,
+  localStore = false,
+): Promise<{ app: Sinopebase; origin: string }> {
   const reservation = await reserveLoopbackPort()
   const app = new Sinopebase({
     port: reservation.port,
@@ -67,6 +70,7 @@ async function bootApp(dataDir?: string): Promise<{ app: Sinopebase; origin: str
     serviceRoleKey: SERVICE_ROLE_KEY,
     anonKey: ANON_KEY,
     dataDir,
+    minioEndpoint: localStore ? '' : undefined,
   })
   await reservation.release()
   await app.start()
@@ -294,7 +298,7 @@ describe('Local backups', () => {
 
   beforeAll(async () => {
     adminPool = new Pool({ connectionString: requirePostgres() })
-    const booted = await bootApp(dataDir)
+    const booted = await bootApp(dataDir, true)
     app = booted.app
     origin = booted.origin
   })
