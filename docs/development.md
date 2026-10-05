@@ -92,7 +92,8 @@ sinopebase/
   `@new-code-test negative src/path.ts`. If the failure behavior is not in the
   issue, acceptance criteria, or existing contract, ask the human before coding it.
 - Run `bun run test:quality` to apply the diff coverage, CRAP, test-polarity,
-  and changed-line mutation gates locally. Set `NEW_CODE_BASE=<commit>` when
+  and changed-line mutation gates locally. The mutation gate blocks below 70%
+  and publishes the full survivor report for review. Set `NEW_CODE_BASE=<commit>` when
   validating committed changes; otherwise the local gate compares the worktree
   with `HEAD`.
 

@@ -22,6 +22,7 @@ describe('function management deployment mode', () => {
       const response = await app.handle(new Request('http://localhost/api/functions/v1'))
       expect(response.status).toBe(200)
       expect((await response.json()).count).toBe(0)
+      expect((await app.handle(new Request('http://localhost/functions/v1'))).status).toBe(200)
     } finally {
       await rm(functionsDir, { recursive: true, force: true })
     }
@@ -36,9 +37,14 @@ describe('function management deployment mode', () => {
       await plugin.register(app)
       const management = await app.handle(new Request('http://localhost/api/functions/v1'))
       expect(management.status).toBe(404)
+      expect((await app.handle(new Request('http://localhost/functions/v1'))).status).toBe(404)
       const execution = await app.handle(new Request('http://localhost/api/functions/v1/hello'))
       expect(execution.status).toBe(200)
       expect(await execution.json()).toMatchObject({ data: { ok: true }, functionName: 'hello' })
+      const compatibleExecution = await app.handle(
+        new Request('http://localhost/functions/v1/hello'),
+      )
+      expect(compatibleExecution.status).toBe(200)
     } finally {
       await rm(functionsDir, { recursive: true, force: true })
     }

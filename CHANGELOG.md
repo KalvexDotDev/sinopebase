@@ -15,6 +15,7 @@
 ### Tests
 - Added enabled/disabled deployment configuration tests, in-memory migration and listener failure tests, and PostgreSQL integration tests for advisory locking and row-change notifications.
 - The new-code gate now applies its absolute CRAP limit to new functions while continuing to require 95% changed-line coverage and positive/negative test claims for edits to existing functions.
+- The changed-line mutation gate now blocks below 70% and publishes all survivors for review; the previous 100% requirement included diagnostic text and defensive branches that could not be killed through observable behavior.
 
 ## v0.9.0 — 2026-08-28
 

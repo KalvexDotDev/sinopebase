@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { getClientIP } from '~/apis/middlewares_rate_limit'
 import { parseS3Endpoint, Sinopebase } from '~/core/app'
 import { deploymentConfigFromEnv } from '../../cmd/deployment-config'
@@ -83,6 +86,39 @@ describe('shared deployment configuration', () => {
   test('multi-replica mode rejects missing shared ingress limit', async () => {
     const app = new Sinopebase({ multiReplica: true, mode: 'development' })
     await expect(app.start()).rejects.toThrow('shared ingress rate limit')
+  })
+
+  test('multi-replica mode requires both PostgreSQL and notifications', async () => {
+    const shared = { multiReplica: true, externalRateLimit: true, mode: 'development' as const }
+    await expect(new Sinopebase(shared).start()).rejects.toThrow(
+      'requires PostgreSQL and PG notifications',
+    )
+    await expect(
+      new Sinopebase({ ...shared, postgresUrl: 'postgresql://localhost/example' }).start(),
+    ).rejects.toThrow('requires PostgreSQL and PG notifications')
+  })
+
+  test('multi-replica mode rejects local OAuth provider files before connecting', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'sinope-local-oauth-'))
+    try {
+      await writeFile(join(dataDir, 'oauth_providers.json'), '[]')
+      const app = new Sinopebase({
+        mode: 'development',
+        dataDir,
+        multiReplica: true,
+        externalRateLimit: true,
+        enablePgNotify: true,
+        postgresUrl: 'postgresql://localhost/example',
+        minioEndpoint: 'http://objects.example.test',
+        minioAccessKey: 'test-key',
+        minioSecretKey: 'test-secret',
+      })
+      await expect(app.start()).rejects.toThrow(
+        'OAuth providers in common deployment configuration',
+      )
+    } finally {
+      await rm(dataDir, { recursive: true, force: true })
+    }
   })
 
   test('multi-replica mode rejects local maintenance operations', async () => {

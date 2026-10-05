@@ -80,6 +80,74 @@ describe('PostgreSQL listener with simulated connections', () => {
     expect(client.releases).toEqual([true])
   })
 
+  test('normalizes update events, ignores unknown events, and reports malformed payloads', async () => {
+    const client = new FakeClient()
+    const changes: PostgresChange[] = []
+    const logs: string[] = []
+    const listener = new PgRealtimeListener({
+      pool: fakePool([client]),
+      hub: {
+        async publishPostgresChange(change) {
+          changes.push(change)
+        },
+        async preparePostgresChange() {
+          return { deliver() {} }
+        },
+      },
+      processId: 'pod-b',
+      log(message) {
+        logs.push(message)
+      },
+    })
+    listeners.push(listener)
+    await listener.start()
+    client.emit('notification', {
+      channel: 'sinopebase_changes',
+      payload: JSON.stringify({ schema: 'public', table: 'todos', event: 'update' }),
+    })
+    client.emit('notification', {
+      channel: 'sinopebase_changes',
+      payload: JSON.stringify({ schema: 'public', table: 'todos', event: 'TRUNCATE' }),
+    })
+    client.emit('notification', { channel: 'sinopebase_changes', payload: '{invalid' })
+    await Bun.sleep(0)
+    expect(changes).toEqual([
+      { schema: 'public', table: 'todos', event: 'UPDATE', new: {}, old: {} },
+    ])
+    expect(logs.some((message) => message.includes('Failed to parse notification'))).toBe(true)
+  })
+
+  test('logs a failed broadcast without dropping the listener', async () => {
+    const client = new FakeClient()
+    const logs: string[] = []
+    const listener = new PgRealtimeListener({
+      pool: fakePool([client]),
+      hub: {
+        async publishPostgresChange() {
+          throw new Error('broadcast failed')
+        },
+        async preparePostgresChange() {
+          return { deliver() {} }
+        },
+      },
+      processId: 'pod-b',
+      log(message, data) {
+        logs.push(`${message}: ${data?.error ?? ''}`)
+      },
+    })
+    listeners.push(listener)
+    await listener.start()
+    client.emit('notification', {
+      channel: 'sinopebase_changes',
+      payload: JSON.stringify({ schema: 'public', table: 'todos', event: 'DELETE' }),
+    })
+    await Bun.sleep(0)
+    expect(
+      logs.some((message) => message.includes('Failed to publish change: broadcast failed')),
+    ).toBe(true)
+    expect(listener.isConnected()).toBe(true)
+  })
+
   test('failed LISTEN rejects startup and releases the broken connection', async () => {
     const client = new FakeClient()
     client.failListen = true
@@ -120,6 +188,30 @@ describe('PostgreSQL listener with simulated connections', () => {
     await Bun.sleep(1100)
     expect(listener.isConnected()).toBe(true)
     expect(second.queries.some((sql) => sql.startsWith('LISTEN'))).toBe(true)
+  })
+
+  test('stopping after a connection error cancels the reconnect', async () => {
+    const first = new FakeClient()
+    const second = new FakeClient()
+    const clients = [first, second]
+    const listener = new PgRealtimeListener({
+      pool: fakePool(clients),
+      hub: {
+        async publishPostgresChange() {},
+        async preparePostgresChange() {
+          return { deliver() {} }
+        },
+      },
+      processId: 'pod-a',
+    })
+    listeners.push(listener)
+    await listener.start()
+    first.emit('error', new Error('failover'))
+    await listener.stop()
+    await Bun.sleep(1100)
+    expect(listener.isConnected()).toBe(false)
+    expect(clients).toEqual([second])
+    expect(first.releases).toEqual([true])
   })
 
   test('heartbeat query failure drops readiness and schedules reconnection', async () => {

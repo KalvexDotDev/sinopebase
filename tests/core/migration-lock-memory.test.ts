@@ -152,11 +152,48 @@ describe('migration lock with the in-memory database', () => {
       throw new Error('expected migration lock failure')
     } catch (error) {
       expect(error).toBeInstanceOf(AggregateError)
+      expect((error as AggregateError).message).toBe('Migration and lock release failed')
       expect((error as AggregateError).errors.map((entry: Error) => entry.message)).toEqual([
         'migration failed',
         'unlock failed',
       ])
     }
     expect(destroyed).toBe(true)
+  })
+
+  test('reuses a healthy connection after a successful migration', async () => {
+    let destroyed: boolean | undefined
+    const pool: MigrationLockPool = {
+      async connect() {
+        return {
+          async query() {},
+          release(destroy) {
+            destroyed = destroy
+          },
+        }
+      },
+    }
+    expect(await withPostgresMigrationLock(pool, async () => 'applied')).toBe('applied')
+    expect(destroyed).toBe(false)
+  })
+
+  test('reuses a healthy connection when migration work fails after locking', async () => {
+    let destroyed: boolean | undefined
+    const pool: MigrationLockPool = {
+      async connect() {
+        return {
+          async query() {},
+          release(destroy) {
+            destroyed = destroy
+          },
+        }
+      },
+    }
+    await expect(
+      withPostgresMigrationLock(pool, async () => {
+        throw new Error('migration failed')
+      }),
+    ).rejects.toThrow('migration failed')
+    expect(destroyed).toBe(false)
   })
 })

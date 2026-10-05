@@ -10,7 +10,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { Sinopebase } from '~/core/app'
 import { Message } from '~/tools/mailer/mailer'
+import { SMTPClient } from '~/tools/mailer/smtp'
 import { reserveLoopbackPort } from '../harness'
+
+// @new-code-test positive src/tools/mailer/smtp.ts
+// @new-code-test negative src/tools/mailer/smtp.ts
 
 const MAILPIT_API = 'http://localhost:8025/api/v1'
 
@@ -105,4 +109,14 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
     // Clean up the mailbox for the next run.
     await fetch(`${MAILPIT_API}/messages`, { method: 'DELETE' })
   })
+})
+
+it('reports an unavailable SMTP server', async () => {
+  const mailer = new SMTPClient({ host: '127.0.0.1', port: 1 })
+  const message = new Message()
+  message.from = { name: 'Sender', address: 'sender@sinopebase.test' }
+  message.to = [{ name: 'Recipient', address: 'recipient@example.com' }]
+  message.subject = 'unavailable SMTP server'
+  message.text = 'Delivery should fail'
+  await expect(mailer.send(message)).rejects.toThrow()
 })
