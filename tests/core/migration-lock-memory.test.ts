@@ -1,17 +1,30 @@
 import { describe, expect, test } from 'bun:test'
+import { EventEmitter } from 'node:events'
 import { MemoryDatabaseAdapter } from '~/core/db-memory-adapter'
-import { type MigrationLockPool, withPostgresMigrationLock } from '~/core/migration-lock'
+import {
+  type MigrationLockClient,
+  type MigrationLockPool,
+  withPostgresMigrationLock,
+} from '~/core/migration-lock'
 import { MigrationRunner } from '~/core/migrations_runner'
 
 // @new-code-test positive src/core/migration-lock.ts
 // @new-code-test negative src/core/migration-lock.ts
+// @new-code-test positive src/core/migrations_runner.ts
+// @new-code-test negative src/core/migrations_runner.ts
+
+function lockClient(
+  methods: Pick<MigrationLockClient, 'query' | 'release'>,
+): MigrationLockClient & EventEmitter {
+  return Object.assign(new EventEmitter(), methods)
+}
 
 function simulatedPool(events: string[]): MigrationLockPool {
   let tail = Promise.resolve()
   return {
     async connect() {
       let unlock: (() => void) | undefined
-      return {
+      return lockClient({
         async query(sql: string) {
           if (sql.includes('pg_advisory_lock(')) {
             const previous = tail
@@ -28,7 +41,7 @@ function simulatedPool(events: string[]): MigrationLockPool {
         release() {
           events.push('release')
         },
-      }
+      })
     },
   }
 }
@@ -59,7 +72,7 @@ describe('migration lock with the in-memory database', () => {
             await db.createTable('shared_feature')
           },
         })
-        return runner.run()
+        return runner.run(new AbortController().signal)
       })
 
     const applied = await Promise.all([startReplica(), startReplica()])
@@ -92,7 +105,7 @@ describe('migration lock with the in-memory database', () => {
     let ran = false
     const pool: MigrationLockPool = {
       async connect() {
-        return {
+        return lockClient({
           async query(sql) {
             queries.push(sql)
             throw new Error('database unavailable')
@@ -100,7 +113,7 @@ describe('migration lock with the in-memory database', () => {
           release(destroy) {
             released = destroy
           },
-        }
+        })
       },
     }
     await expect(
@@ -117,14 +130,14 @@ describe('migration lock with the in-memory database', () => {
     let released: boolean | undefined
     const pool: MigrationLockPool = {
       async connect() {
-        return {
+        return lockClient({
           async query(sql) {
             if (sql.includes('pg_advisory_unlock')) throw new Error('unlock failed')
           },
           release(destroy) {
             released = destroy
           },
-        }
+        })
       },
     }
     await expect(withPostgresMigrationLock(pool, async () => 1)).rejects.toThrow('unlock failed')
@@ -135,14 +148,14 @@ describe('migration lock with the in-memory database', () => {
     let destroyed: boolean | undefined
     const pool: MigrationLockPool = {
       async connect() {
-        return {
+        return lockClient({
           async query(sql) {
             if (sql.includes('pg_advisory_unlock')) throw new Error('unlock failed')
           },
           release(destroy) {
             destroyed = destroy
           },
-        }
+        })
       },
     }
     try {
@@ -165,12 +178,12 @@ describe('migration lock with the in-memory database', () => {
     let destroyed: boolean | undefined
     const pool: MigrationLockPool = {
       async connect() {
-        return {
+        return lockClient({
           async query() {},
           release(destroy) {
             destroyed = destroy
           },
-        }
+        })
       },
     }
     expect(await withPostgresMigrationLock(pool, async () => 'applied')).toBe('applied')
@@ -181,12 +194,12 @@ describe('migration lock with the in-memory database', () => {
     let destroyed: boolean | undefined
     const pool: MigrationLockPool = {
       async connect() {
-        return {
+        return lockClient({
           async query() {},
           release(destroy) {
             destroyed = destroy
           },
-        }
+        })
       },
     }
     await expect(
@@ -195,5 +208,89 @@ describe('migration lock with the in-memory database', () => {
       }),
     ).rejects.toThrow('migration failed')
     expect(destroyed).toBe(false)
+  })
+
+  test('aborts migration work and destroys the client when the lock connection fails', async () => {
+    const events: string[] = []
+    const client = lockClient({
+      async query(sql) {
+        events.push(sql)
+      },
+      release(destroy) {
+        events.push(`release:${destroy}`)
+      },
+    })
+    let workStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      workStarted = resolve
+    })
+    const work = withPostgresMigrationLock(
+      {
+        async connect() {
+          return client
+        },
+      },
+      async (signal) => {
+        workStarted?.()
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        signal.throwIfAborted()
+        events.push('continued')
+      },
+    )
+    await started
+    client.emit('error', new Error('lock connection lost'))
+    await expect(work).rejects.toThrow('lock connection lost')
+    expect(events).toEqual(['SELECT pg_advisory_lock(732031, 1)', 'release:true'])
+  })
+
+  test('aborts migration work when PostgreSQL ends the lock session', async () => {
+    const client = lockClient({ async query() {}, release() {} })
+    let workStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      workStarted = resolve
+    })
+    const work = withPostgresMigrationLock(
+      {
+        async connect() {
+          return client
+        },
+      },
+      async (signal) => {
+        workStarted?.()
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        signal.throwIfAborted()
+      },
+    )
+    await started
+    client.emit('end')
+    await expect(work).rejects.toThrow('Migration lock connection ended')
+  })
+
+  test('does not record a migration if its signal aborts during SQL execution', async () => {
+    const db = new MemoryDatabaseAdapter()
+    const controller = new AbortController()
+    const raw = async (sql: string) => {
+      if (sql.includes('CREATE TABLE IF NOT EXISTS _migrations')) {
+        await db.createTable('_migrations')
+      } else if (sql.includes('CREATE TABLE shared_feature')) {
+        await db.createTable('shared_feature')
+        controller.abort(new Error('migration lock lost'))
+      } else if (sql.includes('INSERT INTO _migrations')) {
+        throw new Error('aborted migration must not be recorded')
+      }
+    }
+    const runner = new MigrationRunner(db, { raw })
+    runner.register({
+      name: '2000000000_shared',
+      up: async (migration) => {
+        await migration.raw('CREATE TABLE shared_feature')
+      },
+    })
+    await expect(runner.run(controller.signal)).rejects.toThrow('migration lock lost')
+    expect(await db.count('_migrations')).toBe(0)
   })
 })

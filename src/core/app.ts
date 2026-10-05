@@ -507,6 +507,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
+import { withPostgresMigrationLock } from '~/core/migration-lock'
 import { Cron } from '~/tools/cron/cron'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
@@ -536,7 +537,7 @@ import { LocalFileStore } from '../tools/filesystem/store'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { S3FileStore } from '../tools/filesystem/store-s3'
 import { Equal } from '../tools/security/crypto'
-import { detectMode, isDevSecret, type ValidatedConfig } from './config'
+import { detectMode, isDevSecret, parseTrustedProxies, type ValidatedConfig } from './config'
 import { MemoryDatabaseAdapter } from './db-memory-adapter'
 import {
   PostgresDatabase,
@@ -544,7 +545,6 @@ import {
   type PostgresRequestContext,
 } from './db-postgres'
 import { generateRequestId, logger } from './logger'
-import { withPostgresMigrationLock } from './migration-lock'
 import { loadMigrationsFromDirectory, loadSqlMigrationsFromDirectory } from './migrations_loader'
 import { MigrationRunner } from './migrations_runner'
 
@@ -728,9 +728,7 @@ export class Sinopebase {
       host: '0.0.0.0',
       mastraRequireAuth: true,
       backupDir: './backups',
-      trustedProxies: process.env.TRUSTED_PROXIES?.split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
+      trustedProxies: parseTrustedProxies(process.env.TRUSTED_PROXIES),
       ...config,
     }
     const backupDir = this.config.backupDir
@@ -1919,13 +1917,15 @@ export class Sinopebase {
    * creates request-context roles at runtime so the least-privilege migration
    * is a no-op. In production, this is the only path that creates those roles.
    */
-  async runSystemMigrations(): Promise<void> {
+  async runSystemMigrations(signal?: AbortSignal): Promise<void> {
     if (!(this.database instanceof PostgresDatabase)) return
 
     const pool = this.database.getPool()
     const migrationDB: MigrationDB = {
       raw: async (sql: string) => {
+        signal?.throwIfAborted()
         await pool.query(sql)
+        signal?.throwIfAborted()
       },
     }
 
@@ -1948,7 +1948,7 @@ export class Sinopebase {
     const runner = new MigrationRunner(this.database, migrationDB)
     runner.registerAll(discovered)
 
-    const count = await runner.run()
+    const count = await runner.run(signal)
     if (count > 0) {
       logger.info('System migrations', { applied: count, status: 'complete' })
     }
@@ -1958,13 +1958,15 @@ export class Sinopebase {
    * Apply application SQL migrations from the local Supabase directory and,
    * when configured, an S3-compatible migration bucket.
    */
-  async runAppMigrations(): Promise<void> {
+  async runAppMigrations(signal?: AbortSignal): Promise<void> {
     if (!(this.database instanceof PostgresDatabase)) return
 
     const pool = this.database.getPool()
     const migrationDB: MigrationDB = {
       raw: async (sql: string) => {
+        signal?.throwIfAborted()
         await pool.query(sql)
+        signal?.throwIfAborted()
       },
     }
 
@@ -2019,7 +2021,7 @@ export class Sinopebase {
     const runner = new MigrationRunner(this.database, migrationDB)
     runner.registerAll(allMigrations)
 
-    const count = await runner.run()
+    const count = await runner.run(signal)
     if (count > 0) {
       logger.info('App migrations', { applied: count, status: 'complete' })
     }
@@ -2028,9 +2030,10 @@ export class Sinopebase {
   /** Apply system migrations first, followed by application migrations. */
   async runAllMigrations(): Promise<void> {
     if (!(this.database instanceof PostgresDatabase)) return
-    await withPostgresMigrationLock(this.database.getPool(), async () => {
-      await this.runSystemMigrations()
-      await this.runAppMigrations()
+    await withPostgresMigrationLock(this.database.getPool(), async (signal) => {
+      await this.runSystemMigrations(signal)
+      signal.throwIfAborted()
+      await this.runAppMigrations(signal)
     })
   }
 

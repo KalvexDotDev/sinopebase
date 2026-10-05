@@ -4,12 +4,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getClientIP } from '~/apis/middlewares_rate_limit'
 import { parseS3Endpoint, Sinopebase } from '~/core/app'
+import { parseTrustedProxies } from '~/core/config'
 import { deploymentConfigFromEnv } from '../../cmd/deployment-config'
 
 // @new-code-test positive src/core/app.ts
 // @new-code-test negative src/core/app.ts
+// @new-code-test positive src/core/config.ts
+// @new-code-test negative src/core/config.ts
 
 describe('shared deployment configuration', () => {
+  test('trusted proxy parsing is shared by CLI and embedded startup', () => {
+    expect(parseTrustedProxies(' 10.0.0.1, ,192.0.2.7 ')).toEqual(['10.0.0.1', '192.0.2.7'])
+    expect(parseTrustedProxies(undefined)).toBeUndefined()
+    expect(parseTrustedProxies(' , ')).toEqual([])
+  })
   test('Railway defaults leave multi-replica features disabled', () => {
     expect(deploymentConfigFromEnv({})).toEqual({
       enablePgNotify: false,

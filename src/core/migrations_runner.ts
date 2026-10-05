@@ -96,14 +96,18 @@ export class MigrationRunner {
    *
    * @returns The number of migrations applied.
    */
-  async run(): Promise<number> {
+  async run(signal?: AbortSignal): Promise<number> {
+    signal?.throwIfAborted()
     await this.loadApplied()
+    signal?.throwIfAborted()
 
     const pending = this.pending()
     let count = 0
 
     for (const migration of pending) {
+      signal?.throwIfAborted()
       await migration.up(this.migrationDB)
+      signal?.throwIfAborted()
 
       // Track migration as applied. Migration names come from the filename
       // regex (timestamps + snake_case), so string interpolation is safe here.
@@ -111,6 +115,7 @@ export class MigrationRunner {
       await this.migrationDB.raw(
         `INSERT INTO ${this.tableName} (name, applied_at) VALUES ('${migration.name}', '${new Date().toISOString()}')`,
       )
+      signal?.throwIfAborted()
 
       this.applied.add(migration.name)
       count++

@@ -18,6 +18,8 @@ spec:
     metadata:
       labels: { app: sinopebase }
     spec:
+      securityContext:
+        fsGroup: 10001
       terminationGracePeriodSeconds: 30
       containers:
         - name: sinopebase
