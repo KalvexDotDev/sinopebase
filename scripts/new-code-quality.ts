@@ -28,6 +28,21 @@ function isStructuralLine(line: string | undefined): boolean {
   return /^[{}()[\],;.)]+$/.test(line?.trim() ?? '')
 }
 
+function isTypeOnlySource(file: string): boolean {
+  const source = parse(readFileSync(file, 'utf8'), {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  })
+  return source.program.body.every((statement) => {
+    const declaration =
+      statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
+    return (
+      declaration?.type === 'TSInterfaceDeclaration' ||
+      declaration?.type === 'TSTypeAliasDeclaration'
+    )
+  })
+}
+
 function verifyTestContracts(sourceLines: ChangedLines, claims: Map<string, Set<string>>): void {
   const missing: string[] = []
   for (const source of sourceLines.keys()) {
@@ -142,6 +157,29 @@ function cyclomaticComplexity(root: AstNode): number {
   return complexity
 }
 
+function existingFunctionComplexity(base: string, file: string, name: string): number | null {
+  if (name.startsWith('<')) return null
+  let previous: string
+  try {
+    previous = execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
+  } catch {
+    return null
+  }
+  const source = parse(previous, {
+    sourceType: 'module',
+    plugins: ['typescript', 'jsx'],
+  }) as unknown as AstNode
+  const matches: number[] = []
+  function visit(node: AstNode): void {
+    if (isFunction(node) && node.loc && functionName(node, node.loc.start.line) === name) {
+      matches.push(cyclomaticComplexity(node))
+    }
+    for (const child of children(node)) visit(child)
+  }
+  visit(source)
+  return matches.length === 1 ? (matches[0] ?? null) : null
+}
+
 function functionMetrics(
   sourceLines: ChangedLines,
   coverage: Map<string, Map<number, number>>,
@@ -242,7 +280,10 @@ function verifyCoverage(
   const uncovered: string[] = []
   for (const [file, changedLines] of sourceLines) {
     const fileCoverage = coverage.get(file)
-    if (!fileCoverage) throw new Error(`No coverage record was produced for changed file ${file}`)
+    if (!fileCoverage) {
+      if (isTypeOnlySource(file)) continue
+      throw new Error(`No coverage record was produced for changed file ${file}`)
+    }
     const source = readFileSync(file, 'utf8').split('\n')
     for (const line of changedLines) {
       const hits = fileCoverage.get(line)
@@ -295,21 +336,24 @@ async function main(): Promise<void> {
         `(complexity ${metric.complexity}, coverage ${(metric.coverage * 100).toFixed(2)}%)`,
     )
   }
-  // The absolute threshold applies to new functions. Existing large methods
-  // can predate the gate; their new lines still require 95% diff coverage and
-  // positive/negative tests, without forcing an unrelated full-method rewrite.
-  const failures = metrics.filter(
-    (metric) =>
-      isNewFunction(metric, baselineNames.get(metric.file) ?? null) && metric.crap > CRAP_THRESHOLD,
-  )
+  // New functions meet the absolute threshold. For existing named functions,
+  // require full coverage and no complexity increase; anonymous callbacks have
+  // no stable baseline identity and remain subject to changed-line coverage.
+  const failures = metrics.filter((metric) => {
+    if (metric.crap <= CRAP_THRESHOLD) return false
+    if (isNewFunction(metric, baselineNames.get(metric.file) ?? null)) return true
+    if (metric.name.startsWith('<')) return false
+    const previous = existingFunctionComplexity(change.base, metric.file, metric.name)
+    return previous === null || metric.complexity > previous || metric.coverage < COVERAGE_THRESHOLD
+  })
   if (failures.length > 0) {
     throw new Error(
-      `New functions must have CRAP <= ${CRAP_THRESHOLD}: ${failures
+      `Changed functions must have CRAP <= ${CRAP_THRESHOLD}: ${failures
         .map((metric) => `${metric.file}:${metric.start} ${metric.name}=${metric.crap.toFixed(2)}`)
         .join(', ')}`,
     )
   }
-  console.log('[new-code] coverage, new-function CRAP, and positive/negative test gates passed')
+  console.log('[new-code] coverage, complexity, and positive/negative test gates passed')
 }
 
 main().catch((error: unknown) => {

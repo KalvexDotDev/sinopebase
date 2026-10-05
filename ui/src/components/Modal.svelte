@@ -11,7 +11,7 @@
 {#if open}
   {#if variant === 'slide'}
     <div style="position: fixed; inset: 0; z-index: 100; display: flex;">
-      <div style="flex: 1; background: rgba(0,0,0,0.5);" onclick={onclose}></div>
+      <button type="button" aria-label="Close dialog" style="flex: 1; min-width: 0; border: 0; padding: 0; background: rgba(0,0,0,0.5); cursor: default;" onclick={onclose}></button>
       <div class="card" style="width: 420px; max-width: 90vw; border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; border-radius: 0;">
         {#if title}
           <div style="padding: var(--space-lg); border-bottom: 1px solid var(--border);">

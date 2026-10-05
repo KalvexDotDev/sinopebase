@@ -71,6 +71,10 @@ export class S3FileStore implements IFileStore {
     return name
   }
 
+  async deleteBucket(name: string): Promise<void> {
+    await this.client.removeBucket(name)
+  }
+
   async ensureBucket(name: string): Promise<void> {
     const exists = await this.client.bucketExists(name)
     if (!exists) {

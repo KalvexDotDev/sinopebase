@@ -28,7 +28,7 @@ interface MailpitMessage {
 
 interface MailpitDetail {
   Text: string
-  Attachments: { FileName: string }[]
+  Attachments: { FileName: string; Size: number }[]
 }
 
 async function mailpitAvailable(): Promise<boolean> {
@@ -101,9 +101,9 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
       await fetch(`${MAILPIT_API}/message/${found?.ID}`)
     ).json()) as MailpitDetail
     expect(detail.Text).toContain('Mailpit integration test body')
-    expect(detail.Attachments.map((attachment) => attachment.FileName)).toEqual([
-      'buffer.txt',
-      'stream.txt',
+    expect(detail.Attachments).toEqual([
+      expect.objectContaining({ FileName: 'buffer.txt', Size: 17 }),
+      expect.objectContaining({ FileName: 'stream.txt', Size: 17 }),
     ])
 
     // Clean up the mailbox for the next run.
@@ -118,5 +118,11 @@ it('reports an unavailable SMTP server', async () => {
   message.to = [{ name: 'Recipient', address: 'recipient@example.com' }]
   message.subject = 'unavailable SMTP server'
   message.text = 'Delivery should fail'
+  message.attachments['stream.txt'] = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('cannot deliver'))
+      controller.close()
+    },
+  })
   await expect(mailer.send(message)).rejects.toThrow()
 })

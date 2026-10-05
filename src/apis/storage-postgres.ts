@@ -82,6 +82,7 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     await sql`GRANT SELECT, INSERT ON storage.buckets TO anon, authenticated, service_role`.execute(
       writer,
     )
+    await sql`GRANT DELETE ON storage.buckets TO service_role`.execute(writer)
     await sql`GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO anon, authenticated, service_role`.execute(
       writer,
     )
@@ -240,6 +241,32 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
         )
       `.execute(db.getWriter())
       await persist()
+    })
+  }
+
+  async deleteBucket(
+    context: PostgresRequestContext,
+    name: string,
+    persist: () => Promise<void>,
+  ): Promise<void> {
+    if (context.role !== 'service_role') {
+      throw new StorageAccessError(403, '403', 'Only service_role can delete buckets')
+    }
+    await this.scoped(context, async (db) => {
+      const bucket = await sql<{ id: string }>`
+        SELECT id FROM storage.buckets WHERE id = ${name}
+      `.execute(db.getWriter())
+      if (bucket.rows.length === 0) throw new StorageAccessError(404, '404', 'Bucket not found')
+      const objects = await sql<{ count: string }>`
+        SELECT count(*) AS count FROM storage.objects WHERE bucket_id = ${name}
+      `.execute(db.getWriter())
+      // COUNT always returns one row, including when the bucket has no objects.
+      const [countRow] = objects.rows as [{ count: string }]
+      if (Number(countRow.count) > 0) {
+        throw new StorageAccessError(409, '409', 'Bucket is not empty')
+      }
+      await persist()
+      await sql`DELETE FROM storage.buckets WHERE id = ${name}`.execute(db.getWriter())
     })
   }
 

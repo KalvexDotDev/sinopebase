@@ -423,6 +423,33 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     })
   })
 
+  // DELETE /storage/v1/bucket/:name — only empty buckets can be removed.
+  app.delete('/storage/v1/bucket/:name', async ({ params, request, set }) => {
+    const name = params.name
+    if (!isValidBucketName(name)) {
+      set.status = 400
+      return { statusCode: '400', error: '400', message: 'Invalid bucket name' }
+    }
+    return storageOperation(set, async () => {
+      const { context, access } = await resolveStorageAccess(options, request)
+      if (context.role !== 'service_role') {
+        throw new StorageAccessError(403, '403', 'Only service_role can delete buckets')
+      }
+      const persist = async () => {
+        if (!access && !(await store.listBuckets()).some((bucket) => bucket.name === name)) {
+          throw new StorageAccessError(404, '404', 'Bucket not found')
+        }
+        if ((await store.list(name)).length > 0) {
+          throw new StorageAccessError(409, '409', 'Bucket is not empty')
+        }
+        await store.deleteBucket(name)
+      }
+      if (access) await access.deleteBucket(context, name, persist)
+      else await persist()
+      return { message: `Deleted bucket "${name}".` }
+    })
+  })
+
   // ── Object operations ──
 
   // POST /storage/v1/object/list/:bucket — List objects in a bucket
