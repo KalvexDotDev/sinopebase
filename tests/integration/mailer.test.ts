@@ -8,6 +8,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { randomUUID } from 'node:crypto'
 import { Sinopebase } from '~/core/app'
 import { Message } from '~/tools/mailer/mailer'
 import { SMTPClient } from '~/tools/mailer/smtp'
@@ -43,7 +44,7 @@ async function mailpitAvailable(): Promise<boolean> {
 const available = await mailpitAvailable()
 
 let app: Sinopebase
-const subject = `mailer-integration-${Date.now()}`
+const subject = `mailer-integration-${randomUUID()}`
 
 beforeAll(async () => {
   const portReservation = await reserveLoopbackPort()
@@ -106,8 +107,13 @@ describe.skipIf(!available)('SMTP mailer (Mailpit)', () => {
       expect.objectContaining({ FileName: 'stream.txt', Size: 17 }),
     ])
 
-    // Clean up the mailbox for the next run.
-    await fetch(`${MAILPIT_API}/messages`, { method: 'DELETE' })
+    // Mutation workers share Mailpit, so remove only this test's message.
+    const cleanup = await fetch(`${MAILPIT_API}/messages`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ IDs: [found?.ID] }),
+    })
+    expect(cleanup.ok).toBe(true)
   })
 })
 

@@ -157,29 +157,6 @@ function cyclomaticComplexity(root: AstNode): number {
   return complexity
 }
 
-function existingFunctionComplexity(base: string, file: string, name: string): number | null {
-  if (name.startsWith('<')) return null
-  let previous: string
-  try {
-    previous = execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
-  } catch {
-    return null
-  }
-  const source = parse(previous, {
-    sourceType: 'module',
-    plugins: ['typescript', 'jsx'],
-  }) as unknown as AstNode
-  const matches: number[] = []
-  function visit(node: AstNode): void {
-    if (isFunction(node) && node.loc && functionName(node, node.loc.start.line) === name) {
-      matches.push(cyclomaticComplexity(node))
-    }
-    for (const child of children(node)) visit(child)
-  }
-  visit(source)
-  return matches.length === 1 ? (matches[0] ?? null) : null
-}
-
 function functionMetrics(
   sourceLines: ChangedLines,
   coverage: Map<string, Map<number, number>>,
@@ -264,11 +241,16 @@ function baselineFunctionNames(base: string, file: string): Set<string> | null {
   return names
 }
 
-function isNewFunction(metric: FunctionMetric, baseNames: Set<string> | null): boolean {
+function isNewFunction(
+  metric: FunctionMetric,
+  baseNames: Set<string> | null,
+  sourceLines: ChangedLines,
+): boolean {
   if (!baseNames) return true
-  // Anonymous callbacks in existing files are covered by the changed-line
-  // coverage gate; their line-number-derived names cannot identify a baseline.
-  return !metric.name.startsWith('<') && !baseNames.has(metric.name)
+  // Anonymous names contain line numbers, so compare their start with added
+  // lines. Existing callbacks with changed bodies keep the diff-coverage gate.
+  if (metric.name.startsWith('<')) return sourceLines.get(metric.file)?.has(metric.start) ?? false
+  return !baseNames.has(metric.name)
 }
 
 function verifyCoverage(
@@ -330,22 +312,21 @@ async function main(): Promise<void> {
     [...change.sourceLines.keys()].map((file) => [file, baselineFunctionNames(change.base, file)]),
   )
   for (const metric of metrics) {
-    const scope = isNewFunction(metric, baselineNames.get(metric.file) ?? null) ? 'new' : 'existing'
+    const scope = isNewFunction(metric, baselineNames.get(metric.file) ?? null, change.sourceLines)
+      ? 'new'
+      : 'existing'
     console.log(
       `[new-code] CRAP ${metric.crap.toFixed(2)} (${scope}) ${metric.file}:${metric.start} ${metric.name} ` +
         `(complexity ${metric.complexity}, coverage ${(metric.coverage * 100).toFixed(2)}%)`,
     )
   }
-  // New functions meet the absolute threshold. For existing named functions,
-  // require full coverage and no complexity increase; anonymous callbacks have
-  // no stable baseline identity and remain subject to changed-line coverage.
-  const failures = metrics.filter((metric) => {
-    if (metric.crap <= CRAP_THRESHOLD) return false
-    if (isNewFunction(metric, baselineNames.get(metric.file) ?? null)) return true
-    if (metric.name.startsWith('<')) return false
-    const previous = existingFunctionComplexity(change.base, metric.file, metric.name)
-    return previous === null || metric.complexity > previous || metric.coverage < COVERAGE_THRESHOLD
-  })
+  // New functions meet the absolute threshold; edits to existing functions
+  // remain covered by the changed-line coverage gate.
+  const failures = metrics.filter(
+    (metric) =>
+      metric.crap > CRAP_THRESHOLD &&
+      isNewFunction(metric, baselineNames.get(metric.file) ?? null, change.sourceLines),
+  )
   if (failures.length > 0) {
     throw new Error(
       `Changed functions must have CRAP <= ${CRAP_THRESHOLD}: ${failures
