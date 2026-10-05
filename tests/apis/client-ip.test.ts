@@ -1,3 +1,7 @@
+/**
+ * @new-code-test positive src/core/app.ts
+ * @new-code-test negative src/core/app.ts
+ */
 import { afterEach, describe, expect, test } from 'bun:test'
 import { getClientIP } from '~/apis/middlewares_rate_limit'
 import { Sinopebase } from '~/core/app'

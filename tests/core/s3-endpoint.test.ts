@@ -1,3 +1,7 @@
+/**
+ * @new-code-test positive src/core/app.ts
+ * @new-code-test negative src/core/app.ts
+ */
 import { describe, expect, test } from 'bun:test'
 import { parseS3Endpoint } from '~/core/app'
 
@@ -31,11 +35,24 @@ describe('parseS3Endpoint', () => {
     })
   })
 
+  test('malformed endpoint retains the existing bare-host fallback', () => {
+    expect(parseS3Endpoint('not a valid host')).toEqual({
+      host: 'not a valid host',
+      port: 9000,
+      useSSL: false,
+    })
+  })
+
   test('bare host keeps the RustFS default port 9000', () => {
     expect(parseS3Endpoint('rustfs')).toEqual({ host: 'rustfs', port: 9000, useSSL: false })
     expect(parseS3Endpoint('localhost:9100')).toEqual({
       host: 'localhost',
       port: 9100,
+      useSSL: false,
+    })
+    expect(parseS3Endpoint('localhost:80')).toEqual({
+      host: 'localhost',
+      port: 80,
       useSSL: false,
     })
   })

@@ -576,16 +576,29 @@ function createMigrationsFileStore(config: AppConfig): IFileStore {
  * S3 such as `https://s3.atlascloud.is` works. A bare `host[:port]` keeps the
  * RustFS default 9000.
  */
+function resolvedS3Port(endpoint: string, url: URL, hasScheme: boolean): number {
+  // URL normalizes :80 away on a bare host, but an explicit port must win.
+  const barePort = hasScheme ? undefined : endpoint.match(/:(\d+)$/)?.[1]
+  const defaultPort = hasScheme ? (url.protocol === 'https:' ? 443 : 80) : 9000
+  return Number(url.port || barePort || defaultPort)
+}
+
+function fallbackS3Endpoint(endpoint: string): { host: string; port: number; useSSL: false } {
+  const [host = endpoint, port] = endpoint.split(':')
+  return { host, port: port ? Number(port) : 9000, useSSL: false }
+}
+
 export function parseS3Endpoint(endpoint: string): { host: string; port: number; useSSL: boolean } {
   const hasScheme = /^https?:\/\//.test(endpoint)
   try {
     const url = new URL(hasScheme ? endpoint : `http://${endpoint}`)
-    const useSSL = url.protocol === 'https:'
-    const port = url.port ? Number(url.port) : hasScheme ? (useSSL ? 443 : 80) : 9000
-    return { host: url.hostname, port, useSSL }
+    return {
+      host: url.hostname,
+      port: resolvedS3Port(endpoint, url, hasScheme),
+      useSSL: url.protocol === 'https:',
+    }
   } catch {
-    const [host = endpoint, port] = endpoint.split(':')
-    return { host, port: port ? Number(port) : 9000, useSSL: false }
+    return fallbackS3Endpoint(endpoint)
   }
 }
 
