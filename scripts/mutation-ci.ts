@@ -13,7 +13,8 @@ async function main(): Promise<void> {
     return
   }
   const testFiles = findTestClaims(change.sourceLines, change.testFiles).testFiles
-  if (testFiles.length === 0) throw new Error('Mutation testing requires claimed changed test files')
+  if (testFiles.length === 0)
+    throw new Error('Mutation testing requires claimed changed test files')
 
   mkdirSync('coverage/new-code', { recursive: true })
   const configFile = 'coverage/new-code/stryker.config.json'
@@ -32,7 +33,7 @@ async function main(): Promise<void> {
         // legacy compiler-API import. Bun still reads the real tsconfig.json.
         tsconfigFile: '.stryker-no-tsconfig.json',
         coverageAnalysis: 'off',
-        concurrency: 1,
+        concurrency: 4,
         timeoutMS: 60_000,
         reporters: ['clear-text', 'json', 'html'],
         jsonReporter: { fileName: 'coverage/new-code/mutation.json' },
