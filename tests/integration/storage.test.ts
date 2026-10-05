@@ -6,6 +6,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { S3FileStore } from '~/tools/filesystem/store-s3'
 import { Sinopebase } from '../../src/core/app'
 import { createClient, type SinopebaseClient } from '../../src/sdk/client'
 import {
@@ -36,7 +37,22 @@ beforeAll(async () => {
     anonKey: 'storagetest-anon-key-min-32-chars!!!!',
   })
   await portReservation.release()
-  await server.start()
+  const savedEnv = Object.fromEntries(
+    ['RUSTFS_ENDPOINT', 'RUSTFS_ACCESS_KEY', 'RUSTFS_SECRET_KEY'].map((key) => [
+      key,
+      process.env[key],
+    ]),
+  )
+  try {
+    for (const key of Object.keys(savedEnv)) delete process.env[key]
+    await server.start()
+    expect(server.getFileStore()).toBeInstanceOf(S3FileStore)
+  } finally {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
   client = createClient(portReservation.origin, 'storagetest-anon-key-min-32-chars!!!!')
 
   // Provision the test bucket via the service-role client so the bucket
@@ -116,3 +132,6 @@ describe('Storage', () => {
     expect(Array.isArray(data)).toBe(true)
   })
 })
+
+// @new-code-test positive src/core/app.ts
+// @new-code-test negative src/core/app.ts

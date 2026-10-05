@@ -111,8 +111,13 @@ describe('Log retention', () => {
     const second = await bootApp()
     const app2 = second.app
     try {
-      // Give the startup prune a chance to remove the stale row.
-      await sleep(1_500)
+      // Startup schedules the prune query; wait for its observable result.
+      await pollUntil(async () => {
+        const result = await adminPool.query(`SELECT 1 FROM _logs WHERE message = $1 LIMIT 1`, [
+          `old-${marker}`,
+        ])
+        return result.rowCount === 0
+      })
       const [oldRow, freshRow] = await Promise.all([
         adminPool.query(`SELECT 1 FROM _logs WHERE message = $1 LIMIT 1`, [`old-${marker}`]),
         adminPool.query(`SELECT 1 FROM _logs WHERE message = $1 LIMIT 1`, [`fresh-${marker}`]),
@@ -289,9 +294,26 @@ describe('Local backups', () => {
 
   beforeAll(async () => {
     adminPool = new Pool({ connectionString: requirePostgres() })
-    const booted = await bootApp(dataDir)
-    app = booted.app
-    origin = booted.origin
+    const originalStorage = {
+      endpoint: process.env.RUSTFS_ENDPOINT,
+      accessKey: process.env.RUSTFS_ACCESS_KEY,
+      secretKey: process.env.RUSTFS_SECRET_KEY,
+    }
+    delete process.env.RUSTFS_ENDPOINT
+    delete process.env.RUSTFS_ACCESS_KEY
+    delete process.env.RUSTFS_SECRET_KEY
+    try {
+      const booted = await bootApp(dataDir)
+      app = booted.app
+      origin = booted.origin
+    } finally {
+      if (originalStorage.endpoint === undefined) delete process.env.RUSTFS_ENDPOINT
+      else process.env.RUSTFS_ENDPOINT = originalStorage.endpoint
+      if (originalStorage.accessKey === undefined) delete process.env.RUSTFS_ACCESS_KEY
+      else process.env.RUSTFS_ACCESS_KEY = originalStorage.accessKey
+      if (originalStorage.secretKey === undefined) delete process.env.RUSTFS_SECRET_KEY
+      else process.env.RUSTFS_SECRET_KEY = originalStorage.secretKey
+    }
   })
 
   afterAll(async () => {
