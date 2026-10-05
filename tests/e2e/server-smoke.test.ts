@@ -9,6 +9,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Sinopebase } from '~/core/app'
+import { reserveLoopbackPort } from '../harness'
 
 describe('Server E2E smoke', () => {
   let app: Sinopebase
@@ -17,17 +18,19 @@ describe('Server E2E smoke', () => {
   beforeAll(async () => {
     const pgUrl = process.env.TEST_POSTGRES_URL || process.env.POSTGRES_URL || ''
     if (!pgUrl) throw new Error('E2E requires TEST_POSTGRES_URL or POSTGRES_URL')
+    const reservation = await reserveLoopbackPort()
 
     app = new Sinopebase({
-      port: 9877,
+      port: reservation.port,
       host: '127.0.0.1',
       postgresUrl: pgUrl,
       jwtSecret: 'e2e-smoke-jwt-secret-min-32-chars',
       serviceRoleKey: 'e2e-key-service-min-32-chars!!',
       anonKey: 'e2e-key-anon-min-32-chars!!!!!',
     })
+    await reservation.release()
     await app.start()
-    baseUrl = 'http://127.0.0.1:9877'
+    baseUrl = reservation.origin
   })
 
   afterAll(async () => {

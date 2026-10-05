@@ -36,34 +36,29 @@ export interface BetterAuthGetSessionResult {
 
 /**
  * Translate a better-auth signIn / signUp response into a raw
- * GoTrue-compatible session response.
+ * GoTrue-compatible session response. The access token is the better-auth
+ * session token; the refresh token is the opaque `refresh_tokens` value.
  *
  * Expected input shape:
  *   { token: string, user: { id, email, emailVerified?, createdAt?, updatedAt?, ... } }
  */
 export function bridgeSignInResponse(
-  result: BetterAuthSignInResult | null,
-): Session | GoTrueErrorResponse {
-  if (!result?.token || !result.user) {
-    return bridgeErrorResponse('Authentication failed', 400)
-  }
-
+  result: BetterAuthSignInResult,
+  refreshToken: string,
+): Session {
+  const { id, email, role, createdAt, updatedAt } = result.user
   const user = toSinopebaseUser({
-    id: result.user.id,
-    email: result.user.email,
-    emailVerified: result.user.emailVerified ?? false,
-    name: result.user.name ?? null,
-    image: result.user.image ?? null,
-    role: result.user.role ?? 'authenticated',
-    createdAt: result.user.createdAt ? new Date(result.user.createdAt) : new Date(),
-    updatedAt: result.user.updatedAt ? new Date(result.user.updatedAt) : new Date(),
+    id,
+    email,
+    role: role ?? 'authenticated',
+    createdAt: toDate(createdAt),
+    updatedAt: toDate(updatedAt),
   })
+  return toSinopebaseSession(user, result.token, refreshToken, ACCESS_TOKEN_EXPIRES_IN)
+}
 
-  // Use the session token as refresh_token so the refresh flow can validate it
-  const refreshToken = result.token
-  const session = toSinopebaseSession(user, result.token, refreshToken, ACCESS_TOKEN_EXPIRES_IN)
-
-  return session
+function toDate(value: Date | string | undefined): Date {
+  return value ? new Date(value) : new Date()
 }
 
 /**

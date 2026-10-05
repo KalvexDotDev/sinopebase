@@ -27,5 +27,6 @@ export interface IFileStore {
   list(bucket: string, prefix?: string): Promise<FileObject[]>
   listBuckets(): Promise<Bucket[]>
   createBucket(name: string): Promise<string>
+  deleteBucket(name: string): Promise<void>
   ensureBucket(name: string): Promise<void>
 }

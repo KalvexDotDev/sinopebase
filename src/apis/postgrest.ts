@@ -5,8 +5,9 @@
  * with support for SELECT, INSERT, UPDATE, DELETE, and HEAD operations.
  *
  * Mirrors PostgREST behavior:
- *   - Filter operators: eq, neq, gt, gte, lt, lte, like, ilike, is, in
- *   - Prefer header: count=exact, return=representation, resolution=merge-duplicates
+ *   - Filter operators: eq, neq, gt, gte, lt, lte, like, ilike, match, imatch, is, in
+ *   - Prefer header: count=exact, return=representation,
+ *     resolution=merge-duplicates|ignore-duplicates (with on_conflict=)
  *   - Content-Range header for count
  *   - Range header for pagination
  */
@@ -38,6 +39,7 @@ interface RangeInfo {
 }
 
 interface PostgrestSelectOptions {
+  columns?: string[]
   filters: ParsedFilter[]
   orFilters: ParsedFilter[][]
   order?: string
@@ -70,6 +72,27 @@ interface SelectedRow {
 interface SelectResult {
   rows: Record<string, unknown>[]
   total: number
+}
+
+interface MutationResult {
+  /** Full written rows, for realtime payloads. */
+  rows: Record<string, unknown>[]
+  /** Rows as the client asked for them (`select` projection and embeds). */
+  body: Record<string, unknown>[]
+}
+
+interface ResponseState {
+  status?: number | string
+  headers: Record<string, string | number>
+}
+
+/** Thrown inside the request transaction so a singular mutation mismatch rolls back. */
+class SingularCardinalityError extends Error {
+  readonly rowCount: number
+  constructor(rowCount: number) {
+    super(`The result contains ${rowCount} rows`)
+    this.rowCount = rowCount
+  }
 }
 
 interface SingularResponse {
@@ -134,34 +157,38 @@ export function mountPostgrestRoutes(
       offset = range.from
     }
 
-    const { rows, total } = await withRequestDatabase(
-      db,
-      request,
-      resolveContext,
-      async (requestDb) => {
-        const selected = await selectRows(requestDb, table, {
-          filters,
-          orFilters,
-          order,
-          limit,
-          offset,
-        })
-        const selectedRows = query.select
-          ? await applySelection(requestDb, table, selected.rows, query.select)
-          : selected.rows
-        const selectedTotal = query.select?.includes('!inner')
-          ? selectedRows.length
-          : prefer.count === 'exact'
-            ? await countRows(requestDb, table, filters, orFilters, selected.total)
-            : selected.total
-        return { rows: selectedRows, total: selectedTotal }
-      },
-    )
-
-    // Content-Range header for count requests (exact, planned, estimated)
-    if (prefer.count === 'exact' || prefer.countHeader) {
-      set.headers['content-range'] = `*/${total}`
+    const select = query.select as string | undefined
+    let result: { rows: Record<string, unknown>[]; total?: number }
+    try {
+      result = await withRequestDatabase(db, request, resolveContext, async (requestDb) => {
+        const columns = select
+          ? await selectionColumns(requestDb, table, parseSelect(select))
+          : undefined
+        const selectPage = async (window: { limit?: number; offset?: number }) => {
+          const selected = await selectRows(requestDb, table, {
+            columns,
+            filters,
+            orFilters,
+            order,
+            ...window,
+          })
+          return representation(requestDb, table, selected.rows, select)
+        }
+        const rows = await selectPage({ limit, offset })
+        if (!prefer.count) return { rows }
+        // PostgREST counts every matching row, ignoring limit/offset. An !inner
+        // embed filters parent rows, so that count needs the embed evaluated.
+        const total = select?.includes('!inner')
+          ? (await selectPage({})).length
+          : await countRows(requestDb, table, filters, orFilters)
+        return { rows, total }
+      })
+    } catch (err) {
+      return databaseErrorResponse(err, set, isAnonymous(request, resolveContext))
     }
+    const { rows, total } = result
+
+    set.headers['content-range'] = contentRange(offset ?? 0, rows.length, total)
 
     const singular = buildSingularResponse(rows, headers.accept ?? headers.Accept)
     if (singular) {
@@ -197,9 +224,10 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   // POST — Insert rows
   // -----------------------------------------------------------------------
-  app.post('/rest/v1/:table', async ({ params, headers, body, request, set }) => {
+  app.post('/rest/v1/:table', async ({ params, query, headers, body, request, set }) => {
     const table = params.table as string
     const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
+    const accept = headers.accept ?? headers.Accept
 
     // Body can be a single object or an array
     const rows = Array.isArray(body) ? body : [body]
@@ -207,33 +235,43 @@ export function mountPostgrestRoutes(
       typeof r === 'object' && r !== null ? (r as Record<string, unknown>) : {},
     )
 
-    let inserted: Record<string, unknown>[]
+    const upserting =
+      prefer.resolution === 'merge-duplicates' || prefer.resolution === 'ignore-duplicates'
+    const onConflict = parseOnConflict(query.on_conflict as string | undefined)
+    if (onConflict === null) {
+      set.status = 400
+      return {
+        code: 'PGRST100',
+        message: 'on_conflict must be a comma-separated list of column names',
+        details: null,
+        hint: null,
+      }
+    }
+
+    let result: MutationResult
     try {
-      inserted = await withRequestDatabase(db, request, resolveContext, async (requestDb) => {
+      result = await withRequestDatabase(db, request, resolveContext, async (requestDb) => {
         const results: Record<string, unknown>[] = []
         for (const row of sanitized) {
-          if (prefer.resolution === 'merge-duplicates') {
-            results.push(await requestDb.upsert(table, row))
+          if (upserting) {
+            // ignore-duplicates skips conflicting rows; PostgREST returns only inserted ones.
+            const upserted = await requestDb.upsert(table, row, {
+              onConflict,
+              ignoreDuplicates: prefer.resolution === 'ignore-duplicates',
+            })
+            if (upserted) results.push(upserted)
           } else {
             results.push(await requestDb.insert(table, row))
           }
         }
-        return results
+        return mutationResult(requestDb, table, results, query.select, accept)
       })
     } catch (err) {
-      // PostgREST contract: unique violation is 409, not a masked 500.
-      if (
-        err instanceof Error &&
-        (err.message.includes('23505') || err.message.includes('duplicate key'))
-      ) {
-        set.status = 409
-        return { code: '23505', message: err.message, details: '', hint: '' }
-      }
-      throw err
+      return databaseErrorResponse(err, set, isAnonymous(request, resolveContext))
     }
 
     if (changes) {
-      for (const row of inserted) {
+      for (const row of result.rows) {
         await changes.publishPostgresChange({
           schema: 'public',
           table,
@@ -245,23 +283,7 @@ export function mountPostgrestRoutes(
     }
 
     set.status = 201
-
-    const singular = buildSingularResponse(inserted, headers.accept ?? headers.Accept)
-    if (singular) {
-      if (singular.status) set.status = singular.status
-      if (singular.contentType) set.headers['content-type'] = singular.contentType
-      return singular.body
-    }
-
-    // Return representation if requested
-    if (prefer.returnRepresentation) {
-      return inserted
-    }
-
-    // Otherwise return empty array (PostgREST convention)
-    // But SDK expects data back on POST, so we return the inserted rows
-    // PostgREST returns 201 with empty body for insert without Prefer: return=representation
-    return inserted
+    return mutationResponse(result.body, accept, set)
   })
 
   // -----------------------------------------------------------------------
@@ -269,7 +291,7 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   app.patch('/rest/v1/:table', async ({ params, query, headers, body, request, set }) => {
     const table = params.table as string
-    const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
+    const accept = headers.accept ?? headers.Accept
 
     // Parse filters — include or filters for mutations (v0.6 compat)
     const filters = parseFilters(query as Record<string, string>)
@@ -280,39 +302,34 @@ export function mountPostgrestRoutes(
       typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
     ) as Record<string, unknown>
 
-    const { updated, previous } = await withRequestDatabase(
-      db,
-      request,
-      resolveContext,
-      async (requestDb) => {
-        const previous = changes
-          ? (await selectRows(requestDb, table, { filters, orFilters })).rows
-          : []
-        const updated = await requestDb.update(table, filters, data, orFilters)
-        return { updated, previous }
-      },
-    )
+    let result: MutationResult
+    let previous: Record<string, unknown>[]
+    try {
+      ;({ result, previous } = await withRequestDatabase(
+        db,
+        request,
+        resolveContext,
+        async (requestDb) => {
+          const previous = changes
+            ? (await selectRows(requestDb, table, { filters, orFilters })).rows
+            : []
+          const updated = await requestDb.update(table, filters, data, orFilters)
+          const result = await mutationResult(requestDb, table, updated, query.select, accept)
+          return { result, previous }
+        },
+      ))
+    } catch (err) {
+      return databaseErrorResponse(err, set, isAnonymous(request, resolveContext))
+    }
 
     if (changes) {
-      for (const row of updated) {
+      for (const row of result.rows) {
         const old = previous.find((candidate) => candidate.id === row.id) ?? {}
         await changes.publishPostgresChange(postgresChange(table, 'UPDATE', row, old))
       }
     }
 
-    const singular = buildSingularResponse(updated, headers.accept ?? headers.Accept)
-    if (singular) {
-      if (singular.status) set.status = singular.status
-      if (singular.contentType) set.headers['content-type'] = singular.contentType
-      return singular.body
-    }
-
-    // Return representation if requested
-    if (prefer.returnRepresentation) {
-      return updated
-    }
-
-    return updated
+    return mutationResponse(result.body, accept, set)
   })
 
   // -----------------------------------------------------------------------
@@ -320,49 +337,44 @@ export function mountPostgrestRoutes(
   // -----------------------------------------------------------------------
   app.delete('/rest/v1/:table', async ({ params, query, headers, request, set }) => {
     const table = params.table as string
-    const prefer = parsePreferHeader(headers.prefer ?? headers.Prefer ?? '')
+    const accept = headers.accept ?? headers.Accept
 
     // Parse filters — include or filters for mutations (v0.6 compat)
     const filters = parseFilters(query as Record<string, string>)
     const orFilters = parseOrQueryParams(query as Record<string, string>)
 
-    const { deleted, prepared } = await withRequestDatabase(
-      db,
-      request,
-      resolveContext,
-      async (requestDb) => {
-        const previous = changes
-          ? (await selectRows(requestDb, table, { filters, orFilters })).rows
-          : []
-        const prepared: PreparedRealtimeChange[] = []
-        if (changes) {
-          for (const row of previous) {
-            prepared.push(
-              await changes.preparePostgresChange(postgresChange(table, 'DELETE', {}, row)),
-            )
+    let deleted: Record<string, unknown>[]
+    let prepared: PreparedRealtimeChange[]
+    try {
+      ;({ deleted, prepared } = await withRequestDatabase(
+        db,
+        request,
+        resolveContext,
+        async (requestDb) => {
+          const previous = changes
+            ? (await selectRows(requestDb, table, { filters, orFilters })).rows
+            : []
+          const prepared: PreparedRealtimeChange[] = []
+          if (changes) {
+            for (const row of previous) {
+              prepared.push(
+                await changes.preparePostgresChange(postgresChange(table, 'DELETE', {}, row)),
+              )
+            }
           }
-        }
-        const deleted = await requestDb.delete(table, filters, orFilters)
-        return { deleted, prepared }
-      },
-    )
+          const removed = await requestDb.delete(table, filters, orFilters)
+          const { body } = await mutationResult(requestDb, table, removed, query.select, accept)
+          return { deleted: body, prepared }
+        },
+      ))
+    } catch (err) {
+      return databaseErrorResponse(err, set, isAnonymous(request, resolveContext))
+    }
 
     for (const delivery of prepared) delivery.deliver()
 
-    const singular = buildSingularResponse(deleted, headers.accept ?? headers.Accept)
-    if (singular) {
-      if (singular.status) set.status = singular.status
-      if (singular.contentType) set.headers['content-type'] = singular.contentType
-      return singular.body
-    }
-
-    // Return representation if requested
-    if (prefer.returnRepresentation) {
-      return deleted
-    }
-
     // PostgREST returns the deleted rows (or empty array)
-    return deleted
+    return mutationResponse(deleted, accept, set)
   })
 
   // ── RPC — Execute PostgreSQL functions ──
@@ -404,13 +416,8 @@ export function mountPostgrestRoutes(
         return { code: 404, message }
       }
       // PostgreSQL-raised errors (RAISE EXCEPTION, constraint violations, RLS
-      // denials) — PostgREST parity: 4xx with the error details, not a 500.
-      const pg = err as { code?: string; detail?: string; hint?: string }
-      if (pg.code && /^[0-9A-Z]{5}$/.test(pg.code)) {
-        set.status = 400
-        return { code: pg.code, message, details: pg.detail ?? '', hint: pg.hint ?? '' }
-      }
-      throw err
+      // denials) — PostgREST parity: SQLSTATE status and body, not a masked 500.
+      return databaseErrorResponse(err, set, isAnonymous(request, resolveContext))
     }
   })
 
@@ -460,6 +467,7 @@ async function selectRows(
   options: PostgrestSelectOptions,
 ): Promise<SelectResult> {
   const rows = await db.select(table, {
+    columns: options.columns,
     filters: options.filters,
     orFilters: options.orFilters.filter((group) => group.length > 0),
     order: parseOrderParam(options.order),
@@ -474,13 +482,11 @@ async function countRows(
   table: string,
   filters: ParsedFilter[],
   orFilters: ParsedFilter[][],
-  memoryTotal?: number,
 ): Promise<number> {
-  if (memoryTotal !== undefined) return memoryTotal
   const filteredOrGroups = orFilters.filter((group) => group.length > 0)
   if (filteredOrGroups.length > 0) {
     // OR-filtered count requires a select pass (db.count only supports flat filters).
-    const rows = await db.select(table, { filters, orFilters: filteredOrGroups })
+    const rows = await db.select(table, { columns: [], filters, orFilters: filteredOrGroups })
     return rows.length
   }
   return db.count(table, filters)
@@ -504,6 +510,28 @@ function parseOrderParam(rawOrder?: string): OrderBy[] | undefined {
     .filter((part): part is OrderBy => part !== null)
 
   return order.length > 0 ? order : undefined
+}
+
+/** Fetch only requested fields and join keys; PostgreSQL still authorizes every column. */
+async function selectionColumns(
+  db: IDatabase,
+  table: string,
+  selections: Selection[],
+  required: string[] = [],
+): Promise<string[] | undefined> {
+  const columns = new Set(required)
+  for (const selection of selections) {
+    if (selection.kind === 'column') {
+      if (selection.source === '*') return undefined
+      columns.add(selection.source)
+    } else {
+      const relationship = await resolveRelationship(db, table, selection)
+      columns.add(
+        relationship.sourceTable === table ? relationship.sourceColumn : relationship.targetColumn,
+      )
+    }
+  }
+  return [...columns]
 }
 
 async function applySelection(
@@ -531,58 +559,63 @@ async function materializeSelection(
   for (const selection of selections) {
     if (selection.kind !== 'relationship') continue
 
-    const relationship = await resolveRelationship(db, table, selection)
-    const outbound = relationship.sourceTable === table
-    const localColumn = outbound ? relationship.sourceColumn : relationship.targetColumn
-    const relatedTable = outbound ? relationship.targetTable : relationship.sourceTable
-    const relatedColumn = outbound ? relationship.targetColumn : relationship.sourceColumn
-    const localValues = [
-      ...new Set(
-        selectedRows
-          .map(({ source }) => source[localColumn])
-          .filter((value) => value !== null && value !== undefined),
-      ),
-    ]
-
-    const relatedRows =
-      localValues.length === 0
-        ? []
-        : (
-            await selectRows(db, relatedTable, {
-              filters: [
-                {
-                  column: relatedColumn,
-                  operator: 'in',
-                  value: localValues,
-                },
-              ],
-              orFilters: [],
-            })
-          ).rows
-    const selectedRelatedRows = await materializeSelection(
-      db,
-      relatedTable,
-      relatedRows,
-      selection.fields,
-    )
-    const relatedByValue = new Map<unknown, SelectedRow[]>()
-
-    for (const related of selectedRelatedRows) {
-      const value = related.source[relatedColumn]
-      const matches = relatedByValue.get(value) ?? []
-      matches.push(related)
-      relatedByValue.set(value, matches)
-    }
-
-    selectedRows = selectedRows.filter((selectedRow) => {
-      const matches = relatedByValue.get(selectedRow.source[localColumn]) ?? []
-      const embedded = outbound ? (matches[0]?.result ?? null) : matches.map(({ result }) => result)
-      selectedRow.result[selection.output] = embedded
-      return !selection.inner || matches.length > 0
-    })
+    selectedRows = await embedRelationship(db, table, selectedRows, selection)
   }
 
   return selectedRows
+}
+
+async function embedRelationship(
+  db: IDatabase,
+  table: string,
+  selectedRows: SelectedRow[],
+  selection: RelationshipSelection,
+): Promise<SelectedRow[]> {
+  const relationship = await resolveRelationship(db, table, selection)
+  const outbound = relationship.sourceTable === table
+  const localColumn = outbound ? relationship.sourceColumn : relationship.targetColumn
+  const relatedTable = outbound ? relationship.targetTable : relationship.sourceTable
+  const relatedColumn = outbound ? relationship.targetColumn : relationship.sourceColumn
+  const localValues = [
+    ...new Set(
+      selectedRows.map(({ source }) => source[localColumn]).filter((value) => value != null),
+    ),
+  ]
+
+  const relatedRows = (
+    await selectRows(db, relatedTable, {
+      columns: await selectionColumns(db, relatedTable, selection.fields, [relatedColumn]),
+      filters: [{ column: relatedColumn, operator: 'in', value: localValues }],
+      orFilters: [],
+    })
+  ).rows
+  const selectedRelatedRows = await materializeSelection(
+    db,
+    relatedTable,
+    relatedRows,
+    selection.fields,
+  )
+  const relatedByValue = groupRelatedRows(selectedRelatedRows, relatedColumn)
+
+  return selectedRows.filter((selectedRow) => {
+    const matches = relatedByValue.get(selectedRow.source[localColumn]) ?? []
+    const embedded = outbound ? (matches[0]?.result ?? null) : matches.map(({ result }) => result)
+    selectedRow.result[selection.output] = embedded
+    return !selection.inner || matches.length > 0
+  })
+}
+
+function groupRelatedRows(selectedRelatedRows: SelectedRow[], relatedColumn: string) {
+  const relatedByValue = new Map<unknown, SelectedRow[]>()
+
+  for (const related of selectedRelatedRows) {
+    const value = related.source[relatedColumn]
+    const matches = relatedByValue.get(value) ?? []
+    matches.push(related)
+    relatedByValue.set(value, matches)
+  }
+
+  return relatedByValue
 }
 
 function projectColumns(
@@ -721,6 +754,136 @@ function splitTopLevel(input: string): string[] {
   return parts
 }
 
+/** Apply the `select` projection and embeds the GET path uses to rows already read or written. */
+async function representation(
+  db: IDatabase,
+  table: string,
+  rows: Record<string, unknown>[],
+  select: string | undefined,
+): Promise<Record<string, unknown>[]> {
+  return select ? applySelection(db, table, rows, select) : rows
+}
+
+/**
+ * Shape mutation rows inside the request transaction, so RLS applies to the
+ * embeds and a failed `.single()` cardinality check rolls the write back
+ * (PostgREST checks it before commit).
+ */
+async function mutationResult(
+  db: IDatabase,
+  table: string,
+  rows: Record<string, unknown>[],
+  select: string | undefined,
+  accept: string | undefined,
+): Promise<MutationResult> {
+  if (acceptsSingularObject(accept) && rows.length !== 1) {
+    throw new SingularCardinalityError(rows.length)
+  }
+  return { rows, body: await representation(db, table, rows, select) }
+}
+
+function mutationResponse(
+  rows: Record<string, unknown>[],
+  accept: string | undefined,
+  set: ResponseState,
+): Record<string, unknown> | Record<string, unknown>[] {
+  const singular = buildSingularResponse(rows, accept)
+  if (!singular) return rows
+  if (singular.status) set.status = singular.status
+  if (singular.contentType) set.headers['content-type'] = singular.contentType
+  return singular.body
+}
+
+function isAnonymous(
+  request: Request,
+  resolveContext: PostgrestContextResolver | undefined,
+): boolean {
+  return resolveContext?.(request)?.role === 'anon'
+}
+
+/** PostgREST Content-Range: `start-end/total`, `*` for an empty page or an uncounted total. */
+function contentRange(start: number, rowCount: number, total?: number): string {
+  const range = rowCount > 0 ? `${start}-${start + rowCount - 1}` : '*'
+  return `${range}/${total ?? '*'}`
+}
+
+/** `on_conflict=a,b` → ['a', 'b']; null when a name is not a plain identifier. */
+function parseOnConflict(raw: string | undefined): string[] | undefined | null {
+  if (!raw) return undefined
+  const columns = raw.split(',').map((column) => column.trim())
+  return columns.every((column) => RPC_IDENTIFIER.test(column)) ? columns : null
+}
+
+const SQLSTATE = /^[0-9A-Z]{5}$/
+
+const SQLSTATE_STATUS: Record<string, number> = {
+  '23503': 409,
+  '23505': 409,
+  '25006': 405,
+  '42883': 404,
+  '42P01': 404,
+  '42P17': 500,
+  '53400': 500,
+  P0001: 400,
+}
+
+const SQLSTATE_CLASS_STATUS: Record<string, number> = {
+  '08': 503,
+  '09': 500,
+  '0L': 403,
+  '0P': 403,
+  '25': 500,
+  '28': 403,
+  '2D': 500,
+  '38': 500,
+  '39': 500,
+  '3B': 500,
+  '40': 500,
+  '53': 503,
+  '54': 500,
+  '55': 500,
+  '57': 500,
+  '58': 500,
+  F0: 500,
+  HV: 500,
+  P0: 500,
+  XX: 500,
+}
+
+/** PostgREST's SQLSTATE → HTTP table (postgrest.org references/errors). */
+function sqlStateStatus(code: string, anonymous: boolean): number {
+  if (code === '42501') return anonymous ? 401 : 403
+  return SQLSTATE_STATUS[code] ?? SQLSTATE_CLASS_STATUS[code.slice(0, 2)] ?? 400
+}
+
+/**
+ * Map a PostgreSQL error to PostgREST's status and `{code, message, details,
+ * hint}` body. Anything that is not a database error is rethrown so the
+ * global handler masks it as a 500.
+ */
+function databaseErrorResponse(
+  err: unknown,
+  set: ResponseState,
+  anonymous: boolean,
+): Record<string, unknown> {
+  if (err instanceof SingularCardinalityError) {
+    set.status = 406
+    return singularCardinalityBody(err.rowCount)
+  }
+  const pg = err as { code?: unknown; message?: unknown; severity?: unknown }
+  if (
+    err instanceof Error &&
+    typeof pg.code === 'string' &&
+    SQLSTATE.test(pg.code) &&
+    typeof pg.severity === 'string'
+  ) {
+    const { detail, hint } = err as { detail?: string; hint?: string }
+    set.status = sqlStateStatus(pg.code, anonymous)
+    return { code: pg.code, message: err.message, details: detail ?? null, hint: hint ?? null }
+  }
+  throw err
+}
+
 function acceptsSingularObject(accept?: string): boolean {
   if (!accept) return false
 
@@ -737,17 +900,7 @@ function buildSingularResponse(
 ): SingularResponse | null {
   if (!acceptsSingularObject(accept)) return null
 
-  if (rows.length !== 1) {
-    return {
-      status: 406,
-      body: {
-        code: 'PGRST116',
-        details: `The result contains ${rows.length} rows`,
-        hint: null,
-        message: 'Cannot coerce the result to a single JSON object',
-      },
-    }
-  }
+  if (rows.length !== 1) return { status: 406, body: singularCardinalityBody(rows.length) }
 
   const first = rows[0]
   if (!first) return null
@@ -757,13 +910,22 @@ function buildSingularResponse(
   }
 }
 
+function singularCardinalityBody(rowCount: number): Record<string, unknown> {
+  return {
+    code: 'PGRST116',
+    details: `The result contains ${rowCount} rows`,
+    hint: null,
+    message: 'Cannot coerce the result to a single JSON object',
+  }
+}
+
 /**
  * Parse the Prefer header into structured options.
  *
  * Prefer header format (per RFC 7240):
  *   Prefer: count=exact
  *   Prefer: return=representation
- *   Prefer: resolution=merge-duplicates
+ *   Prefer: resolution=merge-duplicates | resolution=ignore-duplicates
  *   Prefer: count=exact,return=representation
  */
 function parsePreferHeader(headerValue: string): PreferOptions {

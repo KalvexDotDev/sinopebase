@@ -188,23 +188,56 @@ describe('Mastra Auth — real agent catalogue', () => {
     expect(response.status).toBe(401)
   })
 
-  it('allows the explicitly configured service credential without a session adapter', async () => {
-    const previous = process.env.SINOPEBASE_SERVICE_ROLE_KEY
-    const serviceKey = 's'.repeat(64)
-    try {
-      process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceKey
+  it.each([false, true])(
+    'allows the configured service credential with adapter=%s',
+    async (adapter) => {
+      const previous = process.env.SINOPEBASE_SERVICE_ROLE_KEY
+      const serviceKey = 's'.repeat(64)
+      try {
+        process.env.SINOPEBASE_SERVICE_ROLE_KEY = serviceKey
+        const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+        const app = await new MastraPlugin({ requireAuth: true }).register(
+          new Elysia(),
+          adapter ? fixtureAuth() : undefined,
+        )
+        const response = await app.fetch(
+          new Request('http://localhost/api/mastra/agents', {
+            headers: { Authorization: `Bearer ${serviceKey}` },
+          }),
+        )
+        expect(response.status).toBe(200)
+        expect((await response.json()).data.length).toBeGreaterThan(0)
+      } finally {
+        if (previous === undefined) delete process.env.SINOPEBASE_SERVICE_ROLE_KEY
+        else process.env.SINOPEBASE_SERVICE_ROLE_KEY = previous
+      }
+    },
+  )
+
+  it.each([undefined, 'Bearer invalid-token'])(
+    'retains deliberately open catalogue access with %s',
+    async (authorization) => {
       const { MastraPlugin } = await import('~/plugins/mastra/plugin')
-      const app = await new MastraPlugin({ requireAuth: true }).register(new Elysia())
+      const app = await new MastraPlugin({ requireAuth: false }).register(
+        new Elysia(),
+        fixtureAuth(),
+      )
       const response = await app.fetch(
         new Request('http://localhost/api/mastra/agents', {
-          headers: { Authorization: `Bearer ${serviceKey}` },
+          headers: authorization ? { Authorization: authorization } : {},
         }),
       )
       expect(response.status).toBe(200)
-    } finally {
-      if (previous === undefined) delete process.env.SINOPEBASE_SERVICE_ROLE_KEY
-      else process.env.SINOPEBASE_SERVICE_ROLE_KEY = previous
-    }
+      expect((await response.json()).data.length).toBeGreaterThan(0)
+    },
+  )
+
+  it('retains deliberately open catalogue access without a session adapter', async () => {
+    const { MastraPlugin } = await import('~/plugins/mastra/plugin')
+    const app = await new MastraPlugin({ requireAuth: false }).register(new Elysia())
+    const response = await app.fetch(new Request('http://localhost/api/mastra/agents'))
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.length).toBeGreaterThan(0)
   })
 
   it.each([undefined, 'Bearer invalid-token'])(

@@ -26,7 +26,6 @@
  * page — and the auth/storage calls mirror the SDK method-for-method.
  *
  * Known product bugs pinned by these tests (see bodies for details):
- *   - /auth/v1/logout with a Bearer token does not invalidate the session.
  *   - /storage/v1/object/copy and /move return 500 when PostgreSQL is
  *     configured (PostgresStorageAccessPolicy lacks copyObject/moveObject).
  *
@@ -190,16 +189,9 @@ test('Auth: signUp → signInWithPassword → refreshSession → signOut from th
   expect(flow.refreshHasToken).toBe(true)
   expect(flow.refreshRotated).toBe(true)
 
-  expect(flow.logoutStatus).toBeGreaterThanOrEqual(200)
-  expect(flow.logoutStatus).toBeLessThan(300)
-
-  // ponytail: product bug (reported) — POST /auth/v1/logout with a Bearer
-  // token returns 200 but does NOT invalidate the session: the same access
-  // token still returns 200 from /auth/v1/user afterwards. better-auth
-  // signOut is keyed on the session cookie, and the handler swallows the
-  // failure. The SDK contract (supabase-js) says the token must die —
-  // flip this to 401 when the server rejects tokens after logout.
-  expect(flow.userAfterSignOutStatus).toBe(200)
+  // GoTrue logout: 204, and the access token is dead afterwards (#35).
+  expect(flow.logoutStatus).toBe(204)
+  expect(flow.userAfterSignOutStatus).toBe(401)
 
   // Cleanup.
   const { data: rows } = await sb.from('user').select('id').eq('email', email)

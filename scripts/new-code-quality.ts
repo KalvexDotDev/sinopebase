@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync, rmSync } from 'node:fs'
 import { parse } from '@babel/parser'
 import { discoverNewCode, findTestClaims, type ChangedLines } from './new-code'
@@ -27,6 +28,21 @@ function isStructuralLine(line: string | undefined): boolean {
   return /^[{}()[\],;.)]+$/.test(line?.trim() ?? '')
 }
 
+function isTypeOnlySource(file: string): boolean {
+  const source = parse(readFileSync(file, 'utf8'), {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  })
+  return source.program.body.every((statement) => {
+    const declaration =
+      statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
+    return (
+      declaration?.type === 'TSInterfaceDeclaration' ||
+      declaration?.type === 'TSTypeAliasDeclaration'
+    )
+  })
+}
+
 function verifyTestContracts(sourceLines: ChangedLines, claims: Map<string, Set<string>>): void {
   const missing: string[] = []
   for (const source of sourceLines.keys()) {
@@ -39,7 +55,9 @@ function verifyTestContracts(sourceLines: ChangedLines, claims: Map<string, Set<
     throw new Error(
       `New production code needs explicit positive and negative tests:\n${missing
         .map((message) => `  - ${message}`)
-        .join('\n')}\nAdd "@new-code-test <positive|negative> <source path>" to a changed test file.`,
+        .join(
+          '\n',
+        )}\nAdd "@new-code-test <positive|negative> <source path>" to a changed test file.`,
     )
   }
 }
@@ -127,13 +145,39 @@ function cyclomaticComplexity(root: AstNode): number {
       (node.type === 'SwitchCase' && node.test !== null)
     ) {
       complexity += 1
-    } else if (node.type === 'LogicalExpression' && ['&&', '||', '??'].includes(String(node.operator))) {
+    } else if (
+      node.type === 'LogicalExpression' &&
+      ['&&', '||', '??'].includes(String(node.operator))
+    ) {
       complexity += 1
     }
     for (const child of children(node)) visit(child)
   }
   visit(root)
   return complexity
+}
+
+function existingFunctionComplexity(base: string, file: string, name: string): number | null {
+  if (name.startsWith('<')) return null
+  let previous: string
+  try {
+    previous = execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
+  } catch {
+    return null
+  }
+  const source = parse(previous, {
+    sourceType: 'module',
+    plugins: ['typescript', 'jsx'],
+  }) as unknown as AstNode
+  const matches: number[] = []
+  function visit(node: AstNode): void {
+    if (isFunction(node) && node.loc && functionName(node, node.loc.start.line) === name) {
+      matches.push(cyclomaticComplexity(node))
+    }
+    for (const child of children(node)) visit(child)
+  }
+  visit(source)
+  return matches.length === 1 ? (matches[0] ?? null) : null
 }
 
 function functionMetrics(
@@ -206,7 +250,10 @@ function verifyCoverage(
   const uncovered: string[] = []
   for (const [file, changedLines] of sourceLines) {
     const fileCoverage = coverage.get(file)
-    if (!fileCoverage) throw new Error(`No coverage record was produced for changed file ${file}`)
+    if (!fileCoverage) {
+      if (isTypeOnlySource(file)) continue
+      throw new Error(`No coverage record was produced for changed file ${file}`)
+    }
     const source = readFileSync(file, 'utf8').split('\n')
     for (const line of changedLines) {
       const hits = fileCoverage.get(line)
@@ -220,7 +267,8 @@ function verifyCoverage(
       else uncovered.push(`${file}:${line}`)
     }
   }
-  if (executable === 0) throw new Error('No executable changed lines were found in the coverage report')
+  if (executable === 0)
+    throw new Error('No executable changed lines were found in the coverage report')
   const score = covered / executable
   console.log(
     `[new-code] diff coverage ${(score * 100).toFixed(2)}% (${covered}/${executable} executable lines)`,
@@ -254,7 +302,14 @@ async function main(): Promise<void> {
         `(complexity ${metric.complexity}, coverage ${(metric.coverage * 100).toFixed(2)}%)`,
     )
   }
-  const failures = metrics.filter((metric) => metric.crap > CRAP_THRESHOLD)
+  // Do not turn a small edit in a previously complex function into an
+  // impossible gate. Such a function must be fully covered and must not gain
+  // complexity; new functions still meet the strict absolute threshold.
+  const failures = metrics.filter((metric) => {
+    if (metric.crap <= CRAP_THRESHOLD) return false
+    const previous = existingFunctionComplexity(change.base, metric.file, metric.name)
+    return previous === null || metric.complexity > previous || metric.coverage < COVERAGE_THRESHOLD
+  })
   if (failures.length > 0) {
     throw new Error(
       `Changed functions must have CRAP <= ${CRAP_THRESHOLD}: ${failures

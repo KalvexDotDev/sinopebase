@@ -147,6 +147,28 @@ describe('parseFilterParam', () => {
     expect(result).toEqual({ column: 'name', operator: 'like', value: '%hello%' })
   })
 
+  it('parses match and imatch regex filters without touching the pattern', () => {
+    expect(parseFilterParam('version', 'match.^[1-9][0-9]{0,8}$')).toEqual({
+      column: 'version',
+      operator: 'match',
+      value: '^[1-9][0-9]{0,8}$',
+    })
+    expect(parseFilterParam('label', 'imatch.^v[0-9]+$')).toEqual({
+      column: 'label',
+      operator: 'imatch',
+      value: '^v[0-9]+$',
+    })
+  })
+
+  it('parses the not.match negation prefix', () => {
+    expect(parseFilterParam('version', 'not.match.^v')).toEqual({
+      column: 'version',
+      operator: 'match',
+      value: '^v',
+      negate: true,
+    })
+  })
+
   it('returns null for non-filter keys', () => {
     expect(parseFilterParam('select', '*')).toBeNull()
     expect(parseFilterParam('order', 'name')).toBeNull()

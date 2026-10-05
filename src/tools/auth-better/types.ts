@@ -24,7 +24,9 @@ export const ACCESS_TOKEN_EXPIRES_IN = 3600
 /**
  * Map a better-auth `User` to the Sinopebase (supabase-js) `User` shape.
  */
-export function toSinopebaseUser(u: BetterAuthUser): User {
+export function toSinopebaseUser(
+  u: Pick<BetterAuthUser, 'id' | 'email' | 'role' | 'createdAt' | 'updatedAt'>,
+): User {
   return {
     id: u.id,
     email: u.email,

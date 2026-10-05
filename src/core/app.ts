@@ -509,7 +509,6 @@ import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
 import { authorizeApiRequest, requiresApiAuthorization } from '~/core/api-authorization'
 import { Cron } from '~/tools/cron/cron'
-import { parseS3Endpoint } from '~/tools/filesystem/s3-endpoint'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
@@ -555,19 +554,33 @@ import { MigrationRunner } from './migrations_runner'
  * The main store is initialized after migrations run, so bucket migrations
  * (MIGRATIONS_BUCKET) construct their own here — they only need list/read.
  */
-function storageSetting(configured: string | undefined, environment: string | undefined): string {
-  return configured || environment || ''
-}
-
 function createMigrationsFileStore(config: AppConfig): IFileStore {
-  const s3Endpoint = storageSetting(config.minioEndpoint, process.env.RUSTFS_ENDPOINT)
-  const s3AccessKey = storageSetting(config.minioAccessKey, process.env.RUSTFS_ACCESS_KEY)
-  const s3SecretKey = storageSetting(config.minioSecretKey, process.env.RUSTFS_SECRET_KEY)
+  const s3Endpoint = config.minioEndpoint || process.env.RUSTFS_ENDPOINT || ''
+  const s3AccessKey = config.minioAccessKey || process.env.RUSTFS_ACCESS_KEY || ''
+  const s3SecretKey = config.minioSecretKey || process.env.RUSTFS_SECRET_KEY || ''
   if (s3Endpoint && s3AccessKey && s3SecretKey) {
+    // Parse endpoint URL: MinIO client expects bare hostname, not a URL.
+    // Accepts: "http://localhost:9000", "https://s3.example.com", "localhost:9000"
+    let host = s3Endpoint
+    let port = 9000
+    let useSSL = false
+    try {
+      const url = new URL(s3Endpoint.startsWith('http') ? s3Endpoint : `http://${s3Endpoint}`)
+      host = url.hostname
+      if (url.port) port = Number(url.port)
+      useSSL = url.protocol === 'https:'
+    } catch {
+      // Fallback: treat as bare host:port
+      const parts = s3Endpoint.split(':')
+      host = parts[0] ?? s3Endpoint
+      if (parts[1]) port = Number(parts[1])
+    }
     return new S3FileStore({
-      ...parseS3Endpoint(s3Endpoint),
+      endpoint: host,
+      port,
       accessKey: s3AccessKey,
       secretKey: s3SecretKey,
+      useSSL,
     })
   }
   return new LocalFileStore(config.dataDir ?? './pb_data')
@@ -674,6 +687,35 @@ export class Sinopebase {
   private cachedServiceRoleKey = ''
   private cachedAnonKey = ''
 
+  private persistRequestLog(
+    request: Request,
+    pathname: string,
+    status: number,
+    duration: number,
+    requestId: string,
+    auditServiceRole: boolean,
+  ): void {
+    // Reading logs must not create more logs or make the viewer self-sustaining.
+    if (pathname === '/api/logs' || !(this.database instanceof PostgresDatabase)) return
+    const message = auditServiceRole ? 'audit:service_role' : `${request.method} ${pathname}`
+    this.database
+      .getPool()
+      .query('INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)', [
+        0,
+        message,
+        JSON.stringify({
+          method: request.method,
+          path: pathname,
+          status,
+          duration_ms: duration,
+          request_id: requestId,
+        }),
+      ])
+      .catch(() => {
+        /* best-effort logging */
+      })
+  }
+
   /**
    * Plugin registration callbacks queued via {@link use}.
    * Executed during {@link initializeServer} after core routes are registered
@@ -762,6 +804,12 @@ export class Sinopebase {
       this.auth = null
       throw error
     }
+  }
+
+  private createInstanceAuth(providers?: string[]) {
+    return this.auth
+      ? createAuthPlugin(this.auth, providers, this.cachedServiceRoleKey)
+      : authPlugin
   }
 
   private async initializeServer(): Promise<void> {
@@ -1160,30 +1208,14 @@ export class Sinopebase {
           } catch {
             // best-effort — never crash on logging
           }
-          // Persist to _logs table if we have a database (fire-and-forget).
-          // service_role requests write the audit form of the entry so the
-          // trail is queryable by message = 'audit:service_role'.
-          if (this.database instanceof PostgresDatabase) {
-            const pool = this.database.getPool()
-            const message = meta.auditServiceRole
-              ? 'audit:service_role'
-              : `${request.method} ${pathname}`
-            pool
-              .query(`INSERT INTO _logs (level, message, data) VALUES ($1, $2, $3)`, [
-                0,
-                message,
-                JSON.stringify({
-                  method: request.method,
-                  path: pathname,
-                  status: set.status ?? 200,
-                  duration_ms: duration,
-                  request_id: meta.requestId,
-                }),
-              ])
-              .catch(() => {
-                /* best-effort */
-              })
-          }
+          this.persistRequestLog(
+            request,
+            pathname,
+            Number(set.status ?? 200),
+            duration,
+            meta.requestId,
+            Boolean(meta.auditServiceRole),
+          )
           requestMeta.delete(request)
         }
       })
@@ -1258,7 +1290,7 @@ export class Sinopebase {
       .ws('/realtime/v1/websocket', createRealtimeWebSocketHandler(realtime))
 
       // ── Auth — /auth/v1/* ──
-      .use(this.auth ? createAuthPlugin(this.auth, mergedProviderIds) : authPlugin)
+      .use((app) => app.use(this.createInstanceAuth(mergedProviderIds)))
 
       // Instance-scoped auth guard: applies to every /rest/v1/* and /storage/v1/*
       // route registered on this chain. Instance-scoped (not global) so plugins

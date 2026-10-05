@@ -218,7 +218,8 @@ export function createAuthClient(
     async signOut(_options?): Promise<{ error: AuthError | null }> {
       const token = currentSession?.access_token
       const res = await authFetch('POST', '/auth/v1/logout', { token })
-      if (!res.ok) {
+      // supabase-js parity: 401/403/404 mean the session is already gone.
+      if (!res.ok && ![401, 403, 404].includes(res.status)) {
         const json = (await res.json().catch(() => null)) as Record<string, unknown> | null
         return {
           error: { message: (json?.message as string) ?? res.statusText, status: res.status },

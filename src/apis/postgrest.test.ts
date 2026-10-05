@@ -1,3 +1,5 @@
+// @new-code-test positive src/apis/postgrest.ts
+// @new-code-test negative src/apis/postgrest.ts
 import { describe, expect, it } from 'bun:test'
 import { Elysia } from 'elysia'
 import { MemoryDatabase } from '../core/db-memory'
@@ -282,6 +284,77 @@ describe('PostgREST embedded relationships', () => {
         id: 'framework-1',
         certifications: [{ id: 'cert-1' }, { id: 'cert-2' }],
       },
+    ])
+  })
+})
+
+describe('PostgREST projection query boundary', () => {
+  it('preserves wildcard fields in explicit and mixed selections', async () => {
+    for (const select of ['*', '*,label:id']) {
+      const { body } = await get(
+        createApp([{ id: 'a', hidden: 'whole-row' }]),
+        `/rest/v1/items?select=${select}`,
+      )
+      expect(body[0]).toMatchObject({ id: 'a', hidden: 'whole-row' })
+    }
+  })
+
+  it('queries only distinct non-null relationship keys and constrains empty joins', async () => {
+    const mem = new MemoryDatabase()
+    mem.insert('parents', [
+      { id: 'a', child_id: 'x' },
+      { id: 'b', child_id: 'x' },
+      { id: 'c', child_id: null },
+      { id: 'd' },
+    ])
+    mem.insert('children', [
+      { id: 'x', label: 'related' },
+      { id: 'unrelated', label: 'unrelated' },
+    ])
+    const db = Object.assign(new MemoryDatabaseAdapter(mem), {
+      getForeignKeyRelationships: async () => [
+        {
+          constraintName: 'parents_child_id_fkey',
+          sourceTable: 'parents',
+          sourceColumn: 'child_id',
+          targetTable: 'children',
+          targetColumn: 'id',
+        },
+      ],
+    })
+    const calls: { table: string; options: import('../core/db-interface').SelectOptions }[] = []
+    const original = db.select.bind(db)
+    db.select = async (table, options = {}) => {
+      calls.push({ table, options })
+      return original(table, options)
+    }
+    const app = new Elysia()
+    mountPostgrestRoutes(app, db)
+    const { body } = await get(app, '/rest/v1/parents?select=id,children(label)')
+    expect(body).toEqual([
+      { id: 'a', children: { label: 'related' } },
+      { id: 'b', children: { label: 'related' } },
+      { id: 'c', children: null },
+      { id: 'd', children: null },
+    ])
+    expect(calls.filter((call) => call.table === 'children')).toEqual([
+      {
+        table: 'children',
+        options: {
+          columns: ['id', 'label'],
+          filters: [{ column: 'id', operator: 'in', value: ['x'] }],
+          orFilters: [],
+          order: undefined,
+          limit: undefined,
+          offset: undefined,
+        },
+      },
+    ])
+    calls.length = 0
+    const empty = await get(app, '/rest/v1/parents?select=id,children(label)&id=eq.absent')
+    expect(empty.body).toEqual([])
+    expect(calls.filter((call) => call.table === 'children')[0]?.options.filters).toEqual([
+      { column: 'id', operator: 'in', value: [] },
     ])
   })
 })

@@ -16,6 +16,7 @@ import type {
   IDatabase,
   OrderBy,
   SelectOptions,
+  UpsertOptions,
 } from './db-interface'
 import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
@@ -49,9 +50,121 @@ export interface PostgresRequestContext {
  * When a readReplicaUrl is configured, SELECT and COUNT queries are routed
  * to the replica pool while writes go to the primary.
  */
+/**
+ * PostgREST returns dates and timestamps as Postgres prints them, microseconds
+ * included. node-postgres parses them into JS Dates, which drop microseconds and
+ * turn `date` into a midnight timestamp — so a timestamp read back from the API
+ * never matches the stored value in an `eq` filter (optimistic-concurrency
+ * guards silently update nothing).
+ *
+ * Only the request path (`withRequestContext`, i.e. the PostgREST surface) gets
+ * these parsers. Internal callers such as auth compare timestamps to `new Date()`
+ * and must keep receiving Dates.
+ */
+// ponytail: scalar types only; date/timestamp and bigint arrays keep the pool's parsing.
+const POSTGREST_DATE_PARSERS = new Map<number, (value: string) => unknown>([
+  [1082, (value) => value], // date
+  [1114, (value) => value.replace(' ', 'T')], // timestamp
+  [1184, (value) => value.replace(' ', 'T').replace(/([+-]\d\d)( BC)?$/, '$1:00$2')], // timestamptz
+  // PostgREST emits bigint as a JSON number. Values beyond Number.MAX_SAFE_INTEGER
+  // round to the nearest double here — the same value a JS client gets when it
+  // JSON.parses PostgREST's exact digits. Internal callers keep the string.
+  [20, Number], // int8 / bigint
+])
+
+const postgrestTypes = {
+  getTypeParser: ((oid: number, format?: 'text' | 'binary') =>
+    POSTGREST_DATE_PARSERS.get(oid) ??
+    pg.types.getTypeParser(oid, format as 'text')) as typeof pg.types.getTypeParser,
+}
+
+/** The same pool, but every text query parses dates the way PostgREST prints them. */
+function withPostgrestDates(pool: pg.Pool) {
+  return {
+    async connect() {
+      const client = await pool.connect()
+      const query = client.query.bind(client) as (...args: unknown[]) => unknown
+      // A view over the pooled client: release() and everything else are inherited.
+      return Object.assign(Object.create(client), {
+        // ponytail: text queries only. Kysely's streaming (Cursor) path is unused on the
+        // request path; pass non-string queries through if .stream() is ever used here.
+        query: (text: string, values?: unknown[]) => query({ text, values, types: postgrestTypes }),
+      })
+    },
+    // The underlying pool is ended by close(), through the primary Kysely instance.
+    async end() {},
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Filter expression builders
+// ---------------------------------------------------------------------------
+
+/** One operator's SQL expression builder: `filter => WHERE fragment`. */
+type FilterExpressionBuilder = (filter: Filter) => RawBuilder<boolean>
+
+/** The quoted column a filter targets, as a Kysely reference. */
+const filterColumn = (filter: Filter) => sql.ref(filter.column)
+
+/** `is.` values PostgREST accepts, mapped to the SQL predicate they compile to. */
+const IS_KEYWORDS: Record<string, string> = {
+  null: 'IS NULL',
+  true: 'IS TRUE',
+  false: 'IS FALSE',
+}
+
+/**
+ * PostgREST filter operators, one small builder each. `buildFilterExpression`
+ * dispatches here so no single function grows past the complexity budget.
+ */
+const FILTER_EXPRESSION_BUILDERS: Record<string, FilterExpressionBuilder> = {
+  eq: (filter) => sql<boolean>`${filterColumn(filter)} = ${filter.value}`,
+  neq: (filter) => {
+    // PostgREST semantics: neq.null → IS NOT NULL
+    if (filter.value === null || filter.value === 'null')
+      return sql<boolean>`${filterColumn(filter)} IS NOT NULL`
+    return sql<boolean>`${filterColumn(filter)} <> ${filter.value}`
+  },
+  gt: (filter) => sql<boolean>`${filterColumn(filter)} > ${filter.value}`,
+  gte: (filter) => sql<boolean>`${filterColumn(filter)} >= ${filter.value}`,
+  lt: (filter) => sql<boolean>`${filterColumn(filter)} < ${filter.value}`,
+  lte: (filter) => sql<boolean>`${filterColumn(filter)} <= ${filter.value}`,
+  like: (filter) => sql<boolean>`${filterColumn(filter)} LIKE ${filter.value}`,
+  ilike: (filter) => sql<boolean>`${filterColumn(filter)} ILIKE ${filter.value}`,
+  // PostgREST regex filters: case-sensitive `~` and case-insensitive `~*`, unanchored.
+  match: (filter) => sql<boolean>`${filterColumn(filter)} ~ ${filter.value}`,
+  imatch: (filter) => sql<boolean>`${filterColumn(filter)} ~* ${filter.value}`,
+  is: (filter) => {
+    const keyword = IS_KEYWORDS[String(filter.value)]
+    if (!keyword) throw new Error(`Unsupported is-filter value: ${String(filter.value)}`)
+    return sql<boolean>`${filterColumn(filter)} ${sql.raw(keyword)}`
+  },
+  in: (filter) => {
+    const values = Array.isArray(filter.value)
+      ? filter.value
+      : typeof filter.value === 'string'
+        ? parseInValue(filter.value)
+        : [filter.value]
+    if (values.length === 0) return sql<boolean>`FALSE`
+    return sql<boolean>`${filterColumn(filter)} IN (${sql.join(values)})`
+  },
+  // JSONB containment: the column contains, or is contained by, the JSON value.
+  cs: (filter) => sql<boolean>`${filterColumn(filter)} @> ${sql.val(filter.value)}::jsonb`,
+  cd: (filter) => sql<boolean>`${filterColumn(filter)} <@ ${sql.val(filter.value)}::jsonb`,
+  fts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`,
+  plfts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`,
+  phfts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ phraseto_tsquery('english', ${sql.val(filter.value)})`,
+  wfts: (filter) =>
+    sql<boolean>`to_tsvector('english', ${filterColumn(filter)}) @@ websearch_to_tsquery('english', ${sql.val(filter.value)})`,
+}
+
 export class PostgresDatabase implements IDatabase {
   private writer: Kysely<DatabaseSchema>
   private reader: Kysely<DatabaseSchema>
+  private requestWriterInstance: Kysely<DatabaseSchema> | null = null
   private writerPool: pg.Pool
   private readerPool: pg.Pool | null = null
   private closePromise: Promise<void> | null = null
@@ -145,6 +258,16 @@ export class PostgresDatabase implements IDatabase {
     return this.writer
   }
 
+  /** Kysely over the writer pool with PostgREST date parsing, for request contexts only. */
+  private requestWriter(): Kysely<DatabaseSchema> {
+    this.requestWriterInstance ??= new Kysely<DatabaseSchema>({
+      dialect: new PostgresDialect({
+        pool: withPostgrestDates(this.writerPool) as unknown as pg.Pool,
+      }),
+    })
+    return this.requestWriterInstance
+  }
+
   /**
    * Run one HTTP request on a single connection with transaction-local
    * PostgREST role and JWT claims. The transaction boundary guarantees that
@@ -158,7 +281,8 @@ export class PostgresDatabase implements IDatabase {
     context: PostgresRequestContext,
     operation: (db: PostgresDatabase) => Promise<T>,
   ): Promise<T> {
-    return this.writer.transaction().execute(async (transaction) => {
+    const requestWriter = this.requestWriter()
+    return requestWriter.transaction().execute(async (transaction) => {
       const userId = context.userId ?? ''
       const claims = JSON.stringify({
         sub: userId || undefined,
@@ -186,6 +310,8 @@ export class PostgresDatabase implements IDatabase {
       const scoped = Object.create(this) as PostgresDatabase
       scoped.writer = transaction as unknown as Kysely<DatabaseSchema>
       scoped.reader = transaction as unknown as Kysely<DatabaseSchema>
+      // A nested withRequestContext must fail on the transaction, not open a second connection.
+      scoped.requestWriterInstance = transaction as unknown as Kysely<DatabaseSchema>
       return operation(scoped)
     })
   }
@@ -242,6 +368,7 @@ export class PostgresDatabase implements IDatabase {
   // -----------------------------------------------------------------------
 
   async insert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+    record = this.typedValues(table, record)
     // No client-side id injection — the table's own DEFAULT fills id
     // (gen_random_uuid() on sinopebase tables, identity on f_* tables).
     // returningAll() so the caller still gets the persisted row back.
@@ -253,14 +380,69 @@ export class PostgresDatabase implements IDatabase {
     return (rows[0] ?? record) as Record<string, unknown>
   }
 
-  async upsert(table: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /**
+   * PostgREST upsert: `INSERT … ON CONFLICT (target) DO UPDATE SET <payload
+   * columns> = EXCLUDED.<column>`, or `DO NOTHING` for ignore-duplicates (then
+   * a skipped row returns null). The target defaults to the primary key.
+   */
+  async upsert(
+    table: string,
+    record: Record<string, unknown>,
+    options: UpsertOptions = {},
+  ): Promise<Record<string, unknown> | null> {
+    const target = options.onConflict?.length
+      ? options.onConflict
+      : await this.primaryKeyColumns(table)
+    for (const column of target) {
+      if (!RPC_IDENTIFIER.test(column)) throw new Error(`Invalid conflict column "${column}"`)
+    }
+    const excluded = Object.fromEntries(
+      Object.keys(record).map((column) => [column, sql`excluded.${sql.ref(column)}`]),
+    )
     const rows = await this.writer
       .insertInto(table as never)
-      .values(record as never)
-      .onConflict((oc) => oc.column('id' as never).doUpdateSet(record as never))
+      .values(this.typedValues(table, record) as never)
+      .onConflict((oc) => {
+        const conflict = oc.columns(target as never)
+        return options.ignoreDuplicates || Object.keys(excluded).length === 0
+          ? conflict.doNothing()
+          : conflict.doUpdateSet(excluded as never)
+      })
       .returningAll()
       .execute()
-    return (rows[0] ?? record) as Record<string, unknown>
+    return (rows[0] as Record<string, unknown> | undefined) ?? null
+  }
+
+  private async primaryKeyColumns(table: string): Promise<string[]> {
+    const result = await sql<{ column: string }>`
+      SELECT attribute.attname AS "column"
+      FROM pg_index AS index_info
+      JOIN pg_attribute AS attribute
+        ON attribute.attrelid = index_info.indrelid
+        AND attribute.attnum = ANY (index_info.indkey)
+      WHERE index_info.indrelid = to_regclass(quote_ident(${table}))
+        AND index_info.indisprimary
+      ORDER BY array_position(index_info.indkey::int2[], attribute.attnum)
+    `.execute(this.writer)
+    const columns = result.rows.map((row) => row.column)
+    return columns.length > 0 ? columns : ['id']
+  }
+
+  /**
+   * node-postgres binds a JS array as a Postgres array literal, so `[]` written
+   * to a jsonb column arrives as `'{}'` — an object. PostgREST reads the body as
+   * JSON and converts it to each column's type, so arrays go through
+   * jsonb_populate_record here: jsonb keeps the array, text[] gets a Postgres array.
+   */
+  private typedValues(table: string, record: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(record).map(([column, value]) => [
+        column,
+        Array.isArray(value)
+          ? sql`(jsonb_populate_record(NULL::${sql.table(table)}, jsonb_build_object(${column}::text, ${JSON.stringify(value)}::jsonb))).${sql.ref(column)}`
+          : value,
+      ]),
+    )
   }
 
   async select(table: string, options: SelectOptions): Promise<Record<string, unknown>[]>
@@ -287,8 +469,25 @@ export class PostgresDatabase implements IDatabase {
           offset: positionalOffset,
         }
       : optionsOrFilters
-    let query = this.reader.selectFrom(table as never).selectAll()
+    let query = this.selectProjection(table, options.columns)
+    query = this.selectFilters(query, options)
+    query = this.selectWindow(query, options)
 
+    const result = await query.execute()
+    return result as unknown as Record<string, unknown>[]
+  }
+
+  private selectProjection(table: string, columns: SelectOptions['columns']) {
+    const source = this.reader.selectFrom(table as never)
+    return columns === undefined
+      ? source.selectAll()
+      : source.select(columns.map((column) => sql.ref(column)) as never)
+  }
+
+  private selectFilters(
+    query: ReturnType<PostgresDatabase['selectProjection']>,
+    options: SelectOptions,
+  ) {
     for (const filter of options.filters ?? []) {
       query = this.applyFilter(query as never, filter) as never
     }
@@ -306,17 +505,30 @@ export class PostgresDatabase implements IDatabase {
       query = query.where(sql<boolean>`(${sql.join(groups, sql` OR `)})`) as never
     }
 
-    if (options.order) {
-      for (const order of options.order) {
-        query = query.orderBy(order.column as never, order.direction ?? 'asc')
-      }
-    }
+    return query
+  }
+
+  private selectWindow(
+    query: ReturnType<PostgresDatabase['selectProjection']>,
+    options: SelectOptions,
+  ) {
+    query = this.selectOrder(query, options.order)
 
     if (options.limit !== undefined) query = query.limit(options.limit)
     if (options.offset !== undefined) query = query.offset(options.offset)
 
-    const result = await query.execute()
-    return result as unknown as Record<string, unknown>[]
+    return query
+  }
+
+  private selectOrder(
+    query: ReturnType<PostgresDatabase['selectProjection']>,
+    orderBy: SelectOptions['order'],
+  ) {
+    for (const order of orderBy ?? []) {
+      query = query.orderBy(order.column as never, order.direction ?? 'asc')
+    }
+
+    return query
   }
 
   async update(
@@ -325,6 +537,7 @@ export class PostgresDatabase implements IDatabase {
     data: Record<string, unknown>,
     orFilters?: Filter[][],
   ): Promise<Record<string, unknown>[]> {
+    data = this.typedValues(table, data)
     // When orFilters are provided, pre-select matching row IDs
     if (orFilters?.length) {
       const selected = await this.select(table, { filters, orFilters })
@@ -475,60 +688,8 @@ export class PostgresDatabase implements IDatabase {
   }
 
   private buildFilterExpression(filter: Filter): RawBuilder<boolean> {
-    const column = sql.ref(filter.column)
-
-    switch (filter.operator) {
-      case 'eq':
-        return sql<boolean>`${column} = ${filter.value}`
-      case 'neq': {
-        // PostgREST semantics: neq.null → IS NOT NULL
-        if (filter.value === null || filter.value === 'null')
-          return sql<boolean>`${column} IS NOT NULL`
-        return sql<boolean>`${column} <> ${filter.value}`
-      }
-      case 'gt':
-        return sql<boolean>`${column} > ${filter.value}`
-      case 'gte':
-        return sql<boolean>`${column} >= ${filter.value}`
-      case 'lt':
-        return sql<boolean>`${column} < ${filter.value}`
-      case 'lte':
-        return sql<boolean>`${column} <= ${filter.value}`
-      case 'like':
-        return sql<boolean>`${column} LIKE ${filter.value}`
-      case 'ilike':
-        return sql<boolean>`${column} ILIKE ${filter.value}`
-      case 'is': {
-        if (filter.value === null || filter.value === 'null') return sql<boolean>`${column} IS NULL`
-        if (filter.value === true || filter.value === 'true') return sql<boolean>`${column} IS TRUE`
-        if (filter.value === false || filter.value === 'false')
-          return sql<boolean>`${column} IS FALSE`
-        throw new Error(`Unsupported is-filter value: ${String(filter.value)}`)
-      }
-      case 'in': {
-        const values = Array.isArray(filter.value)
-          ? filter.value
-          : typeof filter.value === 'string'
-            ? parseInValue(filter.value)
-            : [filter.value]
-        if (values.length === 0) return sql<boolean>`FALSE`
-        return sql<boolean>`${column} IN (${sql.join(values)})`
-      }
-      case 'cs':
-        // JSONB containment: column contains the JSON value
-        return sql<boolean>`${column} @> ${sql.val(filter.value)}::jsonb`
-      case 'cd':
-        // JSONB containment: column is contained by the JSON value
-        return sql<boolean>`${column} <@ ${sql.val(filter.value)}::jsonb`
-      case 'fts':
-      case 'plfts':
-        return sql<boolean>`to_tsvector('english', ${column}) @@ plainto_tsquery('english', ${sql.val(filter.value)})`
-      case 'phfts':
-        return sql<boolean>`to_tsvector('english', ${column}) @@ phraseto_tsquery('english', ${sql.val(filter.value)})`
-      case 'wfts':
-        return sql<boolean>`to_tsvector('english', ${column}) @@ websearch_to_tsquery('english', ${sql.val(filter.value)})`
-      default:
-        throw new Error(`Unsupported filter operator: ${filter.operator}`)
-    }
+    const builder = FILTER_EXPRESSION_BUILDERS[filter.operator]
+    if (!builder) throw new Error(`Unsupported filter operator: ${filter.operator}`)
+    return builder(filter)
   }
 }

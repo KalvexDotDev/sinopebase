@@ -9,13 +9,72 @@ import type { Pool } from 'pg'
 
 interface CreateTableBody {
   name: string
-  columns: Array<{
-    name: string
-    type: string
-    nullable: boolean
-    primary?: boolean
-    default?: string | null
-  }>
+  columns: ColumnInput[]
+}
+
+interface ColumnInput {
+  name: string
+  type: string
+  nullable: boolean
+  primary?: boolean
+  default?: string | null
+}
+
+const COLUMN_TYPES = new Set([
+  'text',
+  'varchar',
+  'integer',
+  'bigint',
+  'real',
+  'double precision',
+  'boolean',
+  'timestamp with time zone',
+  'date',
+  'jsonb',
+  'uuid',
+])
+const IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+const SAFE_DEFAULT =
+  /^(?:-?\d+(?:\.\d+)?|true|false|null|now\(\)|gen_random_uuid\(\)|current_timestamp|'(?:[^']|'')*')$/i
+
+function validColumnCount(columns: unknown): columns is ColumnInput[] {
+  return Array.isArray(columns) && columns.length > 0 && columns.length <= 100
+}
+
+function validColumnName(col: ColumnInput | null, names: Set<string>): boolean {
+  return !!col && typeof col.name === 'string' && IDENTIFIER.test(col.name) && !names.has(col.name)
+}
+
+function validColumnType(col: ColumnInput): boolean {
+  return typeof col.type === 'string' && COLUMN_TYPES.has(col.type.toLowerCase())
+}
+
+function validColumnDefault(col: ColumnInput): boolean {
+  return (
+    col.default == null ||
+    (typeof col.default === 'string' && SAFE_DEFAULT.test(col.default.trim()))
+  )
+}
+
+function validateColumns(columns: ColumnInput[]): string | null {
+  const names = new Set<string>()
+  let primaryKeys = 0
+  for (const col of columns) {
+    if (!validColumnName(col, names)) return 'Column names must be unique SQL identifiers.'
+    if (!validColumnType(col)) return 'Unsupported column type.'
+    if (!validColumnDefault(col)) return 'Unsupported column default.'
+    primaryKeys += Number(Boolean(col.primary))
+    names.add(col.name)
+  }
+  return primaryKeys > 1 ? 'Only one primary key column is supported.' : null
+}
+
+function validateCreateTable(body: unknown): string | null {
+  const { name, columns } = (body ?? {}) as Partial<CreateTableBody>
+  if (!name || !IDENTIFIER.test(name))
+    return 'Invalid table name. Use letters, numbers, underscores.'
+  if (!validColumnCount(columns)) return 'Specify 1 to 100 columns.'
+  return validateColumns(columns)
 }
 
 export function createAdminDdlPlugin(pool: Pool, isSuperuser: (request: Request) => boolean) {
@@ -29,26 +88,18 @@ export function createAdminDdlPlugin(pool: Pool, isSuperuser: (request: Request)
         return { code: 403, message: 'Only service_role can create tables.' }
       }
 
-      const { name, columns } = (body ?? {}) as CreateTableBody
-
-      if (!name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      const issue = validateCreateTable(body)
+      if (issue) {
         set.status = 400
-        return { code: 400, message: 'Invalid table name. Use letters, numbers, underscores.' }
+        return { code: 400, message: issue }
       }
-
-      if (!columns || columns.length === 0) {
-        set.status = 400
-        return { code: 400, message: 'At least one column is required.' }
-      }
+      const { name, columns } = body as CreateTableBody
 
       const colDefs = columns.map((col) => {
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(col.name)) {
-          throw new Error(`Invalid column name: ${col.name}`)
-        }
         const parts = [`"${col.name}"`, col.type.toUpperCase()]
         if (!col.nullable) parts.push('NOT NULL')
         if (col.primary) parts.push('PRIMARY KEY')
-        if (col.default) parts.push(`DEFAULT ${col.default}`)
+        if (col.default) parts.push(`DEFAULT ${col.default.trim()}`)
         return parts.join(' ')
       })
 
@@ -82,7 +133,7 @@ export function createAdminDdlPlugin(pool: Pool, isSuperuser: (request: Request)
       }
 
       const { name } = params as { name: string }
-      if (!name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      if (!name || !IDENTIFIER.test(name)) {
         set.status = 400
         return { code: 400, message: 'Invalid table name.' }
       }
