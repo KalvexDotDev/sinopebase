@@ -26,7 +26,7 @@ async function main(): Promise<void> {
         mutate,
         testRunner: 'command',
         commandRunner: {
-          command: `bun test ${testFiles.map(shellQuote).join(' ')}`,
+          command: `bun test --timeout=15000 ${testFiles.map(shellQuote).join(' ')}`,
         },
         // TypeScript 7's package root intentionally exposes only version data;
         // pointing Stryker's path rewriter at a non-project file avoids its
