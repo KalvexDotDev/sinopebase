@@ -25,11 +25,15 @@ export class MigrationRunner {
    * @param migrationDB - Raw SQL executor passed to migration up/down functions.
    * @param tableName - The table name for tracking migrations.
    */
-  private db: IDatabase
+  private db: Pick<IDatabase, 'hasTable' | 'select'>
   private migrationDB: MigrationDB
   private tableName: string
 
-  constructor(db: IDatabase, migrationDB: MigrationDB, tableName = '_migrations') {
+  constructor(
+    db: Pick<IDatabase, 'hasTable' | 'select'>,
+    migrationDB: MigrationDB,
+    tableName = '_migrations',
+  ) {
     this.db = db
     this.migrationDB = migrationDB
     this.tableName = tableName

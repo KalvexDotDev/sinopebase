@@ -1,6 +1,6 @@
 /** Narrow pool surface used by the startup migration lock. */
 export interface MigrationLockClient {
-  query(sql: string): Promise<unknown>
+  query(sql: string, values?: unknown[]): Promise<unknown>
   release(destroy?: boolean): void
   on(event: 'error', listener: (error: Error) => void): unknown
   on(event: 'end', listener: () => void): unknown
@@ -36,7 +36,7 @@ async function unlockHeldMigrationLock(
  */
 export async function withPostgresMigrationLock<T>(
   pool: MigrationLockPool,
-  run: (signal: AbortSignal) => Promise<T>,
+  run: (signal: AbortSignal, client: MigrationLockClient) => Promise<T>,
 ): Promise<T> {
   const client = await pool.connect()
   const controller = new AbortController()
@@ -51,7 +51,7 @@ export async function withPostgresMigrationLock<T>(
     await client.query('SELECT pg_advisory_lock(732031, 1)')
     controller.signal.throwIfAborted()
     acquired = true
-    const value = await run(controller.signal)
+    const value = await run(controller.signal, client)
     controller.signal.throwIfAborted()
     outcome = { ok: true, value }
   } catch (error) {

@@ -507,7 +507,8 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { openapi } from '@elysia/openapi'
 import { Elysia } from 'elysia'
-import { withPostgresMigrationLock } from '~/core/migration-lock'
+import { type MigrationLockClient, withPostgresMigrationLock } from '~/core/migration-lock'
+import { createMigrationSession } from '~/core/migration-session'
 import { Cron } from '~/tools/cron/cron'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
@@ -699,6 +700,7 @@ export class Sinopebase {
   private fileStore: IFileStore | null = null
   private auth: AuthInstance | null = null
   private lifecycle: Promise<void> = Promise.resolve()
+  private activeMigrationSession: { client: MigrationLockClient; signal: AbortSignal } | null = null
   /** Cached secrets — validated once at startup, never read from process.env thereafter. */
   private cachedServiceRoleKey = ''
   private cachedAnonKey = ''
@@ -1909,6 +1911,27 @@ export class Sinopebase {
     }
   }
 
+  private migrationContext(): {
+    ledger: Pick<IDatabase, 'hasTable' | 'select'>
+    sql: MigrationDB
+    signal?: AbortSignal
+  } {
+    if (!(this.database instanceof PostgresDatabase))
+      throw new Error('Migration context requires PostgreSQL')
+    const session = this.activeMigrationSession
+    if (session)
+      return { ...createMigrationSession(session.client, session.signal), signal: session.signal }
+    const pool = this.database.getPool()
+    return {
+      ledger: this.database,
+      sql: {
+        raw: async (statement) => {
+          await pool.query(statement)
+        },
+      },
+    }
+  }
+
   /**
    * Apply pending system migrations (PocketBase pattern: migrate on startup).
    *
@@ -1917,17 +1940,10 @@ export class Sinopebase {
    * creates request-context roles at runtime so the least-privilege migration
    * is a no-op. In production, this is the only path that creates those roles.
    */
-  async runSystemMigrations(signal?: AbortSignal): Promise<void> {
+  async runSystemMigrations(): Promise<void> {
     if (!(this.database instanceof PostgresDatabase)) return
 
-    const pool = this.database.getPool()
-    const migrationDB: MigrationDB = {
-      raw: async (sql: string) => {
-        signal?.throwIfAborted()
-        await pool.query(sql)
-        signal?.throwIfAborted()
-      },
-    }
+    const { ledger, sql: migrationDB, signal } = this.migrationContext()
 
     // Auto-discover migration files from the migrations/ directory.
     // Files are loaded by <timestamp>_<name>.ts naming convention.
@@ -1945,7 +1961,7 @@ export class Sinopebase {
 
     if (discovered.length === 0) return
 
-    const runner = new MigrationRunner(this.database, migrationDB)
+    const runner = new MigrationRunner(ledger, migrationDB)
     runner.registerAll(discovered)
 
     const count = await runner.run(signal)
@@ -1958,17 +1974,10 @@ export class Sinopebase {
    * Apply application SQL migrations from the local Supabase directory and,
    * when configured, an S3-compatible migration bucket.
    */
-  async runAppMigrations(signal?: AbortSignal): Promise<void> {
+  async runAppMigrations(): Promise<void> {
     if (!(this.database instanceof PostgresDatabase)) return
 
-    const pool = this.database.getPool()
-    const migrationDB: MigrationDB = {
-      raw: async (sql: string) => {
-        signal?.throwIfAborted()
-        await pool.query(sql)
-        signal?.throwIfAborted()
-      },
-    }
+    const { ledger, sql: migrationDB, signal } = this.migrationContext()
 
     // Users can bring existing supabase/migrations/*.sql files and apply them
     // without converting them to Sinopebase TypeScript migrations.
@@ -2018,7 +2027,7 @@ export class Sinopebase {
 
     if (allMigrations.length === 0) return
 
-    const runner = new MigrationRunner(this.database, migrationDB)
+    const runner = new MigrationRunner(ledger, migrationDB)
     runner.registerAll(allMigrations)
 
     const count = await runner.run(signal)
@@ -2030,10 +2039,26 @@ export class Sinopebase {
   /** Apply system migrations first, followed by application migrations. */
   async runAllMigrations(): Promise<void> {
     if (!(this.database instanceof PostgresDatabase)) return
-    await withPostgresMigrationLock(this.database.getPool(), async (signal) => {
-      await this.runSystemMigrations(signal)
-      signal.throwIfAborted()
-      await this.runAppMigrations(signal)
+    if (this.activeMigrationSession) throw new Error('Migrations are already running')
+    await withPostgresMigrationLock(this.database.getPool(), async (signal, client) => {
+      this.activeMigrationSession = { client, signal }
+      try {
+        await client.query('BEGIN')
+        await this.runSystemMigrations()
+        signal.throwIfAborted()
+        await this.runAppMigrations()
+        signal.throwIfAborted()
+        await client.query('COMMIT')
+      } catch (error) {
+        try {
+          await client.query('ROLLBACK')
+        } catch {
+          // A lost lock connection already rolled back its transaction.
+        }
+        throw error
+      } finally {
+        this.activeMigrationSession = null
+      }
     })
   }
 

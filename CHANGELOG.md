@@ -5,7 +5,7 @@
 ### Added
 - Opt-in multi-replica configuration using the existing server image and CLI. Railway remains a single-instance deployment with its existing defaults.
 - PostgreSQL advisory locking around startup migrations and CLI wiring for `LISTEN/NOTIFY` delivery of committed row changes to clients on other replicas.
-- Migration startup now detects loss of the advisory-lock connection and stops before subsequent SQL or ledger writes; the Kubernetes example makes its scratch volume writable to the non-root process.
+- Migration SQL and ledger writes now run in one transaction on the advisory-lock connection, so losing that connection rolls back the migration; the Kubernetes example makes its scratch volume writable to the non-root process.
 - Listener connectivity as a condition of `/api/ready` in multi-replica mode; `/api/health` remains the liveness endpoint.
 - A generic, credential-free Kubernetes manifest and deployment guide, with Kubeconform validation in CI.
 
