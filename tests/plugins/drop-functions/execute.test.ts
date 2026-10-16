@@ -6,8 +6,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { Sinopebase } from '~/core/app'
-import { requirePostgres, reserveLoopbackPort } from '../../harness'
+import type { Sinopebase } from '~/core/app'
+import { requirePostgres } from '../../harness'
+import { startLoopbackApp } from '../../harness/server'
 
 /** Loose test-response accessor — narrower than `any`. */
 interface TestResponse {
@@ -56,7 +57,6 @@ describe('DropFunctions Plugin', () => {
   let signupEmail = ''
 
   beforeAll(async () => {
-    const portReservation = await reserveLoopbackPort()
     cleanupTestFunctions()
 
     // Write a test function
@@ -94,19 +94,15 @@ describe('DropFunctions Plugin', () => {
     `,
     )
 
-    app = new Sinopebase({
-      port: portReservation.port,
+    const started = await startLoopbackApp({
       postgresUrl: requirePostgres(),
       jwtSecret: 'drop-fn-test-jwt-secret-min-32-chars!',
       serviceRoleKey: SERVICE_ROLE_KEY,
       anonKey: 'drop-fn-test-anon-key-min-32-chars!!!',
       functionsDir: DEFAULT_FN_DIR,
     })
-    await portReservation.release()
-
-    await app.start()
-
-    baseUrl = portReservation.origin
+    app = started.app
+    baseUrl = started.origin
 
     // Sign up and get an auth token for management CRUD tests
     signupEmail = `fn-admin-${Date.now()}@test.com`

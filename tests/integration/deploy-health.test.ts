@@ -12,25 +12,23 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { Sinopebase } from '~/core/app'
-import { requirePostgres, reserveLoopbackPort } from '../harness'
+import type { Sinopebase } from '~/core/app'
+import { requirePostgres } from '../harness'
+import { startLoopbackApp } from '../harness/server'
 
 let server: Sinopebase
 let origin: string
 let dataDir: string
 
 beforeAll(async () => {
-  const reservation = await reserveLoopbackPort()
-  server = new Sinopebase({
-    port: reservation.port,
+  const started = await startLoopbackApp({
     postgresUrl: requirePostgres(),
     jwtSecret: 'deploy-health-jwt-secret-min-32!',
     serviceRoleKey: 'deploy-health-srvc-key-min-32!!',
     anonKey: 'deploy-health-anon-key-min-32!!!',
   })
-  await reservation.release()
-  await server.start()
-  origin = reservation.origin
+  server = started.app
+  origin = started.origin
   dataDir = server.dataDir()
 })
 
@@ -62,27 +60,23 @@ describe('deploy healthchecks', () => {
   })
 
   it('probes are exempt from rate limiting', async () => {
-    const reservation = await reserveLoopbackPort()
-    const app = new Sinopebase({
-      port: reservation.port,
+    const { app, origin: limitedOrigin } = await startLoopbackApp({
       postgresUrl: requirePostgres(),
       jwtSecret: 'deploy-health-jwt-secret-min-32!',
       serviceRoleKey: 'deploy-health-srvc-key-min-32!!',
       anonKey: 'deploy-health-anon-key-min-32!!!',
       rateLimitMax: 1,
     })
-    await reservation.release()
     try {
-      await app.start()
       // Exhaust the single token on a non-probe path.
-      const blocked = await fetch(`${reservation.origin}/_/test`)
+      const blocked = await fetch(`${limitedOrigin}/_/test`)
       expect(blocked.status).toBe(200)
-      const shouldBlock = await fetch(`${reservation.origin}/_/test`)
+      const shouldBlock = await fetch(`${limitedOrigin}/_/test`)
       expect(shouldBlock.status).toBe(429)
 
       // The probes still pass — a rate-limit burst must never fail a deploy.
       for (const path of ['/railway', '/api/health', '/api/ready']) {
-        const res = await fetch(`${reservation.origin}${path}`)
+        const res = await fetch(`${limitedOrigin}${path}`)
         expect(res.status).toBeGreaterThanOrEqual(200)
         expect(res.status).toBeLessThan(300)
       }
