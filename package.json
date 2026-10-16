@@ -93,7 +93,7 @@
     "fast-uri": ">=3.1.8 <4",
     "js-yaml": ">=5.4.2",
     "qs": "6.16.0",
-    "stream-json": "3.5.0"
+    "stream-json": "3.6.0"
   },
   "patchedDependencies": {
     "better-auth@1.6.26": "patches/better-auth@1.6.26.patch",
