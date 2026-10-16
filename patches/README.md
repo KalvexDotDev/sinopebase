@@ -6,7 +6,7 @@ These patches adapt existing dependencies to the smallest available patched rele
 - `nodemailer` 9.1.1 fixes GHSA-8m3c-c648-2xjj plus the 9.1.0 address-parser fixes.
 - `qs` 6.16.0 fixes GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g.
 - `decode-uri-component` 0.5.0 fixes GHSA-vcc3-ghjq-m6fr. Its ESM-only default export requires query-string 7's CommonJS import to access `.default` under the supported Bun runtime.
-- `stream-json` 3.5.0 fixes GHSA-528h-pc64-c93x. MinIO 8.0.7 imports the old `jsonl/Parser.js` and `.make()` API. Its source, ESM and CommonJS distributions now use `jsonl/parser.js` and the explicit Node-stream `.asStream()` factory. The `{key, value}` output contract is unchanged.
+- `stream-json` 3.6.0 (verified 2026-10-16) fixes GHSA-528h-pc64-c93x, GHSA-mjw6-4jj6-33hc and GHSA-hqr4-qq8f-hg3x. MinIO 8.0.7 imports the old `jsonl/Parser.js` and `.make()` API. Its source, ESM and CommonJS distributions now use `jsonl/parser.js` and the explicit Node-stream `.asStream()` factory. The `{key, value}` output contract is unchanged.
 
 Versions and advisory ranges were checked against the npm registry audit endpoint on 2026-09-21. Advisory details: https://github.com/advisories/ (append the individual GHSA ID).
 
