@@ -11,13 +11,8 @@ import { type Kysely, sql } from 'kysely'
 import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 import type { BetterAuthDatabase } from './adapter'
-import { createAuthWithSignupPolicy as betterAuth } from './signup-policy'
-
-// Guard against redundant DDL on hot reload or multiple createAuth calls
-let tablesEnsured = false
-
 import { createAuthTables, createBetterAuthDB } from './adapter'
-import { signupsAllowed } from './signup-policy'
+import { createAuthWithSignupPolicy as betterAuth, signupsAllowed } from './signup-policy'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -304,6 +299,33 @@ export async function validateRefreshTokenForRotation(
   return { valid: true, token }
 }
 
+/** Provider identities and credentials are internal, never browser-accessible tables. */
+async function restrictProviderTableAccess(db: Kysely<BetterAuthDatabase>): Promise<void> {
+  await sql`
+    DO $$
+    DECLARE
+      provider_table text;
+      column_names text;
+      browser_role text;
+    BEGIN
+      FOREACH provider_table IN ARRAY ARRAY['user', 'session', 'account', 'verification', 'refresh_tokens'] LOOP
+        EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC, anon, authenticated', provider_table);
+        SELECT string_agg(quote_ident(attname), ', ') INTO column_names
+          FROM pg_attribute
+          WHERE attrelid = format('public.%I', provider_table)::regclass
+            AND attnum > 0 AND NOT attisdropped;
+        EXECUTE format('REVOKE ALL (%s) ON TABLE public.%I FROM PUBLIC, anon, authenticated', column_names, provider_table);
+        FOREACH browser_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+          IF has_table_privilege(browser_role, format('public.%I', provider_table), 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+            OR has_any_column_privilege(browser_role, format('public.%I', provider_table), 'SELECT, INSERT, UPDATE, REFERENCES') THEN
+            RAISE EXCEPTION 'Provider table browser privileges remain after hardening';
+          END IF;
+        END LOOP;
+      END LOOP;
+    END $$;
+  `.execute(db)
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -326,11 +348,11 @@ export async function createAuth(
 ): Promise<ReturnType<typeof betterAuth>> {
   // Create a typed Kysely for table creation and direct queries.
   const db = createBetterAuthDB(pool)
-  if (!tablesEnsured) {
-    await createAuthTables(db)
-    await createRefreshTokensTable(db)
-    tablesEnsured = true
-  }
+  await db.transaction().execute(async (transaction) => {
+    await createAuthTables(transaction)
+    await createRefreshTokensTable(transaction)
+    await restrictProviderTableAccess(transaction)
+  })
 
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.

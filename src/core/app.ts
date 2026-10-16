@@ -1001,10 +1001,9 @@ export class Sinopebase {
           status: 'initialized',
         })
       } catch (err) {
-        logger.warn('Auth: better-auth init failed, falling back to in-memory', {
-          error: (err as Error).message,
+        throw new Error('PostgreSQL authentication initialization failed; refusing startup', {
+          cause: err,
         })
-        this.auth = null
       }
 
       // Provision storage metadata schema for RLS-backed file access.
