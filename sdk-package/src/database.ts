@@ -8,7 +8,7 @@
  * Backend: core/record_query.go, core/collection_query.go
  */
 
-import type { PostgrestError, PostgrestResponse, PostgrestSingleResponse } from './client'
+import type { PostgrestError, PostgrestResponse } from './client'
 
 // ---------------------------------------------------------------------------
 // Filter types
@@ -26,7 +26,7 @@ export type JsonValue =
 export interface RpcOptions {
   /** Skip body parsing — return status only (supabase-js `head`). */
   head?: boolean
-  /** Return a single value instead of a row array (supabase-js `get`). */
+  /** Accepted for compatibility; transport currently remains POST. Never reshapes results. */
   get?: boolean
 }
 
@@ -66,17 +66,12 @@ export interface PostgrestClient<T = any> {
   update(values: Partial<T>): PostgrestFilterBuilder<T>
   delete(): PostgrestFilterBuilder<T>
 
-  // RPC — supabase-js contract: rows by default, single value with `get: true`
-  rpc<T = Record<string, JsonValue>>(
+  // RPC preserves the declared return payload; all options currently use POST.
+  rpc<T = unknown>(
     fn: string,
     args?: Record<string, JsonValue>,
-    options?: RpcOptions & { get?: false },
-  ): PromiseLike<PostgrestResponse<T[]>>
-  rpc<T = Record<string, JsonValue>>(
-    fn: string,
-    args: Record<string, JsonValue> | undefined,
-    options: RpcOptions & { get: true },
-  ): PromiseLike<PostgrestSingleResponse<T>>
+    options?: RpcOptions,
+  ): PromiseLike<PostgrestResponse<T>>
 }
 
 export interface PostgrestFilterBuilder<T = any> {
@@ -206,21 +201,11 @@ class PostgrestClientImpl<T = any> implements PostgrestClient<T> {
     )
   }
 
-  rpc<T = Record<string, JsonValue>>(
-    fn: string,
-    args?: Record<string, JsonValue>,
-    options?: RpcOptions & { get?: false },
-  ): Promise<PostgrestResponse<T[]>>
-  rpc<T = Record<string, JsonValue>>(
-    fn: string,
-    args: Record<string, JsonValue> | undefined,
-    options: RpcOptions & { get: true },
-  ): Promise<PostgrestSingleResponse<T>>
-  rpc<T = Record<string, JsonValue>>(
+  rpc<T = unknown>(
     fn: string,
     args?: Record<string, JsonValue>,
     options?: RpcOptions,
-  ): Promise<PostgrestResponse<T[]> | PostgrestSingleResponse<T>> {
+  ): Promise<PostgrestResponse<T>> {
     return postgrestRpc(this.baseUrl, this.apiKey, this.getAccessToken, fn, args, options)
   }
 }
@@ -232,18 +217,18 @@ class PostgrestClientImpl<T = any> implements PostgrestClient<T> {
 /**
  * Execute a PostgreSQL function (supabase-js `rpc()` contract).
  *
- * Default: rows as an array. `{ get: true }`: a single value. `{ head: true }`:
+ * Preserve the declared scalar or row-array payload for either request option. `{ head: true }`:
  * status only. Sends the current session token when signed in, otherwise the
  * API key, so the backend resolves the correct RLS role.
  */
-export async function postgrestRpc<T = Record<string, JsonValue>>(
+export async function postgrestRpc<T = unknown>(
   baseUrl: string,
   apiKey: string,
   getAccessToken: () => Promise<string | null>,
   fn: string,
   args?: Record<string, JsonValue>,
   options: RpcOptions = {},
-): Promise<PostgrestResponse<T[]> | PostgrestSingleResponse<T>> {
+): Promise<PostgrestResponse<T>> {
   const token = (await getAccessToken()) ?? apiKey
   try {
     const res = await fetch(`${baseUrl}/rest/v1/rpc/${encodeURIComponent(fn)}`, {
@@ -286,26 +271,8 @@ export async function postgrestRpc<T = Record<string, JsonValue>>(
       }
     }
 
-    if (options.get) {
-      // PostgREST contract: a scalar was requested — zero or multiple rows
-      // is an error (406 PGRST116), never a silent array.
-      if (Array.isArray(body) && body.length !== 1) {
-        return {
-          data: null,
-          error: {
-            message: 'JSON object requested, multiple (or no) rows returned',
-            details: '',
-            hint: '',
-            code: 'PGRST116',
-          },
-        }
-      }
-      return { data: unwrapScalar(body) as T, error: null }
-    }
-
-    const rows: unknown[] = Array.isArray(body) ? body : body === null ? [] : [body]
     return {
-      data: rows as T[],
+      data: body as T,
       error: null,
       count: null,
       status: res.status,
@@ -333,24 +300,7 @@ function readErrorField(body: unknown, key: string): string | null {
   return typeof value === 'string' ? value : null
 }
 
-// ponytail: scalar functions arrive as `[{<fn>: value}]` through the rows
-// transport. Unwrap to match PostgREST's scalar responses. A single-row
-// single-column SETOF result is indistinguishable — use the default form
-// (no `get`) when the row itself is wanted.
-function unwrapScalar(body: unknown): unknown {
-  if (Array.isArray(body) && body.length === 1) {
-    const row = body[0]
-    if (typeof row === 'object' && row !== null) {
-      const values = Object.values(row)
-      if (values.length === 1) return values[0]
-    }
-  }
-  return body
-}
-
-class PostgrestFilterBuilderImpl<T = any>
-  implements PostgrestFilterBuilder<T>
-{
+class PostgrestFilterBuilderImpl<T = any> implements PostgrestFilterBuilder<T> {
   private baseUrl: string
   private apiKey: string
   private table: string

@@ -13,9 +13,19 @@
  */
 
 import type { Elysia } from 'elysia'
-import type { ForeignKeyRelationship, IDatabase, OrderBy } from '../core/db-interface'
+import {
+  type ForeignKeyRelationship,
+  type IDatabase,
+  type OrderBy,
+  SingularCardinalityError,
+} from '../core/db-interface'
 import type { ParsedFilter } from '../core/db-memory'
-import { PostgresDatabase, type PostgresRequestContext, RPC_IDENTIFIER } from '../core/db-postgres'
+import {
+  PostgresDatabase,
+  type PostgresRequestContext,
+  RPC_IDENTIFIER,
+  RpcAmbiguityError,
+} from '../core/db-postgres'
 import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
 import { BadRequestError, InternalServerError } from './api_error_aliases'
 import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
@@ -84,15 +94,6 @@ interface MutationResult {
 interface ResponseState {
   status?: number | string
   headers: Record<string, string | number>
-}
-
-/** Thrown inside the request transaction so a singular mutation mismatch rolls back. */
-class SingularCardinalityError extends Error {
-  readonly rowCount: number
-  constructor(rowCount: number) {
-    super(`The result contains ${rowCount} rows`)
-    this.rowCount = rowCount
-  }
 }
 
 interface SingularResponse {
@@ -404,11 +405,19 @@ export function mountPostgrestRoutes(
     // Call through the scoped request database so the method keeps `this`
     // (bound to the transaction connection carrying the RLS role).
     try {
+      const singular = acceptsSingularObject(request.headers.get('accept') ?? undefined)
       const rows = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
-        (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input),
+        (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input, { singular }),
       )
-      return rows
+      return Response.json(
+        rows,
+        singular ? { headers: { 'Content-Type': 'application/vnd.pgrst.object+json' } } : undefined,
+      )
     } catch (err) {
+      if (err instanceof RpcAmbiguityError) {
+        set.status = 300
+        return { code: 'PGRST203', message: err.message, details: null, hint: null }
+      }
       const message = (err as Error).message
       // PostgreSQL function-not-found
       if (message.includes('function') && message.includes('does not exist')) {

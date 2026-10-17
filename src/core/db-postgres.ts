@@ -18,12 +18,19 @@ import type {
   SelectOptions,
   UpsertOptions,
 } from './db-interface'
+import { SingularCardinalityError } from './db-interface'
 import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
 export type { Filter, OrderBy } from './db-interface'
 
 /** Trust boundary: RPC function and argument names must be plain identifiers. */
 export const RPC_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+export class RpcAmbiguityError extends Error {
+  constructor() {
+    super('Could not choose a function overload for the supplied argument names.')
+  }
+}
 
 export interface PostgresConfig {
   postgresUrl: string
@@ -614,7 +621,11 @@ export class PostgresDatabase implements IDatabase {
    * Calls `SELECT * FROM "fn"(args...)` with named parameters from the request body.
    * Parameters are passed as `fn(key1 := value1, key2 := value2, ...)`.
    */
-  async rpc(fn: string, params: Record<string, unknown>): Promise<Record<string, unknown>[]> {
+  async rpc(
+    fn: string,
+    params: Record<string, unknown>,
+    options?: { singular?: boolean },
+  ): Promise<unknown> {
     if (!RPC_IDENTIFIER.test(fn)) {
       throw new Error(`Invalid RPC function name "${fn}"`)
     }
@@ -624,21 +635,54 @@ export class PostgresDatabase implements IDatabase {
         throw new Error(`Invalid RPC argument name "${key}"`)
       }
     }
-    // ponytail: functions resolve in the public schema only — blocks pg_catalog
-    // built-ins reachable through the unqualified search path. Per-function
-    // allowlists if a consumer needs to expose other schemas.
+    // Match PostgREST overloads by input names and defaults, not returned row
+    // shape. OUT/TABLE columns are not callable inputs; INOUT arguments are.
+    const contracts = await sql<{ returns_set: boolean; returns_composite: boolean }>`
+      SELECT p.proretset AS returns_set,
+        return_type.composite OR coalesce('t' = ANY(p.proargmodes), false) AS returns_composite
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+      CROSS JOIN LATERAL (
+        WITH RECURSIVE base AS (
+          SELECT oid, typtype, typbasetype FROM pg_catalog.pg_type WHERE oid = p.prorettype
+          UNION ALL
+          SELECT t.oid, t.typtype, t.typbasetype FROM pg_catalog.pg_type t
+          JOIN base ON t.oid = base.typbasetype WHERE base.typtype = 'd'
+        )
+        SELECT bool_or(typtype = 'c' OR oid = 'record'::regtype) AS composite FROM base
+      ) return_type
+      CROSS JOIN LATERAL (
+        SELECT coalesce(array_agg(p.proargnames[a.ordinal] ORDER BY a.ordinal)
+          FILTER (WHERE coalesce(p.proargmodes[a.ordinal], 'i') IN ('i', 'b', 'v')), '{}') AS names
+        FROM unnest(coalesce(p.proallargtypes, p.proargtypes::oid[]))
+          WITH ORDINALITY AS a(type_oid, ordinal)
+      ) inputs
+      WHERE n.nspname = 'public' AND p.proname = ${fn} AND p.prokind = 'f'
+        AND ${Object.keys(params)}::text[] <@ inputs.names
+        AND inputs.names[1:p.pronargs - p.pronargdefaults] <@ ${Object.keys(params)}::text[]
+    `.execute(this.reader)
+    // Upstream does not support same-name arguments distinguished only by type.
+    // Refuse ambiguity before invoking any side-effecting function.
+    if (contracts.rows.length > 1) throw new RpcAmbiguityError()
+
     const fnRef = sql.ref(`public.${fn}`)
-    if (entries.length === 0) {
-      const result = await sql`SELECT * FROM ${fnRef}()`.execute(this.reader)
-      return result.rows as unknown as Record<string, unknown>[]
-    }
-    // `fn("arg" := value, ...)` — identifiers validated and quoted, values bound
-    // as parameters (node-postgres serializes objects for json/jsonb args).
     const args = entries.map(([k, v]) => sql`${sql.ref(k)} := ${v}`)
-    const result = await sql`SELECT * FROM ${fnRef}(${sql.join(args, sql`, `)})`.execute(
-      this.reader,
-    )
-    return result.rows as unknown as Record<string, unknown>[]
+    // Execute exactly once, retaining PostgreSQL permission/argument errors when
+    // no catalog candidate matched. public-only names and bound values remain.
+    const result = await sql<
+      Record<string, unknown>
+    >`SELECT * FROM ${fnRef}(${sql.join(args, sql`, `)})`.execute(this.reader)
+    // Count SQL rows, never elements of a scalar JSON array. Throw before the
+    // request transaction commits so a rejected singular write is rolled back.
+    if (options?.singular && result.rows.length !== 1) {
+      throw new SingularCardinalityError(result.rows.length)
+    }
+    const contract = contracts.rows[0]
+    if (!contract) return result.rows
+    const values = contract.returns_composite
+      ? result.rows
+      : result.rows.map((row) => Object.values(row)[0] ?? null)
+    return contract.returns_set && !options?.singular ? values : (values[0] ?? null)
   }
 
   /**

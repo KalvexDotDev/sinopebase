@@ -1,3 +1,5 @@
+// @new-code-test positive src/core/db-interface.ts
+// @new-code-test negative src/core/db-interface.ts
 // @new-code-test positive src/core/db-postgres.ts
 // @new-code-test negative src/core/db-postgres.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
@@ -181,6 +183,9 @@ describePostgres('PostgresDatabase canonical database contract', () => {
       CREATE TABLE ${sql.table(dated)} (id text PRIMARY KEY, at timestamptz NOT NULL, local timestamp NOT NULL, day date NOT NULL)
     `.execute(concrete.getWriter())
     try {
+      await sql`GRANT SELECT, UPDATE ON ${sql.table(dated)} TO service_role`.execute(
+        concrete.getWriter(),
+      )
       await sql`
         INSERT INTO ${sql.table(dated)} VALUES ('x', '2026-09-27 22:18:09.497123+00', '2026-09-27 22:18:09.497123', '2026-09-27')
       `.execute(concrete.getWriter())

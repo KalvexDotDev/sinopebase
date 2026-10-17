@@ -1,3 +1,12 @@
+/** Thrown inside the request transaction so a singular mutation mismatch rolls back. */
+export class SingularCardinalityError extends Error {
+  readonly rowCount: number
+  constructor(rowCount: number) {
+    super(`The result contains ${rowCount} rows`)
+    this.rowCount = rowCount
+  }
+}
+
 /**
  * Shared database interface — implemented by both MemoryDatabase and PostgresDatabase.
  */
@@ -74,10 +83,14 @@ export interface IDatabase {
 
   /**
    * Execute a PostgreSQL function (RPC).
-   * Returns the result set as rows. Function parameters are passed as the
+   * Returns the declared scalar, composite, or set result. Parameters are the
    * request body (JSON → SQL). Only supported on PostgreSQL.
    */
-  rpc?(fn: string, params: Record<string, unknown>): Promise<Record<string, unknown>[]>
+  rpc?(
+    fn: string,
+    params: Record<string, unknown>,
+    options?: { singular?: boolean },
+  ): Promise<unknown>
 
   /** Optional because the in-memory database has no schema metadata. */
   getForeignKeyRelationships?(table: string): Promise<ForeignKeyRelationship[]>
