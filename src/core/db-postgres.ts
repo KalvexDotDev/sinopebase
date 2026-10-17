@@ -18,6 +18,7 @@ import type {
   SelectOptions,
   UpsertOptions,
 } from './db-interface'
+import { SingularCardinalityError } from './db-interface'
 import { bootstrapPostgresRequestRoles } from './postgres-role-bootstrap'
 
 export type { Filter, OrderBy } from './db-interface'
@@ -620,7 +621,11 @@ export class PostgresDatabase implements IDatabase {
    * Calls `SELECT * FROM "fn"(args...)` with named parameters from the request body.
    * Parameters are passed as `fn(key1 := value1, key2 := value2, ...)`.
    */
-  async rpc(fn: string, params: Record<string, unknown>): Promise<unknown> {
+  async rpc(
+    fn: string,
+    params: Record<string, unknown>,
+    options?: { singular?: boolean },
+  ): Promise<unknown> {
     if (!RPC_IDENTIFIER.test(fn)) {
       throw new Error(`Invalid RPC function name "${fn}"`)
     }
@@ -667,12 +672,17 @@ export class PostgresDatabase implements IDatabase {
     const result = await sql<
       Record<string, unknown>
     >`SELECT * FROM ${fnRef}(${sql.join(args, sql`, `)})`.execute(this.reader)
+    // Count SQL rows, never elements of a scalar JSON array. Throw before the
+    // request transaction commits so a rejected singular write is rolled back.
+    if (options?.singular && result.rows.length !== 1) {
+      throw new SingularCardinalityError(result.rows.length)
+    }
     const contract = contracts.rows[0]
     if (!contract) return result.rows
     const values = contract.returns_composite
       ? result.rows
       : result.rows.map((row) => Object.values(row)[0] ?? null)
-    return contract.returns_set ? values : (values[0] ?? null)
+    return contract.returns_set && !options?.singular ? values : (values[0] ?? null)
   }
 
   /**

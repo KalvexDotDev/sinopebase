@@ -13,7 +13,12 @@
  */
 
 import type { Elysia } from 'elysia'
-import type { ForeignKeyRelationship, IDatabase, OrderBy } from '../core/db-interface'
+import {
+  type ForeignKeyRelationship,
+  type IDatabase,
+  type OrderBy,
+  SingularCardinalityError,
+} from '../core/db-interface'
 import type { ParsedFilter } from '../core/db-memory'
 import {
   PostgresDatabase,
@@ -89,15 +94,6 @@ interface MutationResult {
 interface ResponseState {
   status?: number | string
   headers: Record<string, string | number>
-}
-
-/** Thrown inside the request transaction so a singular mutation mismatch rolls back. */
-class SingularCardinalityError extends Error {
-  readonly rowCount: number
-  constructor(rowCount: number) {
-    super(`The result contains ${rowCount} rows`)
-    this.rowCount = rowCount
-  }
 }
 
 interface SingularResponse {
@@ -409,10 +405,14 @@ export function mountPostgrestRoutes(
     // Call through the scoped request database so the method keeps `this`
     // (bound to the transaction connection carrying the RLS role).
     try {
+      const singular = acceptsSingularObject(request.headers.get('accept') ?? undefined)
       const rows = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
-        (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input),
+        (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input, { singular }),
       )
-      return Response.json(rows)
+      return Response.json(
+        rows,
+        singular ? { headers: { 'Content-Type': 'application/vnd.pgrst.object+json' } } : undefined,
+      )
     } catch (err) {
       if (err instanceof RpcAmbiguityError) {
         set.status = 300

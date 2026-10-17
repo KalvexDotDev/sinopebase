@@ -158,6 +158,15 @@ beforeAll(async () => {
       rpc_one_column(), rpc_one_scalar_set(), rpc_default(text), rpc_inout(integer),
       rpc_named_shape(integer), rpc_named_shape(text), rpc_once(),
       rpc_ambiguous(integer), rpc_ambiguous(text) TO anon, authenticated, service_role;
+    CREATE OR REPLACE FUNCTION rpc_singular_rows(n integer) RETURNS TABLE(value integer)
+    LANGUAGE sql AS $$ SELECT generate_series(1, n) $$;
+    CREATE OR REPLACE FUNCTION rpc_singular_write(n integer) RETURNS TABLE(value integer)
+    LANGUAGE plpgsql AS $$ BEGIN
+      INSERT INTO rpc_invocation_count VALUES(99);
+      RETURN QUERY SELECT generate_series(1, n);
+    END $$;
+    GRANT EXECUTE ON FUNCTION rpc_singular_rows(integer), rpc_singular_write(integer)
+      TO anon, authenticated, service_role;
     CREATE OR REPLACE FUNCTION rpc_empty() RETURNS SETOF rpc_rls_test
     LANGUAGE sql STABLE AS $$ SELECT * FROM rpc_rls_test WHERE false $$;
     GRANT EXECUTE ON FUNCTION rpc_empty() TO anon, authenticated, service_role;
@@ -432,4 +441,80 @@ describe('RPC return contracts (#54)', () => {
       }
     },
   )
+})
+
+// PostgREST SingularSpec: cardinality errors must roll back function writes.
+describe('RPC singular media negotiation (#54)', () => {
+  const official = () =>
+    createSupabaseClient(baseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+
+  it('preserves existing two-argument database RPC calls in the request role', async () => {
+    const result = await db.withRequestContext({ role: 'anon' }, async (requestDb) => ({
+      rows: await requestDb.rpc('rpc_one_column', {}),
+      scalar: await requestDb.rpc('rpc_scalar_uuid', {}),
+    }))
+    expect(result).toEqual({
+      rows: [{ value: 7 }],
+      scalar: '00000000-0000-4000-8000-000000000001',
+    })
+  })
+
+  it.each([0, 1, 2])('single and maybeSingle respect %i SQL rows', async (n) => {
+    const single = await official().rpc('rpc_singular_rows', { n }).single()
+    const maybe = await official().rpc('rpc_singular_rows', { n }).maybeSingle()
+    if (n === 1) {
+      expect(single.error).toBeNull()
+      expect(single.data).toEqual({ value: 1 })
+      expect(maybe.error).toBeNull()
+      expect(maybe.data).toEqual({ value: 1 })
+    } else {
+      expect(single.status).toBe(406)
+      expect(single.error?.code).toBe('PGRST116')
+      expect(single.error?.details).toBe(`The result contains ${n} rows`)
+      expect(single.data).toBeNull()
+      expect(maybe.data).toBeNull()
+      expect(maybe.error?.code ?? null).toBe(n === 0 ? null : 'PGRST116')
+    }
+  })
+
+  it('commits one invocation when a write returns one SQL row', async () => {
+    const before = await db
+      .getPool()
+      .query('SELECT count(*)::int AS count FROM rpc_invocation_count')
+    const result = await official().rpc('rpc_singular_write', { n: 1 }).single()
+    expect(result.error).toBeNull()
+    expect(result.data).toEqual({ value: 1 })
+    const after = await db
+      .getPool()
+      .query('SELECT count(*)::int AS count FROM rpc_invocation_count')
+    expect(after.rows[0].count).toBe(before.rows[0].count + 1)
+  })
+
+  it.each([0, 2])('rolls back writes when %i rows cannot be singular', async (n) => {
+    const before = await db
+      .getPool()
+      .query('SELECT count(*)::int AS count FROM rpc_invocation_count')
+    const result = await official().rpc('rpc_singular_write', { n }).single()
+    expect(result.error?.code).toBe('PGRST116')
+    const after = await db
+      .getPool()
+      .query('SELECT count(*)::int AS count FROM rpc_invocation_count')
+    expect(after.rows).toEqual(before.rows)
+  })
+
+  it.each([
+    ['rpc_json_array', [{ value: 7 }]],
+    ['rpc_scalar_json', { items: [1], flag: false }],
+    ['rpc_scalar_null', null],
+    ['rpc_composite', { x: 1, y: 2 }],
+    ['rpc_one_scalar_set', 7],
+  ])('singular keeps the declared payload of %s', async (fn, expected) => {
+    const response = await official()
+      .rpc(fn as string)
+      .single()
+    expect(response.error).toBeNull()
+    expect(response.data).toEqual(expected)
+  })
 })
