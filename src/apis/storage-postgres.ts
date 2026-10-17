@@ -275,11 +275,16 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     bucket: string,
     prefix = '',
   ): Promise<FileObject[]> {
+    // Supabase returns names relative to the requested directory. Treat SQL
+    // wildcard characters in directory names literally and exclude siblings.
+    const directory = prefix && !prefix.endsWith('/') ? `${prefix}/` : prefix
     return this.scoped(context, async (db) => {
       const result = await sql<ObjectRow>`
-        SELECT id, name, created_at, updated_at, last_accessed_at, metadata
+        SELECT id, substring(name FROM length(${directory}::text) + 1) AS name,
+          created_at, updated_at, last_accessed_at, metadata
         FROM storage.objects
-        WHERE bucket_id = ${bucket} AND name LIKE ${`${prefix}%`}
+        WHERE bucket_id = ${bucket}
+          AND left(name, length(${directory}::text)) = ${directory}
         ORDER BY name
       `.execute(db.getWriter())
       return result.rows.map(toFileObject)
