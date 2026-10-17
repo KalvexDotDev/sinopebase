@@ -51,20 +51,15 @@ export interface SinopebaseClient {
 
   /**
    * Execute a PostgreSQL function — supabase-js `rpc()` contract.
-   * Rows by default, a single value with `{ get: true }`, status only with
+   * The generic is the returned payload (scalar or row array), status only with
    * `{ head: true }`. Sends the signed-in session token when available so
    * RLS resolves the user's role.
    */
-  rpc<T = Record<string, JsonValue>>(
+  rpc<T = unknown>(
     fn: string,
     args?: Record<string, JsonValue>,
-    options?: RpcOptions & { get?: false },
-  ): Promise<PostgrestResponse<T[]>>
-  rpc<T = Record<string, JsonValue>>(
-    fn: string,
-    args: Record<string, JsonValue> | undefined,
-    options: RpcOptions & { get: true },
-  ): Promise<PostgrestSingleResponse<T>>
+    options?: RpcOptions,
+  ): Promise<PostgrestResponse<T>>
 
   /** Auth client (Supabase GoTrue-compatible) */
   auth: AuthClient
@@ -143,21 +138,11 @@ class SinopebaseClientImpl implements SinopebaseClient {
     )
   }
 
-  rpc<T = Record<string, JsonValue>>(
-    fn: string,
-    args?: Record<string, JsonValue>,
-    options?: RpcOptions & { get?: false },
-  ): Promise<PostgrestResponse<T[]>>
-  rpc<T = Record<string, JsonValue>>(
-    fn: string,
-    args: Record<string, JsonValue> | undefined,
-    options: RpcOptions & { get: true },
-  ): Promise<PostgrestSingleResponse<T>>
-  rpc<T = Record<string, JsonValue>>(
+  rpc<T = unknown>(
     fn: string,
     args?: Record<string, JsonValue>,
     options?: RpcOptions,
-  ): Promise<PostgrestResponse<T[]> | PostgrestSingleResponse<T>> {
+  ): Promise<PostgrestResponse<T>> {
     return postgrestRpc(
       this.supabaseUrl,
       this.supabaseKey,

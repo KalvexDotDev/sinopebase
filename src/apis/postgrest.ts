@@ -15,7 +15,12 @@
 import type { Elysia } from 'elysia'
 import type { ForeignKeyRelationship, IDatabase, OrderBy } from '../core/db-interface'
 import type { ParsedFilter } from '../core/db-memory'
-import { PostgresDatabase, type PostgresRequestContext, RPC_IDENTIFIER } from '../core/db-postgres'
+import {
+  PostgresDatabase,
+  type PostgresRequestContext,
+  RPC_IDENTIFIER,
+  RpcAmbiguityError,
+} from '../core/db-postgres'
 import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
 import { BadRequestError, InternalServerError } from './api_error_aliases'
 import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
@@ -407,8 +412,12 @@ export function mountPostgrestRoutes(
       const rows = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
         (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input),
       )
-      return rows
+      return Response.json(rows)
     } catch (err) {
+      if (err instanceof RpcAmbiguityError) {
+        set.status = 300
+        return { code: 'PGRST203', message: err.message, details: null, hint: null }
+      }
       const message = (err as Error).message
       // PostgreSQL function-not-found
       if (message.includes('function') && message.includes('does not exist')) {

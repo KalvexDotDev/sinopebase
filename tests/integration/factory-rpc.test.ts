@@ -99,7 +99,7 @@ async function queueFirst(overrides: Partial<MessageRow> = {}): Promise<MessageR
     p_internal: false,
     p_parent: null,
   })
-  const res = await serviceClient.rpc<MessageRow>('factory_queue_message', {
+  const res = await serviceClient.rpc<MessageRow[]>('factory_queue_message', {
     p_agent: agent,
     p_kind: 'firstTouch',
     p_contact: contact,
@@ -140,7 +140,7 @@ describe('factory rpc', () => {
 
   it('approve: schedules, bumps trust, counts unchanged approvals', async () => {
     const msg = await queueFirst({ contact: 'bob@example.com' })
-    const res = await serviceClient.rpc<MessageRow>('factory_approve_message', {
+    const res = await serviceClient.rpc<MessageRow[]>('factory_approve_message', {
       p_id: msg.id,
       p_copy: msg.copy,
       p_scheduled_at: 1000,
@@ -163,7 +163,7 @@ describe('factory rpc', () => {
 
   it('approve with edit penalty: correction metric recorded, trust clamps at 0', async () => {
     const msg = await queueFirst({ contact: 'carol@example.com' })
-    const res = await serviceClient.rpc<MessageRow>('factory_approve_message', {
+    const res = await serviceClient.rpc<MessageRow[]>('factory_approve_message', {
       p_id: msg.id,
       p_copy: 'edited copy that is different',
       p_scheduled_at: 2000,
@@ -191,7 +191,7 @@ describe('factory rpc', () => {
       p_parent: 'strategist',
     })
     const msg = await queueFirst({ agent: 'outreach-child', contact: 'dave@example.com' })
-    const res = await serviceClient.rpc<MessageRow>('factory_reject_message', {
+    const res = await serviceClient.rpc<MessageRow[]>('factory_reject_message', {
       p_id: msg.id,
       p_reason: 'bad idea',
       p_ts: 3000,
@@ -233,7 +233,7 @@ describe('factory rpc', () => {
       p_delta: 1,
       p_ts: 4000,
     })
-    const send = await serviceClient.rpc<MessageRow>('factory_send_message', {
+    const send = await serviceClient.rpc<MessageRow[]>('factory_send_message', {
       p_id: msg.id,
       p_ts: 5000,
     })
@@ -275,7 +275,7 @@ describe('factory rpc', () => {
     })
     expect(resume.error).toBeNull()
 
-    const after = await serviceClient.rpc<MessageRow>('factory_send_message', {
+    const after = await serviceClient.rpc<MessageRow[]>('factory_send_message', {
       p_id: msg.id,
       p_ts: 10000,
     })
@@ -299,7 +299,7 @@ describe('factory rpc', () => {
       p_delta: 1,
       p_ts: 11000,
     })
-    const res = await serviceClient.rpc<MessageRow>('factory_dryrun_send', {
+    const res = await serviceClient.rpc<MessageRow[]>('factory_dryrun_send', {
       p_id: msg.id,
       p_ts: 12000,
     })
@@ -348,7 +348,7 @@ describe('factory rpc', () => {
     expect(mission.error).toBeNull()
     const missionId = Number((mission.data as { id: number }).id)
 
-    const res = await serviceClient.rpc<MessageRow>('factory_plan_mission', {
+    const res = await serviceClient.rpc<MessageRow[]>('factory_plan_mission', {
       p_mission_id: missionId,
       p_agent: 'outreach',
       p_kind: 'firstTouch',
