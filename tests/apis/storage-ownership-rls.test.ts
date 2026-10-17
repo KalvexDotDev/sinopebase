@@ -1,5 +1,7 @@
 /**
  * Storage Ownership RLS Tests
+ * @new-code-test positive src/apis/storage-postgres.ts
+ * @new-code-test negative src/apis/storage-postgres.ts
  *
  * Verifies that the per-object ownership RLS policies correctly enforce
  * owner-scoped access to storage.objects. Authenticated users can only
@@ -186,6 +188,38 @@ describePostgres('Storage ownership RLS', () => {
   // ────────────────────────────────────────────────────────────────────────────
 
   describe('private bucket', () => {
+    it('lists folder-relative names without exposing sibling or other-owner objects (#52)', async () => {
+      const clientA = createClient(baseUrl, userAToken)
+      const clientB = createClient(baseUrl, userBToken)
+      const folder = `list-${crypto.randomUUID()}_%`
+      const paths = [
+        `${folder}/1.md`,
+        `${folder}-sibling/2.md`,
+        `${folder.replace('_%', 'xy')}/3.md`,
+      ]
+      try {
+        for (const path of paths) {
+          const { error } = await clientA.storage
+            .from(privateBucket)
+            .upload(path, new Blob(['synthetic']))
+          expect(error).toBeNull()
+        }
+        for (const prefix of [folder, `${folder}/`]) {
+          const { data, error } = await clientA.storage.from(privateBucket).list(prefix)
+          expect(error).toBeNull()
+          expect(data?.map((object) => object.name)).toEqual(['1.md'])
+          expect(data?.[0]?.id).toBeString()
+          expect(data?.[0]?.metadata).not.toBeNull()
+        }
+        const { data, error } = await clientB.storage.from(privateBucket).list(folder)
+        expect(error).toBeNull()
+        expect(data).toEqual([])
+      } finally {
+        const { error } = await clientA.storage.from(privateBucket).remove(paths)
+        expect(error).toBeNull()
+      }
+    })
+
     it('User A can manage their own objects', async () => {
       const clientA = createClient(baseUrl, userAToken)
       const path = `self-manage-${Date.now()}.txt`
