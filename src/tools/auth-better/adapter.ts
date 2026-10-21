@@ -6,7 +6,7 @@
  * application.
  */
 
-import { Kysely, PostgresDialect, sql } from 'kysely'
+import { type Generated, Kysely, PostgresDialect, sql } from 'kysely'
 import type pg from 'pg'
 
 // ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ export interface BetterAuthDatabase {
     email: string
     emailVerified: boolean
     emailVerifiedAt: Date | null
+    userMetadata: Generated<Record<string, unknown>>
     name: string | null
     image: string | null
     role: string
@@ -142,6 +143,10 @@ export async function createAuthTables(db: Kysely<BetterAuthDatabase>): Promise<
       "updatedAt"  timestamptz  NOT NULL DEFAULT now()
     );
   `.execute(db)
+  // User-editable metadata stays separate from native authorization/verification fields.
+  await sql`ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "userMetadata" jsonb NOT NULL DEFAULT '{}'::jsonb`.execute(
+    db,
+  )
   // No backfill: an existing verified boolean does not reveal when verification occurred.
   await sql`
     ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "emailVerifiedAt" timestamptz;

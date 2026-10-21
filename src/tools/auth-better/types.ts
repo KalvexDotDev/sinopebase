@@ -9,6 +9,7 @@ export interface BetterAuthUser {
   email: string
   emailVerified: boolean
   emailVerifiedAt?: Date | string | null
+  userMetadata?: Record<string, unknown>
   name: string | null
   image: string | null
   role: string
@@ -27,7 +28,7 @@ export const ACCESS_TOKEN_EXPIRES_IN = 3600
  */
 export function toSinopebaseUser(
   u: Pick<BetterAuthUser, 'id' | 'email' | 'role' | 'createdAt' | 'updatedAt'> &
-    Partial<Pick<BetterAuthUser, 'emailVerified' | 'emailVerifiedAt'>>,
+    Partial<Pick<BetterAuthUser, 'emailVerified' | 'emailVerifiedAt' | 'userMetadata'>>,
 ): User {
   return {
     id: u.id,
@@ -38,7 +39,7 @@ export function toSinopebaseUser(
     role: u.role,
     aud: 'authenticated',
     app_metadata: {},
-    user_metadata: {},
+    user_metadata: u.userMetadata ?? {},
     created_at: u.createdAt.toISOString(),
     updated_at: u.updatedAt.toISOString(),
   }
