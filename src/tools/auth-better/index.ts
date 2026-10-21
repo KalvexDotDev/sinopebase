@@ -159,6 +159,7 @@ function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typ
     user: {
       additionalFields: {
         emailVerifiedAt: { type: 'date', required: false, input: false },
+        userMetadata: { type: 'json', required: false, input: false },
       },
     },
     advanced: { database: { generateId: () => crypto.randomUUID() } },
@@ -359,6 +360,7 @@ export interface SessionLookup {
   email: string
   emailVerified: boolean
   emailVerifiedAt: Date | null
+  userMetadata: Record<string, unknown>
   name: string | null
   image: string | null
   role: string
@@ -398,6 +400,7 @@ export async function lookupSessionByToken(
         'user.email',
         'user.emailVerified',
         'user.emailVerifiedAt',
+        'user.userMetadata',
         'user.name',
         'user.image',
         'user.role',
