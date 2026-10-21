@@ -6,6 +6,8 @@
 
 // Backend — exported for programmatic use (when used as a library)
 export { Sinopebase } from './core/app'
+export type { PosthogOptions } from './plugins/posthog/plugin'
+export { PosthogPlugin, posthogOptionsFromEnv } from './plugins/posthog/plugin'
 export type {
   AuthChangeEvent,
   AuthClient,
