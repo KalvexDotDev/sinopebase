@@ -12,6 +12,7 @@ export interface BetterAuthSignInResult {
     id: string
     email: string
     emailVerified?: boolean
+    emailVerifiedAt?: Date | string | null
     name?: string | null
     image?: string | null
     role?: string
@@ -26,6 +27,7 @@ export interface BetterAuthGetSessionResult {
     id: string
     email: string
     emailVerified: boolean
+    emailVerifiedAt?: Date | string | null
     name: string | null
     image: string | null
     role: string
@@ -46,10 +48,12 @@ export function bridgeSignInResponse(
   result: BetterAuthSignInResult,
   refreshToken: string,
 ): Session {
-  const { id, email, role, createdAt, updatedAt } = result.user
+  const { id, email, role, createdAt, updatedAt, emailVerified, emailVerifiedAt } = result.user
   const user = toSinopebaseUser({
     id,
     email,
+    emailVerified,
+    emailVerifiedAt,
     role: role ?? 'authenticated',
     createdAt: toDate(createdAt),
     updatedAt: toDate(updatedAt),

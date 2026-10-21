@@ -8,6 +8,7 @@ export interface BetterAuthUser {
   id: string
   email: string
   emailVerified: boolean
+  emailVerifiedAt?: Date | string | null
   name: string | null
   image: string | null
   role: string
@@ -25,11 +26,15 @@ export const ACCESS_TOKEN_EXPIRES_IN = 3600
  * Map a better-auth `User` to the Sinopebase (supabase-js) `User` shape.
  */
 export function toSinopebaseUser(
-  u: Pick<BetterAuthUser, 'id' | 'email' | 'role' | 'createdAt' | 'updatedAt'>,
+  u: Pick<BetterAuthUser, 'id' | 'email' | 'role' | 'createdAt' | 'updatedAt'> &
+    Partial<Pick<BetterAuthUser, 'emailVerified' | 'emailVerifiedAt'>>,
 ): User {
   return {
     id: u.id,
     email: u.email,
+    ...(u.emailVerified && u.emailVerifiedAt
+      ? { email_confirmed_at: new Date(u.emailVerifiedAt).toISOString() }
+      : {}),
     role: u.role,
     aud: 'authenticated',
     app_metadata: {},

@@ -77,6 +77,29 @@ describe('better-auth Supabase bridge', () => {
     expect(response).not.toHaveProperty('error')
   })
 
+  it.each([undefined, null])(
+    'does not invent a confirmation time for historical verified users (%s)',
+    (emailVerifiedAt) => {
+      const user = { ...betterAuthUser, emailVerifiedAt }
+      expect(bridgeGetUserResponse({ user, session: {} })).not.toHaveProperty('email_confirmed_at')
+      expect(
+        bridgeSignInResponse({ token: 'synthetic-session', user }, 'synthetic-refresh').user,
+      ).not.toHaveProperty('email_confirmed_at')
+    },
+  )
+
+  it('does not expose a recorded time when the native verification flag is false', () => {
+    const user = {
+      ...betterAuthUser,
+      emailVerified: false,
+      emailVerifiedAt: new Date('2026-01-03T00:00:00.000Z'),
+    }
+    expect(bridgeGetUserResponse({ user, session: {} })).not.toHaveProperty('email_confirmed_at')
+    expect(
+      bridgeSignInResponse({ token: 'synthetic-session', user }, 'synthetic-refresh').user,
+    ).not.toHaveProperty('email_confirmed_at')
+  })
+
   it('returns a root-level error when there is no session', () => {
     expect(bridgeGetUserResponse(null)).toEqual({ message: 'Invalid token', status: 401 })
   })

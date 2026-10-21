@@ -8,7 +8,7 @@
  */
 
 import { Elysia } from 'elysia'
-import type { Kysely } from 'kysely'
+import { type Kysely, sql } from 'kysely'
 import { z } from 'zod'
 import { lookupSessionByToken, type SessionLookup } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
@@ -782,7 +782,13 @@ export function createAuthPlugin(
             if (typedDb?.updateTable) {
               const updateData: Record<string, unknown> = { updatedAt: new Date() }
               if (data) updateData.user_metadata = data
-              if (email) updateData.email = email
+              if (email) {
+                updateData.email = email.toLowerCase()
+                // Compare against the locked current row, not the earlier session lookup.
+                updateData.emailVerified = sql<boolean>`CASE
+                  WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified"
+                  ELSE false END`
+              }
               await typedDb.updateTable('user').set(updateData).where('id', '=', row.id).execute()
             }
             // Return updated user

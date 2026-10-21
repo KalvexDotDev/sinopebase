@@ -156,6 +156,11 @@ function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typ
     database: pool,
     logger: maintenanceLogger(options?.disableLogsForMaintenance),
     basePath: '/api/auth',
+    user: {
+      additionalFields: {
+        emailVerifiedAt: { type: 'date', required: false, input: false },
+      },
+    },
     advanced: { database: { generateId: () => crypto.randomUUID() } },
     ...mailerOptions(options?.sendEmail),
     secret: options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK,
@@ -353,6 +358,7 @@ export interface SessionLookup {
   id: string
   email: string
   emailVerified: boolean
+  emailVerifiedAt: Date | null
   name: string | null
   image: string | null
   role: string
@@ -391,6 +397,7 @@ export async function lookupSessionByToken(
         'user.id',
         'user.email',
         'user.emailVerified',
+        'user.emailVerifiedAt',
         'user.name',
         'user.image',
         'user.role',
