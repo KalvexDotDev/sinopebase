@@ -27,7 +27,7 @@ import YAML from 'yaml'
 import { Sinopebase } from '~/core/app'
 import { Cron } from '~/tools/cron/cron'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
-import { requirePostgres, reserveLoopbackPort } from '../harness'
+import { requirePostgres } from '../harness'
 
 const SERVICE_ROLE_KEY = 'ops-maintenance-srvc-key-32-chars!!!!!'
 const ANON_KEY = 'ops-maintenance-anon-key-32-chars!!!!!!'
@@ -59,18 +59,26 @@ async function pollUntil(
 
 /** Boot a full Sinopebase server on a free loopback port against PostgreSQL. */
 async function bootApp(dataDir?: string): Promise<{ app: Sinopebase; origin: string }> {
-  const reservation = await reserveLoopbackPort()
   const app = new Sinopebase({
-    port: reservation.port,
+    port: 0,
+    host: '127.0.0.1',
     postgresUrl: requirePostgres(),
     jwtSecret: JWT_SECRET,
     serviceRoleKey: SERVICE_ROLE_KEY,
     anonKey: ANON_KEY,
     dataDir,
   })
-  await reservation.release()
+  let readBoundPort: () => number | undefined = () => undefined
+  app.use(async (server) => {
+    readBoundPort = () => server.server?.port
+  })
   await app.start()
-  return { app, origin: reservation.origin }
+  const port = readBoundPort()
+  if (!port) {
+    await app.stop()
+    throw new Error('Owned test server did not expose its bound port')
+  }
+  return { app, origin: `http://127.0.0.1:${port}` }
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@
  * v2: Refresh token rotation with family-based replay detection.
  */
 
-import { type Context, Elysia } from 'elysia'
+import { Elysia } from 'elysia'
 import { type Kysely, sql } from 'kysely'
 import { z } from 'zod'
 import { lookupSessionByToken, type SessionLookup } from '~/tools/auth-better'
@@ -526,88 +526,6 @@ export function createAuthPlugin(
   oauthProviderIds?: string[],
   serviceKey?: string,
 ) {
-  const updateUser = async ({ headers, body, set }: Pick<Context, 'headers' | 'body' | 'set'>) => {
-    const authHeader = headers.authorization
-    if (!authHeader?.startsWith('Bearer ')) {
-      set.status = 401
-      return { message: 'Invalid authorization header' }
-    }
-    const token = authHeader.slice(7).trim()
-    if (!token) {
-      set.status = 401
-      return { message: 'Invalid authorization header' }
-    }
-    try {
-      const row = await lookupSessionByToken(auth, token)
-      if (!row) {
-        set.status = 401
-        return { message: 'Invalid token' }
-      }
-      const { email, password, data, currentPassword } = body as {
-        email?: string
-        password?: string
-        data?: Record<string, unknown>
-        currentPassword?: string
-      }
-      // Require current password verification before changing password
-      // (better-auth freshness: prevents stolen session token from silently changing password)
-      if (password && !currentPassword) {
-        set.status = 400
-        return { message: 'currentPassword is required to change password' }
-      }
-      const typedDb = (auth as Record<string, unknown>).__db as RefreshTokenDb | undefined
-      try {
-        if (password && currentPassword) {
-          // Verify current password before allowing change
-          const userRows = await typedDb
-            ?.selectFrom('user')
-            .select(['password'])
-            .where('id', '=', row.id)
-            .execute()
-          const storedHash = (userRows?.[0] as Record<string, unknown> | undefined)?.password as
-            | string
-            | undefined
-          if (!storedHash || !(await Bun.password.verify(currentPassword, storedHash))) {
-            set.status = 400
-            return { message: 'Current password is incorrect' }
-          }
-          const hashedPassword = await Bun.password.hash(password)
-          if (typedDb?.updateTable) {
-            await typedDb
-              .updateTable('user')
-              .set({ password: hashedPassword, updatedAt: new Date() } as Record<string, unknown>)
-              .where('id', '=', row.id)
-              .execute()
-          }
-        }
-        if (typedDb?.updateTable) {
-          const updateData: Record<string, unknown> = { updatedAt: new Date() }
-          if (data) updateData.user_metadata = data
-          if (email) {
-            updateData.email = email.toLowerCase()
-            // Evaluate against the locked current row, not the earlier session lookup.
-            updateData.emailVerified = sql<boolean>`CASE
-            WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified"
-            ELSE false END`
-          }
-          await typedDb.updateTable('user').set(updateData).where('id', '=', row.id).execute()
-        }
-        // Return updated user
-        const updated = await lookupSessionByToken(auth, token)
-        if (updated) {
-          return bridgeGetUserResponse({ user: updated, session: {} })
-        }
-        return bridgeGetUserResponse({ user: row, session: {} })
-      } catch {
-        // Fallback: return current user even if update partially failed
-        return bridgeGetUserResponse({ user: row, session: {} })
-      }
-    } catch {
-      set.status = 401
-      return { message: 'Invalid authorization header' }
-    }
-  }
-
   // Map known provider IDs to display labels and colors.
   // Source of truth: BUILTIN_SOCIAL from auth-better.
   const PROVIDER_LABELS: Record<string, { label: string; color: string }> = {
@@ -804,8 +722,90 @@ export function createAuthPlugin(
         }
         return new Response(null, { status: 204 })
       })
-      .patch('/auth/v1/user', updateUser)
-      .put('/auth/v1/user', updateUser)
+      .patch('/auth/v1/user', async ({ headers, body, set }) => {
+        const authHeader = headers.authorization
+        if (!authHeader?.startsWith('Bearer ')) {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+        const token = authHeader.slice(7).trim()
+        if (!token) {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+        try {
+          const row = await lookupSessionByToken(auth, token)
+          if (!row) {
+            set.status = 401
+            return { message: 'Invalid token' }
+          }
+          const { email, password, data, currentPassword } = body as {
+            email?: string
+            password?: string
+            data?: Record<string, unknown>
+            currentPassword?: string
+          }
+          // Require current password verification before changing password
+          // (better-auth freshness: prevents stolen session token from silently changing password)
+          if (password && !currentPassword) {
+            set.status = 400
+            return { message: 'currentPassword is required to change password' }
+          }
+          const typedDb = (auth as Record<string, unknown>).__db as RefreshTokenDb | undefined
+          try {
+            if (password && currentPassword) {
+              // Verify current password before allowing change
+              const userRows = await typedDb
+                ?.selectFrom('user')
+                .select(['password'])
+                .where('id', '=', row.id)
+                .execute()
+              const storedHash = (userRows?.[0] as Record<string, unknown> | undefined)?.password as
+                | string
+                | undefined
+              if (!storedHash || !(await Bun.password.verify(currentPassword, storedHash))) {
+                set.status = 400
+                return { message: 'Current password is incorrect' }
+              }
+              const hashedPassword = await Bun.password.hash(password)
+              if (typedDb?.updateTable) {
+                await typedDb
+                  .updateTable('user')
+                  .set({ password: hashedPassword, updatedAt: new Date() } as Record<
+                    string,
+                    unknown
+                  >)
+                  .where('id', '=', row.id)
+                  .execute()
+              }
+            }
+            if (typedDb?.updateTable) {
+              const updateData: Record<string, unknown> = { updatedAt: new Date() }
+              if (data) updateData.user_metadata = data
+              if (email) {
+                updateData.email = email.toLowerCase()
+                // Compare against the locked current row, not the earlier session lookup.
+                updateData.emailVerified = sql<boolean>`CASE
+                  WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified"
+                  ELSE false END`
+              }
+              await typedDb.updateTable('user').set(updateData).where('id', '=', row.id).execute()
+            }
+            // Return updated user
+            const updated = await lookupSessionByToken(auth, token)
+            if (updated) {
+              return bridgeGetUserResponse({ user: updated, session: {} })
+            }
+            return bridgeGetUserResponse({ user: row, session: {} })
+          } catch {
+            // Fallback: return current user even if update partially failed
+            return bridgeGetUserResponse({ user: row, session: {} })
+          }
+        } catch {
+          set.status = 401
+          return { message: 'Invalid authorization header' }
+        }
+      })
       .post('/auth/v1/reset-password', async ({ body }) => {
         const { email } = body as { email?: string }
         if (!email) {
