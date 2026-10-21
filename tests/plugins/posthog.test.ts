@@ -9,8 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
-import { Sinopebase } from '../../src/index'
-import { PosthogPlugin, posthogOptionsFromEnv } from '../../src/plugins/posthog/plugin'
+import { Sinopebase } from '~/index'
+import { PosthogPlugin, posthogOptionsFromEnv } from '~/plugins/posthog/plugin'
 import { reserveLoopbackPort } from '../harness'
 
 const options = { host: 'https://analytics.internal', token: 'synthetic-token' }
