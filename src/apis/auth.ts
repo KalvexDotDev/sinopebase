@@ -8,9 +8,9 @@
  */
 
 import { Elysia } from 'elysia'
-import { type Kysely, sql } from 'kysely'
+import { type Kysely, sql, type Transaction } from 'kysely'
 import { z } from 'zod'
-import { lookupSessionByToken, type SessionLookup } from '~/tools/auth-better'
+import { lookupSessionByToken, type SessionLookup, type SinopebaseAuth } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 import {
   exchangeRefreshToken,
@@ -33,7 +33,7 @@ import {
   verifyAccessToken,
   verifyRefreshToken,
 } from './auth-jwt'
-import { authStore, type RefreshTokenDb } from './auth-store'
+import { authStore } from './auth-store'
 import { generateFamilyId, generateSessionId, generateTokenId } from './auth-utils'
 
 // ---------------------------------------------------------------------------
@@ -399,6 +399,7 @@ export { errorResponse, sessionResponse, userResponse }
  * Only the surface that this module actually calls is typed.
  */
 interface BetterAuthInstance {
+  $context?: Promise<Pick<Awaited<SinopebaseAuth['$context']>, 'password'>>
   api: {
     signUpEmail(args: { body: { email: string; password: string; name: string } }): Promise<void>
     signInEmail(args: {
@@ -453,6 +454,157 @@ function getSessionToken(result: BetterAuthGetSessionResult | null): string | nu
 /** The better-auth Kysely handle attached by `createAuth`. */
 function authDb(auth: BetterAuthInstance): Kysely<BetterAuthDatabase> {
   return auth.__db as unknown as Kysely<BetterAuthDatabase>
+}
+
+const nativeUserUpdate = z
+  .object({
+    email: z.string().email().optional(),
+    password: z.string().min(1).optional(),
+    current_password: z.string().min(1).optional(),
+    currentPassword: z.string().min(1).optional(),
+    data: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine(
+    (value) =>
+      !value.current_password ||
+      !value.currentPassword ||
+      value.current_password === value.currentPassword,
+  )
+
+class UserUpdateRefused extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+function parseNativeUpdate(body: unknown) {
+  const parsed = nativeUserUpdate.safeParse(body)
+  if (!parsed.success) throw new UserUpdateRefused(400, 'Invalid user update')
+  const currentPassword = parsed.data.current_password ?? parsed.data.currentPassword
+  if (parsed.data.password && !currentPassword)
+    throw new UserUpdateRefused(400, 'current_password is required to change password')
+  return { ...parsed.data, currentPassword }
+}
+
+async function nativePasswordProvider(auth: BetterAuthInstance, password: string) {
+  const native = await auth.$context
+  if (!native) throw new Error('Native password provider unavailable')
+  const policy = native.password.config
+  if (password.length < policy.minPasswordLength || password.length > policy.maxPasswordLength)
+    throw new UserUpdateRefused(400, 'Password does not meet the configured policy')
+  return native.password
+}
+
+async function updateNativeCredential(
+  auth: BetterAuthInstance,
+  transaction: Transaction<BetterAuthDatabase>,
+  userId: string,
+  password: string,
+  currentPassword: string,
+) {
+  const provider = await nativePasswordProvider(auth, password)
+  const credential = await transaction
+    .selectFrom('account')
+    .select(['id', 'password'])
+    .where('userId', '=', userId)
+    .where('providerId', '=', 'credential')
+    .forUpdate()
+    .executeTakeFirst()
+  if (
+    !credential?.password ||
+    !(await provider.verify({ password: currentPassword, hash: credential.password }))
+  )
+    throw new UserUpdateRefused(400, 'Current password is incorrect')
+  await transaction
+    .updateTable('account')
+    .set({ password: await provider.hash(password), updatedAt: new Date() })
+    .where('id', '=', credential.id)
+    .executeTakeFirstOrThrow()
+}
+
+function nativeProfileUpdate(
+  metadata: Record<string, unknown>,
+  { data, email }: Pick<ReturnType<typeof parseNativeUpdate>, 'data' | 'email'>,
+) {
+  const update: Record<string, unknown> = { updatedAt: new Date() }
+  if (data) {
+    // Supabase merges top-level keys and removes keys explicitly set to null.
+    // The caller holds the user lock, preserving concurrent disjoint updates.
+    update.userMetadata = Object.fromEntries(
+      Object.entries({ ...metadata, ...data }).filter(([, value]) => value !== null),
+    )
+  }
+  if (email) {
+    update.email = email.toLowerCase()
+    update.emailVerified = sql<boolean>`CASE WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified" ELSE false END`
+  }
+  return update
+}
+
+/** Preserve native password policy; commit credential/profile changes together. */
+async function updateNativeUser(
+  auth: BetterAuthInstance,
+  context: {
+    headers: Record<string, string | undefined>
+    body: unknown
+    set: { status?: number | string }
+  },
+) {
+  const { headers, body, set } = context
+  const token = headers.authorization?.startsWith('Bearer ')
+    ? headers.authorization.slice(7).trim()
+    : ''
+  if (!token) {
+    set.status = 401
+    return { message: 'Invalid authorization header' }
+  }
+  try {
+    const update = parseNativeUpdate(body)
+    const row = await authDb(auth)
+      .transaction()
+      .execute(async (transaction) => {
+        // Revalidate and lock the actual native session before any write.
+        const session = await transaction
+          .selectFrom('session')
+          .select('userId')
+          .where('token', '=', token)
+          .where('expiresAt', '>', new Date())
+          .forUpdate()
+          .executeTakeFirst()
+        if (!session) throw new UserUpdateRefused(401, 'Invalid token')
+        const user = await transaction
+          .selectFrom('user')
+          .selectAll()
+          .where('id', '=', session.userId)
+          .forUpdate()
+          .executeTakeFirst()
+        if (!user) throw new UserUpdateRefused(401, 'Invalid token')
+        if (update.password && update.currentPassword)
+          await updateNativeCredential(
+            auth,
+            transaction,
+            user.id,
+            update.password,
+            update.currentPassword,
+          )
+        return transaction
+          .updateTable('user')
+          .set(nativeProfileUpdate(user.userMetadata, update))
+          .where('id', '=', user.id)
+          .returningAll()
+          .executeTakeFirstOrThrow()
+      })
+    return bridgeGetUserResponse({ user: row, session: {} })
+  } catch (error) {
+    if (error instanceof UserUpdateRefused) {
+      set.status = error.status
+      return { message: error.message }
+    }
+    set.status = 500
+    return { message: 'User update failed' }
+  }
 }
 
 const refreshGrantBody = z.object({ refresh_token: z.string().min(1) })
@@ -722,90 +874,8 @@ export function createAuthPlugin(
         }
         return new Response(null, { status: 204 })
       })
-      .patch('/auth/v1/user', async ({ headers, body, set }) => {
-        const authHeader = headers.authorization
-        if (!authHeader?.startsWith('Bearer ')) {
-          set.status = 401
-          return { message: 'Invalid authorization header' }
-        }
-        const token = authHeader.slice(7).trim()
-        if (!token) {
-          set.status = 401
-          return { message: 'Invalid authorization header' }
-        }
-        try {
-          const row = await lookupSessionByToken(auth, token)
-          if (!row) {
-            set.status = 401
-            return { message: 'Invalid token' }
-          }
-          const { email, password, data, currentPassword } = body as {
-            email?: string
-            password?: string
-            data?: Record<string, unknown>
-            currentPassword?: string
-          }
-          // Require current password verification before changing password
-          // (better-auth freshness: prevents stolen session token from silently changing password)
-          if (password && !currentPassword) {
-            set.status = 400
-            return { message: 'currentPassword is required to change password' }
-          }
-          const typedDb = (auth as Record<string, unknown>).__db as RefreshTokenDb | undefined
-          try {
-            if (password && currentPassword) {
-              // Verify current password before allowing change
-              const userRows = await typedDb
-                ?.selectFrom('user')
-                .select(['password'])
-                .where('id', '=', row.id)
-                .execute()
-              const storedHash = (userRows?.[0] as Record<string, unknown> | undefined)?.password as
-                | string
-                | undefined
-              if (!storedHash || !(await Bun.password.verify(currentPassword, storedHash))) {
-                set.status = 400
-                return { message: 'Current password is incorrect' }
-              }
-              const hashedPassword = await Bun.password.hash(password)
-              if (typedDb?.updateTable) {
-                await typedDb
-                  .updateTable('user')
-                  .set({ password: hashedPassword, updatedAt: new Date() } as Record<
-                    string,
-                    unknown
-                  >)
-                  .where('id', '=', row.id)
-                  .execute()
-              }
-            }
-            if (typedDb?.updateTable) {
-              const updateData: Record<string, unknown> = { updatedAt: new Date() }
-              if (data) updateData.user_metadata = data
-              if (email) {
-                updateData.email = email.toLowerCase()
-                // Compare against the locked current row, not the earlier session lookup.
-                updateData.emailVerified = sql<boolean>`CASE
-                  WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified"
-                  ELSE false END`
-              }
-              await typedDb.updateTable('user').set(updateData).where('id', '=', row.id).execute()
-            }
-            // Return updated user
-            const updated = await lookupSessionByToken(auth, token)
-            if (updated) {
-              return bridgeGetUserResponse({ user: updated, session: {} })
-            }
-            return bridgeGetUserResponse({ user: row, session: {} })
-          } catch {
-            // Fallback: return current user even if update partially failed
-            return bridgeGetUserResponse({ user: row, session: {} })
-          }
-        } catch {
-          set.status = 401
-          return { message: 'Invalid authorization header' }
-        }
-      })
+      .put('/auth/v1/user', (context) => updateNativeUser(auth, context))
+      .patch('/auth/v1/user', (context) => updateNativeUser(auth, context))
       .post('/auth/v1/reset-password', async ({ body }) => {
         const { email } = body as { email?: string }
         if (!email) {
