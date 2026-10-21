@@ -536,6 +536,7 @@ import { mountPostgrestRoutes } from '../apis/postgrest'
 import { createRealtimeHub, createRealtimeWebSocketHandler } from '../apis/realtime'
 import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
 import { MetricsPlugin } from '../plugins/metrics/plugin'
+import { PosthogPlugin, posthogOptionsFromEnv } from '../plugins/posthog/plugin'
 import { createAuth, lookupAgentGrant, lookupSessionByToken } from '../tools/auth-better'
 import type { AgentGrantOptions } from '../tools/auth-better/agent-grants'
 import { LocalFileStore } from '../tools/filesystem/store'
@@ -1190,7 +1191,8 @@ export class Sinopebase {
     // discards hooks, decorators, and type information from prior calls.
     // Use const chains (not let reassignment) so TypeScript infers the full
     // Elysia type after each .use(), .error(), .get(), etc.
-    const server = new Elysia({ name: 'sinopebase' })
+    const server = new PosthogPlugin(posthogOptionsFromEnv(process.env))
+      .register(new Elysia({ name: 'sinopebase' }))
       // OpenAPI spec generation — provider: null means no Scalar/Swagger UI,
       // we serve the raw spec at /openapi/json for our native admin UI to consume.
       .use(
