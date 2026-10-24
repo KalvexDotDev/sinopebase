@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.10.1 — 2026-10-24
+
+### Security
+- Rebuilt on Bun 1.4.4. The compiled server, the staging bootstrap job and the release binaries embed the Bun runtime, so anything built with Bun 1.3.14 or earlier carries the brotli decoder out-of-bounds write (GHSA-663w-cv8g-jj2p, CVE-2026-111497) and a root store that still trusts the compromised eMudhra (emSign) intermediate CAs (GHSA-26q8-h657-pf84). Rebuild and redeploy images and binaries from this release.
+- Pinned the Dockerfile builder and runtime-library stages, the staging bootstrap image and every CI and release workflow to Bun 1.4.4. The copied `libstdc++` follows the new Alpine base (6.0.34).
+
 ## v0.10.0 — 2026-10-05
 
 ### Added

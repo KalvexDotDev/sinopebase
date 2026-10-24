@@ -132,7 +132,7 @@ docker run -p 8090:8090 \
   ghcr.io/kalvexdotdev/sinopebase:latest
 ```
 
-Pin to a specific version for production: `ghcr.io/kalvexdotdev/sinopebase:v0.10.0`
+Pin to a specific version for production: `ghcr.io/kalvexdotdev/sinopebase:v0.10.1`
 
 ### Bare Metal
 
