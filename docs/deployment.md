@@ -100,7 +100,7 @@ For production with auto-renewal, prefer Option A (reverse proxy) — it's the b
 ## Docker (Self-Contained)
 
 ```dockerfile
-FROM oven/bun:1.3
+FROM oven/bun:1.4.4
 
 WORKDIR /app
 COPY package.json bun.lock ./
@@ -137,7 +137,7 @@ docker compose -f docker-compose.prod.yml up -d
 `docker-compose.prod.yml` pulls `ghcr.io/kalvexdotdev/sinopebase:latest` and starts PostgreSQL, RustFS, and PgBouncer alongside it. For production, pin a specific version:
 
 ```bash
-SINOPEBASE_VERSION=v0.10.0 docker compose -f docker-compose.prod.yml up -d
+SINOPEBASE_VERSION=v0.10.1 docker compose -f docker-compose.prod.yml up -d
 ```
 
 The compose file uses `${VAR:?message}` syntax — Docker will refuse to start if required secrets are missing.
