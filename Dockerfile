@@ -43,7 +43,7 @@ FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c4
 # Pin the Docker Official Image index digest for alpine:3.22. Alpine is kept
 # deliberately small; no shell packages, package manager cache, or DB clients
 # are copied into the production image.
-FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce AS runtime
+FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f AS runtime
 
 ARG VERSION=0.10.1
 ARG REVISION=unknown
