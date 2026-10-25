@@ -25,6 +25,9 @@ jobs:
           bun-version: 1.3.14
       - name: Bun audit (dependency vulnerabilities)
         run: bun audit
+      - name: Bun audit (admin UI dependencies)
+        working-directory: ui
+        run: bun audit
       - name: Verify lockfile integrity
         run: bun install --frozen-lockfile
 
