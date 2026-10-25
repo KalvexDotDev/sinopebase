@@ -45,8 +45,8 @@ The SDK package version tracks the Sinopebase repository release tag. When a
 `vX.Y.Z` tag is pushed, the release workflow publishes `@sinopebase/sdk@X.Y.Z`
 to npm.
 
-- The checked-in source is prepared for v0.10.0.
-- After the `v0.10.0` tag is published, pin `@sinopebase/sdk@0.10.0` with the matching server image.
+- The checked-in source is prepared for v0.10.1.
+- After the `v0.10.1` tag is published, pin `@sinopebase/sdk@0.10.1` with the matching server image.
 
 The repository `package.json` version is the Sinopebase server release
 version, not the SDK version.
