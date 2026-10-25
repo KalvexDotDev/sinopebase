@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-# Pin the builder to the Docker Hub index digest for oven/bun:1.3.14-alpine.
+# Pin the builder to the Docker Hub index digest for oven/bun:1.4.4-alpine.
 # The Alpine builder emits a musl-linked Bun executable; the runtime below uses
 # the same Alpine 3.22 musl family.
-FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS builder
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS builder
 
 WORKDIR /build
 
@@ -35,7 +35,7 @@ RUN case "$TARGETARCH" in \
  && bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target "$bun_target"
 
 # Runtime libraries must match TARGETPLATFORM, not the native build host.
-FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0 AS runtime-libs
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS runtime-libs
 
 # Pin the Docker Official Image index digest for alpine:3.22. Alpine is kept
 # deliberately small; no shell packages, package manager cache, or DB clients
@@ -83,7 +83,7 @@ COPY --from=builder --chown=sinopebase:sinopebase /build/migrations /app/migrati
 # dynamically linked to the GCC/C++ runtimes. Copy the exact libraries from
 # the digest-pinned target-platform Alpine image instead of resolving floating APK packages.
 COPY --from=runtime-libs /usr/lib/libgcc_s.so.1 /usr/lib/libgcc_s.so.1
-COPY --from=runtime-libs /usr/lib/libstdc++.so.6.0.33 /usr/lib/libstdc++.so.6.0.33
+COPY --from=runtime-libs /usr/lib/libstdc++.so.6.0.34 /usr/lib/libstdc++.so.6.0.34
 COPY --from=runtime-libs /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so.6
 
 ENV DATA_DIR=/data
