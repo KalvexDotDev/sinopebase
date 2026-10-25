@@ -1,10 +1,16 @@
 # Changelog
 
-## v0.10.1 — 2026-10-24
+## v0.10.1 — 2026-10-25
 
 ### Security
-- Rebuilt on Bun 1.4.4. The compiled server, the staging bootstrap job and the release binaries embed the Bun runtime, so anything built with Bun 1.3.14 or earlier carries the brotli decoder out-of-bounds write (GHSA-663w-cv8g-jj2p, CVE-2026-111497) and a root store that still trusts the compromised eMudhra (emSign) intermediate CAs (GHSA-26q8-h657-pf84). Rebuild and redeploy images and binaries from this release.
+- Rebuilt on Bun 1.4.4. The compiled server, the staging bootstrap job and the release binaries embed the Bun runtime, so anything built with Bun 1.3.14 or earlier carries the brotli decoder out-of-bounds write (GHSA-663w-cv8g-jj2p, CVE-2026-111497), a root store that still trusts the compromised eMudhra (emSign) intermediate CAs (GHSA-26q8-h657-pf84) and the HTTP/3 QPACK flaw (GHSA-cf8x-9m69-3gg3). Rebuild and redeploy images and binaries from this release.
 - Pinned the Dockerfile builder and runtime-library stages, the staging bootstrap image and every CI and release workflow to Bun 1.4.4. The copied `libstdc++` follows the new Alpine base (6.0.34).
+- Cleared the server dependency advisories: zod 4.6.6 (GHSA-mrhx-c7xc-m3w5), nodemailer 10.1.4 (GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h, GHSA-8c8m-p3m8-cjg8), fast-uri 3.1.9 and stream-json 3.7.0 (#63), after the earlier dependency and runtime image findings (#49).
+- Cleared the admin UI toolchain advisories: vite 6.4.4, devalue 5.9.3, nanoid 3.3.18, postcss 8.5.23 and source-map-js 1.2.2. CI now audits `ui/` as well (#64).
+
+### Fixed
+- PostgreSQL RPC calls keep their declared return shapes (#55).
+- PostgreSQL storage lists return names relative to the requested folder (#53).
 
 ## v0.10.0 — 2026-10-05
 
