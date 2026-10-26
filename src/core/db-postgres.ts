@@ -637,9 +637,14 @@ export class PostgresDatabase implements IDatabase {
     }
     // Match PostgREST overloads by input names and defaults, not returned row
     // shape. OUT/TABLE columns are not callable inputs; INOUT arguments are.
-    const contracts = await sql<{ returns_set: boolean; returns_composite: boolean }>`
+    const contracts = await sql<{
+      returns_set: boolean
+      returns_composite: boolean
+      json_inputs: string[]
+    }>`
       SELECT p.proretset AS returns_set,
-        return_type.composite OR coalesce('t' = ANY(p.proargmodes), false) AS returns_composite
+        return_type.composite OR coalesce('t' = ANY(p.proargmodes), false) AS returns_composite,
+        inputs.json_inputs
       FROM pg_catalog.pg_proc p
       JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
       CROSS JOIN LATERAL (
@@ -653,9 +658,20 @@ export class PostgresDatabase implements IDatabase {
       ) return_type
       CROSS JOIN LATERAL (
         SELECT coalesce(array_agg(p.proargnames[a.ordinal] ORDER BY a.ordinal)
-          FILTER (WHERE coalesce(p.proargmodes[a.ordinal], 'i') IN ('i', 'b', 'v')), '{}') AS names
+          FILTER (WHERE coalesce(p.proargmodes[a.ordinal], 'i') IN ('i', 'b', 'v')), '{}') AS names,
+          coalesce(array_agg(p.proargnames[a.ordinal]) FILTER (WHERE input_type.is_json
+            AND coalesce(p.proargmodes[a.ordinal], 'i') IN ('i', 'b', 'v')), '{}') AS json_inputs
         FROM unnest(coalesce(p.proallargtypes, p.proargtypes::oid[]))
           WITH ORDINALITY AS a(type_oid, ordinal)
+        CROSS JOIN LATERAL (
+          WITH RECURSIVE base AS (
+            SELECT oid, typtype, typbasetype FROM pg_catalog.pg_type WHERE oid = a.type_oid
+            UNION ALL
+            SELECT t.oid, t.typtype, t.typbasetype FROM pg_catalog.pg_type t
+            JOIN base ON t.oid = base.typbasetype WHERE base.typtype = 'd'
+          )
+          SELECT bool_or(oid IN ('json'::regtype, 'jsonb'::regtype)) AS is_json FROM base
+        ) input_type
       ) inputs
       WHERE n.nspname = 'public' AND p.proname = ${fn} AND p.prokind = 'f'
         AND ${Object.keys(params)}::text[] <@ inputs.names
@@ -665,8 +681,14 @@ export class PostgresDatabase implements IDatabase {
     // Refuse ambiguity before invoking any side-effecting function.
     if (contracts.rows.length > 1) throw new RpcAmbiguityError()
 
+    const contract = contracts.rows[0]
     const fnRef = sql.ref(`public.${fn}`)
-    const args = entries.map(([k, v]) => sql`${sql.ref(k)} := ${v}`)
+    // node-postgres treats JS arrays as SQL arrays. Serialize only arrays whose
+    // resolved input type is JSON, retaining native array and other bindings.
+    const args = entries.map(([k, v]) => {
+      const value = Array.isArray(v) && contract?.json_inputs.includes(k) ? JSON.stringify(v) : v
+      return sql`${sql.ref(k)} := ${value}`
+    })
     // Execute exactly once, retaining PostgreSQL permission/argument errors when
     // no catalog candidate matched. public-only names and bound values remain.
     const result = await sql<
@@ -677,7 +699,6 @@ export class PostgresDatabase implements IDatabase {
     if (options?.singular && result.rows.length !== 1) {
       throw new SingularCardinalityError(result.rows.length)
     }
-    const contract = contracts.rows[0]
     if (!contract) return result.rows
     const values = contract.returns_composite
       ? result.rows

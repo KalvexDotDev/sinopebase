@@ -15,7 +15,7 @@ import { Sinopebase } from '~/core/app'
 import { createClient } from '~/sdk/client'
 import { requirePostgres, reserveLoopbackPort } from '../harness'
 
-const MAILPIT_API = 'http://localhost:8025/api/v1'
+const MAILPIT_API = process.env.TEST_MAILPIT_API_URL ?? 'http://localhost:8025/api/v1'
 const RESET_SUBJECT = 'Sinopebase password reset'
 const VERIFY_SUBJECT = 'Verify your email'
 const ANON_KEY = 'auth-recovery-anon-key-min-32-chars!!'
@@ -107,7 +107,11 @@ describe.skipIf(!mailpitUp)('password reset e2e (SMTP + Mailpit)', () => {
       jwtSecret: JWT_SECRET,
       serviceRoleKey: SERVICE_KEY,
       anonKey: ANON_KEY,
-      smtp: { enabled: true, host: 'localhost', port: 1025 },
+      smtp: {
+        enabled: true,
+        host: process.env.TEST_SMTP_HOST ?? 'localhost',
+        port: Number(process.env.TEST_SMTP_PORT ?? 1025),
+      },
     })
     await portReservation.release()
     await app.start()
@@ -207,7 +211,11 @@ describe.skipIf(!mailpitUp)('email verification e2e (SMTP + Mailpit)', () => {
       jwtSecret: JWT_SECRET,
       serviceRoleKey: SERVICE_KEY,
       anonKey: ANON_KEY,
-      smtp: { enabled: true, host: 'localhost', port: 1025 },
+      smtp: {
+        enabled: true,
+        host: process.env.TEST_SMTP_HOST ?? 'localhost',
+        port: Number(process.env.TEST_SMTP_PORT ?? 1025),
+      },
     })
     await portReservation.release()
     await app.start()

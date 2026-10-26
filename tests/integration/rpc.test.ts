@@ -167,6 +167,25 @@ beforeAll(async () => {
     END $$;
     GRANT EXECUTE ON FUNCTION rpc_singular_rows(integer), rpc_singular_write(integer)
       TO anon, authenticated, service_role;
+    DROP FUNCTION IF EXISTS rpc47_domain(rpc47_json_domain);
+    DROP DOMAIN IF EXISTS rpc47_json_domain;
+    CREATE DOMAIN rpc47_json_domain AS jsonb CHECK (jsonb_typeof(VALUE) = 'array');
+    CREATE OR REPLACE FUNCTION rpc47_jsonb(payload jsonb DEFAULT '[]') RETURNS jsonb
+      LANGUAGE sql AS $$ SELECT payload $$;
+    CREATE OR REPLACE FUNCTION rpc47_json(payload json) RETURNS json
+      LANGUAGE sql AS $$ SELECT payload $$;
+    CREATE FUNCTION rpc47_domain(payload rpc47_json_domain) RETURNS jsonb
+      LANGUAGE sql AS $$ SELECT payload::jsonb $$;
+    CREATE OR REPLACE FUNCTION rpc47_inout(INOUT payload jsonb)
+      LANGUAGE sql AS $$ SELECT payload $$;
+    CREATE OR REPLACE FUNCTION rpc47_mixed(payload jsonb, labels text[], counts integer[]) RETURNS jsonb
+      LANGUAGE sql AS $$ SELECT jsonb_build_object('payload', payload, 'labels', labels, 'counts', counts) $$;
+    CREATE OR REPLACE FUNCTION rpc47_owned(payload jsonb) RETURNS jsonb
+      LANGUAGE sql AS $$ SELECT jsonb_build_object('payload', payload, 'rows', coalesce(jsonb_agg(body), '[]')) FROM rpc_rls_test $$;
+    GRANT EXECUTE ON FUNCTION rpc47_json(json), rpc47_jsonb(jsonb), rpc47_domain(rpc47_json_domain),
+      rpc47_inout(jsonb), rpc47_mixed(jsonb,text[],integer[]) TO anon, authenticated, service_role;
+    REVOKE ALL ON FUNCTION rpc47_owned(jsonb) FROM PUBLIC, anon;
+    GRANT EXECUTE ON FUNCTION rpc47_owned(jsonb) TO authenticated;
     CREATE OR REPLACE FUNCTION rpc_empty() RETURNS SETOF rpc_rls_test
     LANGUAGE sql STABLE AS $$ SELECT * FROM rpc_rls_test WHERE false $$;
     GRANT EXECUTE ON FUNCTION rpc_empty() TO anon, authenticated, service_role;
@@ -516,5 +535,60 @@ describe('RPC singular media negotiation (#54)', () => {
       .single()
     expect(response.error).toBeNull()
     expect(response.data).toEqual(expected)
+  })
+})
+
+// #47: actual node-postgres binding through both the database and official SDK.
+describe('RPC JSON input arrays (#47)', () => {
+  const official = () =>
+    createSupabaseClient(baseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  for (const fn of ['rpc47_json', 'rpc47_jsonb', 'rpc47_domain', 'rpc47_inout']) {
+    for (const payload of [[], [1, 'quoted " value', null], [{ nested: [true, ['x']] }]]) {
+      it(`${fn} preserves ${JSON.stringify(payload)} in database and HTTP calls`, async () => {
+        expect(
+          await db.withRequestContext({ role: 'anon' }, (requestDb) =>
+            requestDb.rpc(fn, { payload }),
+          ),
+        ).toEqual(payload)
+        const result = await official().rpc(fn, { payload })
+        expect(result.error).toBeNull()
+        expect(result.data).toEqual(payload)
+      })
+    }
+  }
+  it('keeps native SQL arrays native beside JSON and retains defaults', async () => {
+    for (const labels of [[], ['one', 'comma,value', '"quote"', '{braces}']]) {
+      const args = { payload: [{ deep: [] }], labels, counts: [1, 2] }
+      const result = await official().rpc('rpc47_mixed', args)
+      expect(result.error).toBeNull()
+      expect(result.data).toEqual(args)
+    }
+    expect((await official().rpc('rpc47_jsonb')).data).toEqual([])
+  })
+  it('retains domain validation and native-array type refusal', async () => {
+    expect((await official().rpc('rpc47_domain', { payload: { not: 'array' } })).error?.code).toBe(
+      '23514',
+    )
+    expect(
+      (await official().rpc('rpc47_mixed', { payload: [], labels: [], counts: ['invalid'] })).error
+        ?.code,
+    ).toBe('22P02')
+  })
+  it('keeps request-role execute denial and foreign rows hidden', async () => {
+    expect((await official().rpc('rpc47_owned', { payload: [] })).error?.code).toBe('42501')
+    for (const [client, own, foreign] of [
+      [userAClient, 'private-a', 'private-b'],
+      [userBClient, 'private-b', 'private-a'],
+    ] as const) {
+      const result = await client.rpc<{ payload: unknown[]; rows: string[] }>('rpc47_owned', {
+        payload: [],
+      })
+      expect(result.error).toBeNull()
+      expect(result.data?.payload).toEqual([])
+      expect(result.data?.rows).toContain(own)
+      expect(result.data?.rows).not.toContain(foreign)
+    }
   })
 })

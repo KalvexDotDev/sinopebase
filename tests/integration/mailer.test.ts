@@ -17,7 +17,7 @@ import { reserveLoopbackPort } from '../harness'
 // @new-code-test positive src/tools/mailer/smtp.ts
 // @new-code-test negative src/tools/mailer/smtp.ts
 
-const MAILPIT_API = 'http://localhost:8025/api/v1'
+const MAILPIT_API = process.env.TEST_MAILPIT_API_URL ?? 'http://localhost:8025/api/v1'
 
 interface MailpitMessage {
   ID: string
@@ -52,8 +52,8 @@ beforeAll(async () => {
     port: portReservation.port,
     smtp: {
       enabled: true,
-      host: 'localhost',
-      port: 1025,
+      host: process.env.TEST_SMTP_HOST ?? 'localhost',
+      port: Number(process.env.TEST_SMTP_PORT ?? 1025),
     },
   })
   await portReservation.release()
