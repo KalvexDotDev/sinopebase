@@ -54,8 +54,10 @@ export interface CreateAuthOptions {
   oauthProviders?: OAuthProviderConfig[]
   /** Additional trusted origins (e.g. production domain) */
   extraOrigins?: string[]
-  /** Deliver transactional email (password reset, verification). */
+  /** Deliver transactional email (password recovery, verification). */
   sendEmail?: (mail: { to: string; subject: string; text: string; html?: string }) => Promise<void>
+  /** Recovery links fall back here when redirect_to is absent or untrusted (GoTrue SITE_URL). */
+  siteUrl?: string
   /** Disable Better Auth diagnostics only for a private maintenance command handling credentials. */
   disableLogsForMaintenance?: true
 }
@@ -107,17 +109,38 @@ function oauthOptions(allProviders: OAuthProviderConfig[]) {
   }
 }
 
-function mailerOptions(sendEmail: CreateAuthOptions['sendEmail']) {
+/**
+ * GoTrue recovery link: the requested destination (Better Auth's callbackURL,
+ * already allow-listed by POST /auth/v1/recover) or the site URL, carrying the
+ * single-use token as `token_hash` and `type=recovery` for verifyOtp.
+ */
+export function recoveryLink(betterAuthUrl: string, token: string, siteUrl: string): string {
+  const link = new URL(new URL(betterAuthUrl).searchParams.get('callbackURL') || siteUrl)
+  link.searchParams.set('token_hash', token)
+  link.searchParams.set('type', 'recovery')
+  return link.href
+}
+
+function mailerOptions(sendEmail: CreateAuthOptions['sendEmail'], siteUrl: string) {
   if (!sendEmail) return { emailAndPassword: { enabled: true } }
   return {
     emailAndPassword: {
       enabled: true,
-      sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
+      sendResetPassword: async ({
+        user,
+        url,
+        token,
+      }: {
+        user: { email: string }
+        url: string
+        token: string
+      }) => {
+        const link = recoveryLink(url, token, siteUrl)
         await sendEmail({
           to: user.email,
-          subject: 'Sinopebase password reset',
-          text: `Reset your password: ${url}`,
-          html: `<p>Reset your password: <a href="${url}">${url}</a></p>`,
+          subject: 'Reset your password',
+          text: `Reset your password: ${link}`,
+          html: `<p>Reset your password: <a href="${link.replaceAll('&', '&amp;')}">Reset password</a></p>`,
         })
       },
     },
@@ -148,21 +171,29 @@ function maintenanceLogger(disabled?: true) {
 
 function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typeof betterAuth>[0] {
   const allProviders = options?.oauthProviders ?? []
+  const baseURL =
+    process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090'
   return {
     database: pool,
     logger: maintenanceLogger(options?.disableLogsForMaintenance),
     basePath: '/api/auth',
+    // Recovery runs only through GoTrue's /auth/v1/recover and /auth/v1/verify.
+    disabledPaths: ['/request-password-reset', '/reset-password'],
     user: {
       additionalFields: {
         emailVerifiedAt: { type: 'date', required: false, input: false },
         userMetadata: { type: 'json', required: false, input: false },
       },
     },
+    // GoTrue amr method of a session ('recovery'); null for ordinary sign-ins.
+    session: {
+      additionalFields: { authMethod: { type: 'string', required: false, input: false } },
+    },
     advanced: { database: { generateId: () => crypto.randomUUID() } },
-    ...mailerOptions(options?.sendEmail),
+    ...mailerOptions(options?.sendEmail, options?.siteUrl || baseURL),
     secret: options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK,
     trustedOrigins: trustedOrigins(options?.extraOrigins),
-    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
+    baseURL,
     ...oauthOptions(allProviders),
   }
 }

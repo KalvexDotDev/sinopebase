@@ -189,6 +189,7 @@ async function main(): Promise<void> {
     serviceRoleKey: process.env.SINOPEBASE_SERVICE_ROLE_KEY || undefined,
     anonKey: process.env.SINOPEBASE_ANON_KEY || undefined,
     extraOrigins,
+    siteUrl: process.env.SINOPEBASE_SITE_URL || undefined,
     oauthProviders: oauthProvidersFromEnv(),
     ...deploymentConfigFromEnv(process.env),
     tls,

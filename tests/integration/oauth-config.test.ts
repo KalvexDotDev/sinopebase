@@ -137,37 +137,58 @@ describe('OAuth provider config mapping (createAuth)', () => {
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 
-  test('keeps password reset and verification delivery configured', async () => {
+  test('keeps password recovery and verification delivery configured', async () => {
     const sent: Array<{ to: string; subject: string; text: string; html?: string }> = []
     const auth = await createAuth(pool, {
+      siteUrl: 'https://site.example.test/home',
       sendEmail: async (mail) => {
         sent.push(mail)
       },
     })
     const emailOptions = auth.options as unknown as {
       emailAndPassword: {
-        sendResetPassword: (args: { user: { email: string }; url: string }) => Promise<void>
+        sendResetPassword: (args: {
+          user: { email: string }
+          url: string
+          token: string
+        }) => Promise<void>
       }
       emailVerification: {
         sendVerificationEmail: (args: { user: { email: string }; url: string }) => Promise<void>
       }
     }
 
+    const callbackURL = encodeURIComponent('https://app.example.test/auth/confirm?next=/account')
     await emailOptions.emailAndPassword.sendResetPassword({
       user: { email: 'owner@example.test' },
-      url: 'https://example.test/reset',
+      url: `http://localhost:8090/api/auth/reset-password/tok-1?callbackURL=${callbackURL}`,
+      token: 'tok-1',
+    })
+    await emailOptions.emailAndPassword.sendResetPassword({
+      user: { email: 'owner@example.test' },
+      url: 'http://localhost:8090/api/auth/reset-password/tok-2?callbackURL=',
+      token: 'tok-2',
     })
     await emailOptions.emailVerification.sendVerificationEmail({
       user: { email: 'owner@example.test' },
       url: 'https://example.test/verify',
     })
 
+    const requested =
+      'https://app.example.test/auth/confirm?next=%2Faccount&token_hash=tok-1&type=recovery'
+    const fallback = 'https://site.example.test/home?token_hash=tok-2&type=recovery'
     expect(sent).toEqual([
       {
         to: 'owner@example.test',
-        subject: 'Sinopebase password reset',
-        text: 'Reset your password: https://example.test/reset',
-        html: '<p>Reset your password: <a href="https://example.test/reset">https://example.test/reset</a></p>',
+        subject: 'Reset your password',
+        text: `Reset your password: ${requested}`,
+        html: `<p>Reset your password: <a href="${requested.replaceAll('&', '&amp;')}">Reset password</a></p>`,
+      },
+      {
+        to: 'owner@example.test',
+        subject: 'Reset your password',
+        text: `Reset your password: ${fallback}`,
+        html: `<p>Reset your password: <a href="${fallback.replaceAll('&', '&amp;')}">Reset password</a></p>`,
       },
       {
         to: 'owner@example.test',
@@ -177,6 +198,7 @@ describe('OAuth provider config mapping (createAuth)', () => {
     ])
     expect(auth.options.emailAndPassword?.enabled).toBe(true)
     expect((auth.options.emailVerification as { enabled?: boolean })?.enabled).toBe(true)
+    expect(auth.options.disabledPaths).toEqual(['/request-password-reset', '/reset-password'])
   })
 
   test('preserves provider links, origin filtering, and operator overrides', async () => {

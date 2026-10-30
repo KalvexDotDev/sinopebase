@@ -636,6 +636,8 @@ export interface AppConfig {
   oauthProviders?: import('../tools/auth-better').OAuthProviderConfig[]
   /** Additional trusted origins for CORS/OAuth callbacks */
   extraOrigins?: string[]
+  /** Recovery-link fallback for missing or untrusted redirect_to (default: BETTER_AUTH_URL) */
+  siteUrl?: string
   /** Runtime mode (default: auto-detected from env) */
   mode?: 'production' | 'development'
   /** Service role key for admin-level access (must be >=32 chars in production) */
@@ -994,6 +996,7 @@ export class Sinopebase {
           oauthProviders: mergedProviders,
           extraOrigins: this.config.extraOrigins,
           sendEmail: (mail) => this.sendMail(mail),
+          siteUrl: this.config.siteUrl,
         })
         logger.info('Auth', {
           provider: 'better-auth',

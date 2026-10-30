@@ -11,9 +11,18 @@
 - On PostgreSQL 16 and later, the connection role is granted the request roles `WITH SET TRUE`. A role's creator receives ADMIN membership without SET permission there, so switching to `anon`, `authenticated` or `service_role` failed (KalvexDotDev/sinope#861).
 - Replicas starting together on a new database take turns creating and hardening the Better Auth tables. Previously they could deadlock and refuse startup.
 
+### Added
+- GoTrue password recovery for the official SDKs (#67). `resetPasswordForEmail` posts to `POST /auth/v1/recover`, which answers `{}` whether or not the account exists and sends at most one recovery email per user per 60 seconds. The email links to `redirect_to` with `token_hash` and `type=recovery` appended; `redirect_to` is used only when its origin is trusted (`SINOPEBASE_EXTRA_ORIGINS`), and otherwise the link goes to the new `SINOPEBASE_SITE_URL` (default `BETTER_AUTH_URL`). `verifyOtp({ type: 'recovery', token_hash })` posts to `POST /auth/v1/verify`, which uses up the single-use, one-hour token, confirms the email address, and returns a recovery session. A new recovery link replaces any older one.
+- A recovery session can set a new password with `updateUser({ password })` and no `current_password`, as in GoTrue. It can do this once; after that the session behaves like an ordinary one.
+
 ### Changed
 - Startup adds the nullable `account` columns `idToken`, `accessTokenExpiresAt`, `refreshTokenExpiresAt` and `scope`. Better Auth 1.7 fails auth requests while they are missing.
 - A generic OIDC provider whose discovery document cannot be fetched now answers sign-in with 404 `PROVIDER_NOT_FOUND` instead of 400 `INVALID_OAUTH_CONFIGURATION`. Better Auth 1.7 skips such a provider.
+- `PUT`/`PATCH /auth/v1/user` return GoTrue error codes for password updates (#57): `current_password_required` and `current_password_mismatch` (400), `weak_password` with reasons (422, for passwords outside 8–128 characters) and `same_password` (422). A successful password change ends every other session of the user, deletes their refresh tokens and cancels pending recovery links. The calling session stays signed in.
+- The recovery email subject is now "Reset your password" instead of "Sinopebase password reset".
+
+### Removed
+- The non-standard `POST /auth/v1/reset-password`, and Better Auth's `/api/auth/request-password-reset` and `/api/auth/reset-password` routes. Recovery now goes only through `/auth/v1/recover` and `/auth/v1/verify`. The Sinopebase SDK's `resetPasswordForEmail(email, { redirectTo })` calls `/auth/v1/recover`.
 
 ## v0.10.1 — 2026-10-25
 
