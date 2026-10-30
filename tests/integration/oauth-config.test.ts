@@ -107,6 +107,8 @@ describe('OAuth provider config mapping (createAuth)', () => {
     })
 
     const configs = genericProviderConfigs(auth)
+    // Exactly the configured provider: the typed generic config list starts empty.
+    expect(configs).toHaveLength(1)
     const entra = configs.find((c) => c.providerId === 'microsoft-entra-id')
     expect(entra?.tenantId).toBe('contoso-12345')
     expect(entra?.discoveryUrl).toBe(
