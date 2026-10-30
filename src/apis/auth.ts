@@ -13,6 +13,11 @@ import { z } from 'zod'
 import { lookupSessionByToken, type SessionLookup, type SinopebaseAuth } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 import {
+  RECOVERY_EMAIL_PREFIX,
+  RESET_PREFIX,
+  retireRecoveryLinks,
+} from '~/tools/auth-better/recovery-links'
+import {
   exchangeRefreshToken,
   LOGOUT_SCOPES,
   refreshTokenForSession,
@@ -493,8 +498,6 @@ class UserUpdateRefused extends Error {
 
 /** GoTrue amr method of a session created by verifying a recovery link. */
 const RECOVERY = 'recovery'
-/** Better Auth's identifier prefix for single-use password reset tokens. */
-const RESET_PREFIX = 'reset-password:'
 
 function parseNativeUpdate(body: unknown) {
   const parsed = nativeUserUpdate.safeParse(body)
@@ -570,11 +573,7 @@ async function finishPasswordChange(
     .where('user_id', '=', session.userId)
     .where('session_id', '<>', session.id)
     .execute()
-  await transaction
-    .deleteFrom('verification')
-    .where('identifier', 'like', `${RESET_PREFIX}%`)
-    .where('value', '=', session.userId)
-    .execute()
+  await retireRecoveryLinks(transaction, session.userId)
   await transaction
     .updateTable('session')
     .set({ authMethod: null })
@@ -654,28 +653,48 @@ function nativeProfileUpdate(
   return update
 }
 
+/**
+ * Lock the caller's user row, then its session row. Every writer here takes
+ * the user lock first, so revoking a user's other sessions cannot deadlock
+ * with a concurrent update from one of them.
+ */
+async function lockUpdatingSession(transaction: Transaction<BetterAuthDatabase>, token: string) {
+  const owner = await transaction
+    .selectFrom('session')
+    .select('userId')
+    .where('token', '=', token)
+    .where('expiresAt', '>', new Date())
+    .executeTakeFirst()
+  if (!owner) throw new UserUpdateRefused(401, 'session_not_found', 'Invalid token')
+  const user = await transaction
+    .selectFrom('user')
+    .selectAll()
+    .where('id', '=', owner.userId)
+    .forUpdate()
+    .executeTakeFirst()
+  // Revalidate the session under the user lock: it may have been revoked meanwhile.
+  const session = await transaction
+    .selectFrom('session')
+    .select(['id', 'userId', 'authMethod'])
+    .where('token', '=', token)
+    .where('userId', '=', owner.userId)
+    .where('expiresAt', '>', new Date())
+    .forUpdate()
+    .executeTakeFirst()
+  if (!user || !session) throw new UserUpdateRefused(401, 'session_not_found', 'Invalid token')
+  return { user, session }
+}
+
 async function applyNativeUpdate(
   auth: BetterAuthInstance,
   transaction: Transaction<BetterAuthDatabase>,
   token: string,
   update: ReturnType<typeof parseNativeUpdate>,
 ) {
-  // Revalidate and lock the actual native session before any write.
-  const session = await transaction
-    .selectFrom('session')
-    .select(['id', 'userId', 'authMethod'])
-    .where('token', '=', token)
-    .where('expiresAt', '>', new Date())
-    .forUpdate()
-    .executeTakeFirst()
-  if (!session) throw new UserUpdateRefused(401, 'session_not_found', 'Invalid token')
-  const user = await transaction
-    .selectFrom('user')
-    .selectAll()
-    .where('id', '=', session.userId)
-    .forUpdate()
-    .executeTakeFirst()
-  if (!user) throw new UserUpdateRefused(401, 'session_not_found', 'Invalid token')
+  const { user, session } = await lockUpdatingSession(transaction, token)
+  // Recovery links were mailed to the old address; GoTrue invalidates them with it.
+  if (update.email && update.email.toLowerCase() !== user.email.toLowerCase())
+    await retireRecoveryLinks(transaction, user.id)
   if (update.password)
     await updateNativeCredential(
       auth,
@@ -736,11 +755,11 @@ async function trustedRedirect(auth: BetterAuthInstance, redirectTo: string | un
 }
 
 /**
- * Claim the user's recovery interval and retire older recovery links (GoTrue
- * keeps one recovery token per user). The advisory lock serialises concurrent
- * claims; it is released before any mail is sent.
+ * Claim the user's recovery interval. The advisory lock serialises concurrent
+ * claims and is released before any mail is sent. Returns the user's existing
+ * recovery tokens, or null while an earlier claim is live.
  */
-function claimRecoveryInterval(auth: BetterAuthInstance, userId: string): Promise<boolean> {
+function claimRecoveryInterval(auth: BetterAuthInstance, userId: string) {
   const identifier = RECOVERY_SENT_PREFIX + userId
   return authDb(auth)
     .transaction()
@@ -754,13 +773,8 @@ function claimRecoveryInterval(auth: BetterAuthInstance, userId: string): Promis
         .where('identifier', '=', identifier)
         .where('expiresAt', '>', new Date())
         .executeTakeFirst()
-      if (live) return false
+      if (live) return null
       await transaction.deleteFrom('verification').where('identifier', '=', identifier).execute()
-      await transaction
-        .deleteFrom('verification')
-        .where('identifier', 'like', `${RESET_PREFIX}%`)
-        .where('value', '=', userId)
-        .execute()
       const now = new Date()
       await transaction
         .insertInto('verification')
@@ -773,7 +787,46 @@ function claimRecoveryInterval(auth: BetterAuthInstance, userId: string): Promis
           updatedAt: now,
         })
         .execute()
-      return true
+      const existing = await transaction
+        .selectFrom('verification')
+        .select('identifier')
+        .where('identifier', 'like', `${RESET_PREFIX}%`)
+        .where('value', '=', userId)
+        .execute()
+      return existing.map(({ identifier: token }) => token)
+    })
+}
+
+/**
+ * After the send: the new link replaces older ones (GoTrue keeps one recovery
+ * token per user). If no new link survived, delivery failed and dropped it, so
+ * reopen the interval and leave the earlier links valid.
+ */
+async function settleRecoveryInterval(
+  auth: BetterAuthInstance,
+  userId: string,
+  previous: string[],
+) {
+  await authDb(auth)
+    .transaction()
+    .execute(async (transaction) => {
+      const issued = await transaction
+        .selectFrom('verification')
+        .select('identifier')
+        .where('identifier', 'like', `${RESET_PREFIX}%`)
+        .where('value', '=', userId)
+        .where('identifier', 'not in', ['', ...previous])
+        .orderBy('createdAt', 'desc')
+        .executeTakeFirst()
+      if (issued) {
+        await retireRecoveryLinks(transaction, userId, issued.identifier)
+        return
+      }
+      console.error(`[AUTH] Recovery email delivery failed: user=${userId}`)
+      await transaction
+        .deleteFrom('verification')
+        .where('identifier', '=', RECOVERY_SENT_PREFIX + userId)
+        .execute()
     })
 }
 
@@ -786,8 +839,10 @@ async function sendRecovery(
 ) {
   const requestPasswordReset = auth.api.requestPasswordReset
   if (!requestPasswordReset) throw new Error('Native password recovery unavailable')
-  if (await claimRecoveryInterval(auth, userId))
-    await requestPasswordReset({ body: { email, redirectTo } })
+  const previous = await claimRecoveryInterval(auth, userId)
+  if (!previous) return
+  await requestPasswordReset({ body: { email, redirectTo } })
+  await settleRecoveryInterval(auth, userId, previous)
 }
 
 /** POST /auth/v1/recover — always `{}` for a valid address, so accounts cannot be enumerated. */
@@ -820,14 +875,29 @@ async function recoverPassword(
 
 const verifyBody = z.object({ type: z.literal(RECOVERY), token_hash: z.string().min(1) })
 
-/** GoTrue confirms the address on recovery: the link proved control of the mailbox. */
-function confirmRecoveredUser(auth: BetterAuthInstance, userId: string) {
+/**
+ * Confirm the address on recovery, as GoTrue does: the link proved control of
+ * the mailbox it was sent to. Refused unless the account still has that address.
+ */
+function confirmRecoveredUser(auth: BetterAuthInstance, userId: string, token: string) {
   return authDb(auth)
-    .updateTable('user')
-    .set({ emailVerified: true })
-    .where('id', '=', userId)
-    .returningAll()
-    .executeTakeFirst()
+    .transaction()
+    .execute(async (transaction) => {
+      const sentTo = await transaction
+        .deleteFrom('verification')
+        .where('identifier', '=', RECOVERY_EMAIL_PREFIX + token)
+        .where('expiresAt', '>', new Date())
+        .returning('value')
+        .executeTakeFirst()
+      if (!sentTo) return undefined
+      return transaction
+        .updateTable('user')
+        .set({ emailVerified: true })
+        .where('id', '=', userId)
+        .where(sql<string>`lower(email)`, '=', sentTo.value)
+        .returningAll()
+        .executeTakeFirst()
+    })
 }
 
 /** POST /auth/v1/verify (type=recovery, token_hash) — consume the token, open a recovery session. */
@@ -847,7 +917,9 @@ async function verifyRecovery(
   const verification = await native.internalAdapter.consumeVerificationValue(
     RESET_PREFIX + parsed.data.token_hash,
   )
-  const user = verification ? await confirmRecoveredUser(auth, verification.value) : undefined
+  const user = verification
+    ? await confirmRecoveredUser(auth, verification.value, parsed.data.token_hash)
+    : undefined
   if (!user)
     return goTrueError(context.set, 403, 'otp_expired', 'Email link is invalid or has expired')
   const session = await native.internalAdapter.createSession(user.id, false, {

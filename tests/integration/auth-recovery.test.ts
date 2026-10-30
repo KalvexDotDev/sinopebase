@@ -20,6 +20,8 @@
  * @new-code-test negative src/sdk/auth-impl.ts
  * @new-code-test positive src/sdk/auth.ts
  * @new-code-test negative src/sdk/auth.ts
+ * @new-code-test positive src/tools/auth-better/recovery-links.ts
+ * @new-code-test negative src/tools/auth-better/recovery-links.ts
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
@@ -41,10 +43,20 @@ const APP_ORIGIN = 'http://localhost:5173'
 const CONFIRM_URL = `${APP_ORIGIN}/auth/confirm?next=/account/new-password`
 /** GoTrue SITE_URL fallback for missing or untrusted redirect_to. */
 const SITE_URL = 'http://site.example.test/welcome'
+/** GoTrue SMTP_ADMIN_EMAIL / SMTP_SENDER_NAME. */
+const SENDER = { address: 'noreply@mail.sinopebase.test', name: 'Sinopebase Test' }
+const SMTP = {
+  enabled: true,
+  host: process.env.TEST_SMTP_HOST ?? 'localhost',
+  port: Number(process.env.TEST_SMTP_PORT ?? 1025),
+  fromAddress: SENDER.address,
+  fromName: SENDER.name,
+}
 
 interface MailpitMessage {
   ID: string
   Subject: string
+  From: { Name: string; Address: string }
   To: { Name: string; Address: string }[]
 }
 
@@ -173,6 +185,22 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
     expect(ended.rowCount).toBe(1)
   }
 
+  async function tokenHash(email: string, seen: Set<string>) {
+    return (await nextRecoveryLink(email, seen)).searchParams.get('token_hash') as string
+  }
+
+  async function recoveryRows(userId: string) {
+    const rows = await pool.query<{ identifier: string }>(
+      `SELECT identifier FROM verification
+        WHERE (identifier LIKE 'reset-password:%' AND value = $1)
+           OR identifier LIKE 'recovery-email:%' AND substr(identifier, 16) IN (
+             SELECT substr(identifier, 16) FROM verification WHERE value = $1)
+           OR identifier = 'recovery-sent:' || $1`,
+      [userId],
+    )
+    return rows.rows.map((row) => row.identifier.split(':')[0]).sort()
+  }
+
   beforeAll(async () => {
     const portReservation = await reserveLoopbackPort()
     app = new Sinopebase({
@@ -183,11 +211,7 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
       anonKey: ANON_KEY,
       extraOrigins: [APP_ORIGIN],
       siteUrl: SITE_URL,
-      smtp: {
-        enabled: true,
-        host: process.env.TEST_SMTP_HOST ?? 'localhost',
-        port: Number(process.env.TEST_SMTP_PORT ?? 1025),
-      },
+      smtp: SMTP,
     })
     await portReservation.release()
     await app.start()
@@ -282,7 +306,99 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
     expect(link.searchParams.get('type')).toBe('recovery')
     expect(link.searchParams.get('token_hash')).toMatch(/^[A-Za-z0-9]{24}$/)
     expect(await mailFor(ghost, RESET_SUBJECT)).toEqual([])
+    const [sent] = await mailFor(user.email, RESET_SUBJECT)
+    expect(sent?.From).toEqual({ Name: SENDER.name, Address: SENDER.address })
   }, 20000)
+
+  it('refuses a recovery link once the account no longer has the address it was sent to', async () => {
+    const user = await newUser('recover-email-change')
+    const seen = new Set<string>()
+    await requestRecovery(user.email, CONFIRM_URL)
+    const mailed = await tokenHash(user.email, seen)
+
+    // Changing the address retires the outstanding link (GoTrue binds it to the old one).
+    const moved = `moved-${user.email}`
+    emails.push(moved)
+    expect((await user.client.auth.updateUser({ email: moved })).error).toBeNull()
+    expect(await recoveryRows(user.id)).toEqual(['recovery-sent'])
+    const retired = await sdk().auth.verifyOtp({ type: 'recovery', token_hash: mailed })
+    expect(retired.error?.code).toBe('otp_expired')
+
+    // Even a surviving token is refused once the address differs, and verifies nothing.
+    await endRecoveryInterval(user.id)
+    await requestRecovery(moved, CONFIRM_URL)
+    const second = await tokenHash(moved, new Set())
+    await pool.query('UPDATE "user" SET email = $1 WHERE id = $2', [user.email, user.id])
+    const swapped = await sdk().auth.verifyOtp({ type: 'recovery', token_hash: second })
+    expect(swapped.error?.status).toBe(403)
+    expect(swapped.error?.code).toBe('otp_expired')
+    const row = await pool.query('SELECT "emailVerified" FROM "user" WHERE id = $1', [user.id])
+    expect(row.rows[0]?.emailVerified).toBe(false)
+  }, 30000)
+
+  it('serialises concurrent password changes from two sessions without deadlock', async () => {
+    for (let round = 0; round < 5; round++) {
+      const user = await newUser(`change-race-${round}`)
+      const other = await signedIn(user.email, user.password)
+      const results = await Promise.all(
+        [user.client, other].map((client) =>
+          client.auth.updateUser({
+            password: `raced-${crypto.randomUUID()}`,
+            current_password: user.password,
+          }),
+        ),
+      )
+      // One change wins and revokes the other session, which then reads as signed out
+      // (session_not_found); a deadlock would surface as a retryable 500 instead.
+      const outcomes = results.map((result) => result.error?.name ?? 'updated').sort()
+      expect(outcomes).toEqual(['AuthSessionMissingError', 'updated'])
+    }
+  }, 30000)
+
+  it('keeps earlier links and reopens the interval when delivery fails', async () => {
+    const user = await newUser('recover-smtp-down')
+    const seen = new Set<string>()
+    await requestRecovery(user.email, CONFIRM_URL)
+    const earlier = await tokenHash(user.email, seen)
+    await endRecoveryInterval(user.id)
+
+    // A second server on the same database whose SMTP endpoint refuses connections (port 1).
+    const portReservation = await reserveLoopbackPort()
+    const unreachable = new Sinopebase({
+      port: portReservation.port,
+      postgresUrl: requirePostgres(),
+      jwtSecret: JWT_SECRET,
+      serviceRoleKey: SERVICE_KEY,
+      anonKey: ANON_KEY,
+      extraOrigins: [APP_ORIGIN],
+      siteUrl: SITE_URL,
+      smtp: { ...SMTP, host: '127.0.0.1', port: 1 },
+    })
+    await portReservation.release()
+    await unreachable.start()
+    try {
+      const failed = await createSupabaseClient(portReservation.origin, ANON_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      }).auth.resetPasswordForEmail(user.email, { redirectTo: CONFIRM_URL })
+      expect(failed).toEqual({ data: {}, error: null })
+    } finally {
+      await unreachable.stop()
+    }
+    expect(await recoveryRows(user.id)).toEqual(['recovery-email', 'reset-password'])
+
+    // The retry is not throttled, and its link replaces the earlier one.
+    await requestRecovery(user.email, CONFIRM_URL)
+    const retried = await tokenHash(user.email, seen)
+    expect(retried).not.toBe(earlier)
+    expect(await recoveryRows(user.id)).toEqual([
+      'recovery-email',
+      'recovery-sent',
+      'reset-password',
+    ])
+    const replaced = await sdk().auth.verifyOtp({ type: 'recovery', token_hash: earlier })
+    expect(replaced.error?.code).toBe('otp_expired')
+    expect((await sdk().auth.verifyOtp({ type: 'recovery', token_hash: retried })).error).toBeNull()
+  }, 30000)
 
   it('falls back to the site URL for an untrusted redirect_to and throttles repeats', async () => {
     const user = await newUser('recover-fallback')
@@ -457,11 +573,7 @@ describe.skipIf(!mailpitUp)('email verification e2e (SMTP + Mailpit)', () => {
       jwtSecret: JWT_SECRET,
       serviceRoleKey: SERVICE_KEY,
       anonKey: ANON_KEY,
-      smtp: {
-        enabled: true,
-        host: process.env.TEST_SMTP_HOST ?? 'localhost',
-        port: Number(process.env.TEST_SMTP_PORT ?? 1025),
-      },
+      smtp: SMTP,
     })
     await portReservation.release()
     await app.start()
@@ -500,6 +612,8 @@ describe.skipIf(!mailpitUp)('email verification e2e (SMTP + Mailpit)', () => {
     const seen = new Set<string>()
     const messageBody = await waitForMailpitMessage(VERIFY_SUBJECT, email, seen)
     expect(seen.size).toBe(1)
+    const [sent] = await mailFor(email, VERIFY_SUBJECT)
+    expect(sent?.From).toEqual({ Name: SENDER.name, Address: SENDER.address })
     expect(messageBody).toContain('verify-email?token=')
 
     // The emailed URL is better-auth's verify page .../verify-email?token=<jwt>.

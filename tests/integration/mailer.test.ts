@@ -9,13 +9,15 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { Sinopebase } from '~/core/app'
+import { Sinopebase, smtpMailerConfig } from '~/core/app'
 import { Message } from '~/tools/mailer/mailer'
 import { SMTPClient } from '~/tools/mailer/smtp'
 import { reserveLoopbackPort } from '../harness'
 
 // @new-code-test positive src/tools/mailer/smtp.ts
 // @new-code-test negative src/tools/mailer/smtp.ts
+// @new-code-test positive src/core/app.ts
+// @new-code-test negative src/core/app.ts
 
 const MAILPIT_API = process.env.TEST_MAILPIT_API_URL ?? 'http://localhost:8025/api/v1'
 
@@ -54,6 +56,7 @@ beforeAll(async () => {
       enabled: true,
       host: process.env.TEST_SMTP_HOST ?? 'localhost',
       port: Number(process.env.TEST_SMTP_PORT ?? 1025),
+      fromAddress: 'noreply@sinopebase.test',
     },
   })
   await portReservation.release()
@@ -130,5 +133,68 @@ it('reports an unavailable SMTP server', async () => {
       controller.close()
     },
   })
+  await expect(mailer.send(message)).rejects.toThrow()
+})
+
+it('derives TLS from the SMTP port and requires a sender address', () => {
+  const base = {
+    enabled: true,
+    host: 'smtp.example.test',
+    fromAddress: 'noreply@mail.example.test',
+  }
+  expect(smtpMailerConfig({ ...base, port: 465 })?.transport).toMatchObject({
+    port: 465,
+    tls: true,
+    requireTLS: false,
+  })
+  expect(smtpMailerConfig({ ...base, port: 587 })?.transport).toMatchObject({
+    port: 587,
+    tls: false,
+    requireTLS: true,
+  })
+  // No port: GoTrue's default submission port, with mandatory STARTTLS.
+  expect(smtpMailerConfig(base)?.transport).toMatchObject({ port: 587, requireTLS: true })
+  expect(smtpMailerConfig({ ...base, port: 1025 })?.transport).toMatchObject({
+    tls: false,
+    requireTLS: false,
+  })
+  expect(smtpMailerConfig({ ...base, fromName: 'Sinope' })?.from).toEqual({
+    name: 'Sinope',
+    address: 'noreply@mail.example.test',
+  })
+  expect(smtpMailerConfig({ ...base, port: 1025 })?.from).toEqual({
+    name: '',
+    address: 'noreply@mail.example.test',
+  })
+  expect(smtpMailerConfig(undefined)).toBeNull()
+  expect(smtpMailerConfig({ enabled: true })).toBeNull()
+  expect(() => smtpMailerConfig({ enabled: true, host: 'smtp.example.test' })).toThrow(
+    'SMTP_ADMIN_EMAIL',
+  )
+})
+
+it('refuses to start with an SMTP host but no sender address', async () => {
+  const portReservation = await reserveLoopbackPort()
+  const unsent = new Sinopebase({
+    port: portReservation.port,
+    smtp: { enabled: true, host: 'localhost', port: 1025 },
+  })
+  await portReservation.release()
+  await expect(unsent.start()).rejects.toThrow('SMTP_ADMIN_EMAIL')
+  expect(unsent.mailer).toBeNull()
+})
+
+it.skipIf(!available)('refuses to send without STARTTLS when TLS is required', async () => {
+  // Mailpit offers no STARTTLS by default, so a required upgrade must fail before any mail is sent.
+  const mailer = new SMTPClient({
+    host: process.env.TEST_SMTP_HOST ?? 'localhost',
+    port: Number(process.env.TEST_SMTP_PORT ?? 1025),
+    requireTLS: true,
+  })
+  const message = new Message()
+  message.from = { name: 'Sender', address: 'sender@sinopebase.test' }
+  message.to = [{ name: 'Recipient', address: 'recipient@example.com' }]
+  message.subject = `requires-tls-${randomUUID()}`
+  message.text = 'Must not be delivered in clear text'
   await expect(mailer.send(message)).rejects.toThrow()
 })

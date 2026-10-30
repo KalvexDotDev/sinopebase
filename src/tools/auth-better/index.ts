@@ -12,6 +12,7 @@ import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 import type { BetterAuthDatabase } from './adapter'
 import { createAuthTables, createBetterAuthDB } from './adapter'
+import { bindRecoveryLink, dropRecoveryLink } from './recovery-links'
 import { createAuthWithSignupPolicy as betterAuth, signupsAllowed } from './signup-policy'
 
 // ---------------------------------------------------------------------------
@@ -121,7 +122,11 @@ export function recoveryLink(betterAuthUrl: string, token: string, siteUrl: stri
   return link.href
 }
 
-function mailerOptions(sendEmail: CreateAuthOptions['sendEmail'], siteUrl: string) {
+function mailerOptions(
+  db: Kysely<BetterAuthDatabase>,
+  sendEmail: CreateAuthOptions['sendEmail'],
+  siteUrl: string,
+) {
   if (!sendEmail) return { emailAndPassword: { enabled: true } }
   return {
     emailAndPassword: {
@@ -136,12 +141,19 @@ function mailerOptions(sendEmail: CreateAuthOptions['sendEmail'], siteUrl: strin
         token: string
       }) => {
         const link = recoveryLink(url, token, siteUrl)
-        await sendEmail({
-          to: user.email,
-          subject: 'Reset your password',
-          text: `Reset your password: ${link}`,
-          html: `<p>Reset your password: <a href="${link.replaceAll('&', '&amp;')}">Reset password</a></p>`,
-        })
+        await bindRecoveryLink(db, token, user.email)
+        try {
+          await sendEmail({
+            to: user.email,
+            subject: 'Reset your password',
+            text: `Reset your password: ${link}`,
+            html: `<p>Reset your password: <a href="${link.replaceAll('&', '&amp;')}">Reset password</a></p>`,
+          })
+        } catch (error) {
+          // An undelivered link must not stay valid; POST /auth/v1/recover then reopens its window.
+          await dropRecoveryLink(db, token)
+          throw error
+        }
       },
     },
     emailVerification: {
@@ -169,7 +181,11 @@ function maintenanceLogger(disabled?: true) {
   return disabled ? { disabled: true } : undefined
 }
 
-function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typeof betterAuth>[0] {
+function authOptions(
+  pool: pg.Pool,
+  db: Kysely<BetterAuthDatabase>,
+  options?: CreateAuthOptions,
+): Parameters<typeof betterAuth>[0] {
   const allProviders = options?.oauthProviders ?? []
   const baseURL =
     process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090'
@@ -190,7 +206,7 @@ function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typ
       additionalFields: { authMethod: { type: 'string', required: false, input: false } },
     },
     advanced: { database: { generateId: () => crypto.randomUUID() } },
-    ...mailerOptions(options?.sendEmail, options?.siteUrl || baseURL),
+    ...mailerOptions(db, options?.sendEmail, options?.siteUrl || baseURL),
     secret: options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK,
     trustedOrigins: trustedOrigins(options?.extraOrigins),
     baseURL,
@@ -391,7 +407,7 @@ export async function createAuth(
 
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
-  const auth = betterAuth(authOptions(pool, options))
+  const auth = betterAuth(authOptions(pool, db, options))
 
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).
