@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'bun:test'
 import { betterAuth } from 'better-auth'
 
+/** The email the synthetic provider reports for the next ID-token sign-in. */
+let providerEmail = ''
+
 function testAuth() {
   return betterAuth({
     secret: 'synthetic-test-secret-with-at-least-32-characters',
@@ -10,6 +13,25 @@ function testAuth() {
         clientId: 'synthetic-client',
         clientSecret: 'synthetic-secret',
         disableSignUp: true,
+        // Better Auth's integrator overrides stand in for Google's JWKS and profile.
+        verifyIdToken: async () => true,
+        getUserInfo: async () => ({
+          user: { email: providerEmail, name: 'Synthetic User', emailVerified: true },
+          data: {
+            iss: 'https://accounts.google.com',
+            aud: 'synthetic-client',
+            azp: 'synthetic-client',
+            sub: `google-${providerEmail}`,
+            email: providerEmail,
+            email_verified: true,
+            name: 'Synthetic User',
+            given_name: 'Synthetic',
+            family_name: 'User',
+            picture: '',
+            iat: 0,
+            exp: 0,
+          },
+        }),
       },
     },
     emailAndPassword: { enabled: true },
@@ -23,19 +45,8 @@ function testAuth() {
   })
 }
 
-async function idTokenRequest(
-  auth: ReturnType<typeof testAuth>,
-  email: string,
-  requestSignUp: boolean,
-) {
-  const context = await auth.$context
-  const provider = context.socialProviders.find((candidate) => candidate.id === 'google')
-  if (!provider) throw new Error('Google provider missing')
-  provider.verifyIdToken = async () => true
-  provider.getUserInfo = async () => ({
-    user: { id: `google-${email}`, email, name: 'Synthetic User', emailVerified: true },
-    data: {},
-  })
+function idTokenRequest(auth: ReturnType<typeof testAuth>, email: string, requestSignUp: boolean) {
+  providerEmail = email
   return auth.handler(
     new Request('http://localhost:8090/api/auth/sign-in/social', {
       method: 'POST',
@@ -49,7 +60,7 @@ async function idTokenRequest(
   )
 }
 
-describe('Better Auth patched ID-token social signup', () => {
+describe('Better Auth ID-token social signup policy', () => {
   it('rejects a new identity even when requestSignUp is true', async () => {
     const auth = testAuth()
     const response = await idTokenRequest(auth, 'new@example.test', true)

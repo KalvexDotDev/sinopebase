@@ -6,7 +6,7 @@
 // operations (sign-up, sign-in, session lookup, sign-out).
 // ---------------------------------------------------------------------------
 
-import { genericOAuth } from 'better-auth/plugins/generic-oauth'
+import { type GenericOAuthConfig, genericOAuth } from 'better-auth/plugins/generic-oauth'
 import { type Kysely, sql } from 'kysely'
 import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
@@ -72,7 +72,8 @@ export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
     string,
     { clientId: string; clientSecret: string; disableSignUp: boolean }
   > = {}
-  const genericConfigs: Array<Record<string, unknown>> = []
+  // tenantId is carried for operator configuration; Better Auth's generic config ignores it.
+  const genericConfigs: Array<GenericOAuthConfig & { tenantId?: string }> = []
 
   for (const p of allProviders) {
     if (BUILTIN_SOCIAL.has(p.providerId)) {
@@ -82,7 +83,7 @@ export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
         disableSignUp,
       }
     } else {
-      const config: Record<string, unknown> = {
+      const config: GenericOAuthConfig & { tenantId?: string } = {
         providerId: p.providerId,
         clientId: p.clientId,
         clientSecret: p.clientSecret,

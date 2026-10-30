@@ -44,6 +44,10 @@ export interface BetterAuthDatabase {
     accessToken: string | null
     refreshToken: string | null
     expiresAt: Date | null
+    idToken: string | null
+    accessTokenExpiresAt: Date | null
+    refreshTokenExpiresAt: Date | null
+    scope: string | null
     password: string | null
     createdAt: Date
     updatedAt: Date
@@ -141,6 +145,13 @@ export async function createAuthTables(db: Kysely<BetterAuthDatabase>): Promise<
       "createdAt"  timestamptz  NOT NULL DEFAULT now(),
       "updatedAt"  timestamptz  NOT NULL DEFAULT now()
     );
+  `.execute(db)
+  // Better Auth 1.7 checks its schema and fails auth requests while these nullable account columns are missing.
+  await sql`
+    ALTER TABLE public.account ADD COLUMN IF NOT EXISTS "idToken" text;
+    ALTER TABLE public.account ADD COLUMN IF NOT EXISTS "accessTokenExpiresAt" timestamptz;
+    ALTER TABLE public.account ADD COLUMN IF NOT EXISTS "refreshTokenExpiresAt" timestamptz;
+    ALTER TABLE public.account ADD COLUMN IF NOT EXISTS scope text;
   `.execute(db)
   // No backfill: an existing verified boolean does not reveal when verification occurred.
   await sql`

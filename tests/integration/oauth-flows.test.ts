@@ -20,6 +20,11 @@
  * before server.start(); 'apple' is registered at runtime via the admin API.
  * ponytail: pre-seeding the store file — provider config is read once at
  * startup by design; the admin API persists for the next restart.
+ *
+ * @new-code-test positive src/tools/auth-better/adapter.ts
+ * @new-code-test negative src/tools/auth-better/adapter.ts
+ * @new-code-test positive src/tools/auth-better/index.ts
+ * @new-code-test negative src/tools/auth-better/index.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
@@ -191,11 +196,12 @@ describe('OAuth flows (full server)', () => {
       expect(idp?.issuer).toBe(OIDC_ISSUER)
 
       // POST sign-in/social fetches the OIDC discovery document at request
-      // time; the unresolvable issuer makes better-auth throw, and our
-      // catch-all maps the failure to a defined 400 — never a 200/redirect,
+      // time. Better Auth 1.7 skips a provider whose discovery fails, so the
+      // request answers a defined PROVIDER_NOT_FOUND — never a 200/redirect,
       // never a hang, never a bare 500.
       const res = await postSignInSocial(OIDC_PROVIDER_ID)
-      expect(res.status).toBe(400)
+      expect(res.status).toBe(404)
+      expect(((await res.json()) as { code?: string }).code).toBe('PROVIDER_NOT_FOUND')
       expect(res.headers.get('location')).toBeNull()
     }, 30_000)
   })
