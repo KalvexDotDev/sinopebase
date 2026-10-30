@@ -18,6 +18,7 @@ export interface BetterAuthDatabase {
     id: string
     email: string
     emailVerified: boolean
+    emailVerifiedAt: Date | null
     name: string | null
     image: string | null
     role: string
@@ -140,5 +141,27 @@ export async function createAuthTables(db: Kysely<BetterAuthDatabase>): Promise<
       "createdAt"  timestamptz  NOT NULL DEFAULT now(),
       "updatedAt"  timestamptz  NOT NULL DEFAULT now()
     );
+  `.execute(db)
+  // No backfill: an existing verified boolean does not reveal when verification occurred.
+  await sql`
+    ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "emailVerifiedAt" timestamptz;
+    CREATE OR REPLACE FUNCTION public.record_email_verification_time()
+    RETURNS trigger LANGUAGE plpgsql SET search_path = '' AS $$
+    BEGIN
+      IF NOT NEW."emailVerified" THEN
+        NEW."emailVerifiedAt" := NULL;
+      ELSIF TG_OP = 'INSERT' THEN
+        NEW."emailVerifiedAt" := clock_timestamp();
+      ELSIF NOT OLD."emailVerified" OR lower(NEW.email) IS DISTINCT FROM lower(OLD.email) THEN
+        NEW."emailVerifiedAt" := clock_timestamp();
+      ELSE
+        NEW."emailVerifiedAt" := OLD."emailVerifiedAt";
+      END IF;
+      RETURN NEW;
+    END;
+    $$;
+    CREATE OR REPLACE TRIGGER record_email_verification_time
+      BEFORE INSERT OR UPDATE ON public."user"
+      FOR EACH ROW EXECUTE FUNCTION public.record_email_verification_time();
   `.execute(db)
 }
