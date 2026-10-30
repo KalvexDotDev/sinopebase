@@ -387,3 +387,318 @@ test('returns the authoritative native verification timestamp through the offici
   })()
   await operation
 }, 15000)
+
+// #57: exercise the actual native credential store, not an auth mock.
+test('official SDK updates native credentials using current_password', async () => {
+  operation = (async () => {
+    const accountEmail = `sdk-password-${crypto.randomUUID()}@example.test`
+    const oldPassword = crypto.randomUUID()
+    const newPassword = crypto.randomUUID()
+    const client = createClient(origin, 'synthetic-anon', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    const signup = await client.auth.signUp({ email: accountEmail, password: oldPassword })
+    expect(signup.error).toBeNull()
+    expect(signup.data.session).not.toBeNull()
+    const update = await client.auth.updateUser({
+      password: newPassword,
+      current_password: oldPassword,
+    })
+    expect(update.error).toBeNull()
+    expect(update.data.user?.id).toBe(signup.data.user?.id)
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: newPassword })).error,
+    ).toBeNull()
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: oldPassword })).error,
+    ).not.toBeNull()
+  })()
+  await operation
+})
+
+test('existing PATCH success actually changes the native credential', async () => {
+  operation = (async () => {
+    const accountEmail = `patch-password-${crypto.randomUUID()}@example.test`
+    const oldPassword = crypto.randomUUID()
+    const newPassword = crypto.randomUUID()
+    const client = createClient(origin, 'synthetic-anon', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    const signup = await client.auth.signUp({ email: accountEmail, password: oldPassword })
+    expect(signup.error).toBeNull()
+    expect(signup.data.session).not.toBeNull()
+    const response = await fetch(`${origin}/auth/v1/user`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${signup.data.session?.access_token}`,
+      },
+      body: JSON.stringify({ password: newPassword, currentPassword: oldPassword }),
+    })
+    expect(response.status).toBe(200)
+    await response.body?.cancel()
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: newPassword })).error,
+    ).toBeNull()
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: oldPassword })).error,
+    ).not.toBeNull()
+  })()
+  await operation
+})
+
+test('native user updates refuse invalid credentials and roll back storage failure', async () => {
+  operation = (async () => {
+    const accountEmail = `negative-password-${crypto.randomUUID()}@example.test`
+    const oldPassword = crypto.randomUUID()
+    const newPassword = crypto.randomUUID()
+    const client = createClient(origin, 'synthetic-anon', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    const signup = await client.auth.signUp({ email: accountEmail, password: oldPassword })
+    expect(signup.error).toBeNull()
+    const userId = z.string().uuid().parse(signup.data.user?.id)
+    for (const attributes of [
+      { password: newPassword },
+      { password: newPassword, current_password: 'incorrect-current-password' },
+      { password: 'short', current_password: oldPassword },
+    ]) {
+      expect((await client.auth.updateUser(attributes)).error).not.toBeNull()
+      expect(
+        (await client.auth.signInWithPassword({ email: accountEmail, password: oldPassword }))
+          .error,
+      ).toBeNull()
+    }
+    const session = await client.auth.getSession()
+    const conflict = await fetch(`${origin}/auth/v1/user`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${session.data.session?.access_token}`,
+      },
+      body: JSON.stringify({
+        password: newPassword,
+        current_password: oldPassword,
+        currentPassword: 'conflicting-alias',
+      }),
+    })
+    expect(conflict.status).toBe(400)
+    await conflict.body?.cancel()
+    for (const authorization of ['', 'Bearer invalid-synthetic-session']) {
+      const denied = await fetch(`${origin}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          ...(authorization ? { authorization } : {}),
+        },
+        body: JSON.stringify({ password: newPassword, current_password: oldPassword }),
+      })
+      expect(denied.status).toBe(401)
+      await denied.body?.cancel()
+    }
+    if (!pool) throw new Error('Owned native database unavailable')
+    expect((await client.auth.updateUser({ data: { preserved: true } })).error).toBeNull()
+    // Actual database failure after the credential write, before profile commit.
+    await pool?.query(
+      `CREATE FUNCTION fail_native_update_57() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic update failure'; END $$`,
+    )
+    await pool?.query(
+      `CREATE TRIGGER fail_native_update_57 BEFORE UPDATE ON public."user" FOR EACH ROW WHEN (OLD.id = '${userId}') EXECUTE FUNCTION fail_native_update_57()`,
+    )
+    try {
+      const result = await client.auth.updateUser({
+        password: newPassword,
+        current_password: oldPassword,
+        email: `changed-${accountEmail}`,
+        data: { preserved: null, partial: true },
+      })
+      expect(result.error?.status).toBe(500)
+      expect(result.error?.message).toBe('User update failed')
+    } finally {
+      await pool?.query('DROP TRIGGER fail_native_update_57 ON public."user"')
+      await pool?.query('DROP FUNCTION fail_native_update_57()')
+    }
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: oldPassword })).error,
+    ).toBeNull()
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: newPassword })).error,
+    ).not.toBeNull()
+    expect((await client.auth.getUser()).data.user?.user_metadata).toEqual({ preserved: true })
+  })()
+  await operation
+})
+
+test('native password policy accepts its boundaries and matching aliases', async () => {
+  operation = (async () => {
+    const accountEmail = `policy-password-${crypto.randomUUID()}@example.test`
+    let currentPassword: string = crypto.randomUUID()
+    const client = createClient(origin, 'synthetic-anon', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    expect(
+      (await client.auth.signUp({ email: accountEmail, password: currentPassword })).error,
+    ).toBeNull()
+    // The installed native provider's default policy is 8 through 128 characters.
+    for (const length of [7, 129]) {
+      const rejected = await client.auth.updateUser({
+        password: 'x'.repeat(length),
+        current_password: currentPassword,
+      })
+      expect(rejected.error?.status).toBe(400)
+      expect(rejected.error?.message).toBe('Password does not meet the configured policy')
+      expect(
+        (await client.auth.signInWithPassword({ email: accountEmail, password: currentPassword }))
+          .error,
+      ).toBeNull()
+    }
+    for (const length of [8, 128]) {
+      const nextPassword = 'x'.repeat(length)
+      const session = await client.auth.getSession()
+      const accepted = await fetch(`${origin}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${session.data.session?.access_token}`,
+        },
+        body: JSON.stringify({
+          password: nextPassword,
+          current_password: currentPassword,
+          currentPassword,
+        }),
+      })
+      expect(accepted.status).toBe(200)
+      await accepted.body?.cancel()
+      expect(
+        (await client.auth.signInWithPassword({ email: accountEmail, password: nextPassword }))
+          .error,
+      ).toBeNull()
+      currentPassword = nextPassword
+    }
+  })()
+  await operation
+})
+
+test('missing native credential refuses password and profile updates together', async () => {
+  operation = (async () => {
+    const accountEmail = `missing-credential-${crypto.randomUUID()}@example.test`
+    const accountPassword = crypto.randomUUID()
+    const client = createClient(origin, 'synthetic-anon', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    const signup = await client.auth.signUp({ email: accountEmail, password: accountPassword })
+    expect(signup.error).toBeNull()
+    const userId = z.string().uuid().parse(signup.data.user?.id)
+    if (!pool) throw new Error('Owned native database unavailable')
+    const removed = await pool.query(
+      'DELETE FROM public.account WHERE "userId"=$1 AND "providerId"=$2 RETURNING id',
+      [userId, 'credential'],
+    )
+    expect(removed.rowCount).toBe(1)
+    const rejected = await client.auth.updateUser({
+      password: crypto.randomUUID(),
+      current_password: accountPassword,
+      data: { partial: true },
+    })
+    expect(rejected.error?.status).toBe(400)
+    expect(rejected.error?.message).toBe('Current password is incorrect')
+    const read = await client.auth.getUser()
+    expect(read.error).toBeNull()
+    expect(read.data.user?.user_metadata).toEqual({})
+  })()
+  await operation
+})
+
+test('SDK metadata updates persist without granting authority', async () => {
+  operation = (async () => {
+    const accountEmail = `metadata-${crypto.randomUUID()}@example.test`
+    const accountPassword = crypto.randomUUID()
+    const client = createClient(origin, 'synthetic-anon', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    const signup = await client.auth.signUp({ email: accountEmail, password: accountPassword })
+    expect(signup.error).toBeNull()
+    const before = await client.auth.getUser()
+    expect(before.error).toBeNull()
+    expect(before.data.user).not.toBeNull()
+    const data = {
+      keep: 'retained',
+      remove: 'old',
+      nested: { a: 1 },
+      role: 'admin',
+      emailVerified: true,
+      emailVerifiedAt: '2000-01-01T00:00:00.000Z',
+    }
+    const first = await client.auth.updateUser({ data })
+    expect(first.error).toBeNull()
+    expect(first.data.user?.user_metadata).toEqual(data)
+    expect(first.data.user?.email_confirmed_at).toBeUndefined()
+    expect(first.data.user?.role).toBe(before.data.user?.role)
+    expect(first.data.user?.app_metadata).toEqual(before.data.user?.app_metadata)
+    expect(
+      (await client.auth.updateUser({ data: { remove: null, nested: { b: 2 } } })).error,
+    ).toBeNull()
+    const expected = {
+      keep: 'retained',
+      nested: { b: 2 },
+      role: 'admin',
+      emailVerified: true,
+      emailVerifiedAt: '2000-01-01T00:00:00.000Z',
+    }
+    expect((await client.auth.getUser()).data.user?.user_metadata).toEqual(expected)
+    const signedIn = await client.auth.signInWithPassword({
+      email: accountEmail,
+      password: accountPassword,
+    })
+    expect(signedIn.error).toBeNull()
+    expect(signedIn.data.user?.user_metadata).toEqual(expected)
+    expect((await client.auth.refreshSession()).data.user?.user_metadata).toEqual(expected)
+    const session = await client.auth.getSession()
+    const patched = await fetch(`${origin}/auth/v1/user`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${session.data.session?.access_token}`,
+      },
+      body: JSON.stringify({ data: { patch: 'saved' } }),
+    })
+    expect(patched.status).toBe(200)
+    await patched.body?.cancel()
+    expect((await client.auth.getUser()).data.user?.user_metadata).toEqual({
+      ...expected,
+      patch: 'saved',
+    })
+    expect((await client.auth.getUser()).data.user?.email_confirmed_at).toBeUndefined()
+    const bearer = session.data.session?.access_token
+    expect(bearer).toBeDefined()
+    const writeMetadata = (data: Record<string, unknown>) =>
+      fetch(`${origin}/auth/v1/user`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}` },
+        body: JSON.stringify({ data }),
+      })
+    const concurrent = await Promise.all([writeMetadata({ left: 1 }), writeMetadata({ right: 2 })])
+    for (const response of concurrent) {
+      expect(response.status).toBe(200)
+      await response.body?.cancel()
+    }
+    const finalMetadata = { ...expected, patch: 'saved', left: 1, right: 2 }
+    expect((await client.auth.getUser()).data.user?.user_metadata).toEqual(finalMetadata)
+    if (!pool) throw new Error('Owned native database unavailable')
+    await pool.query(
+      `UPDATE public.session SET "expiresAt" = now() - interval '1 second' WHERE token = $1`,
+      [bearer],
+    )
+    const expired = await writeMetadata({ forbidden: true })
+    expect(expired.status).toBe(401)
+    await expired.body?.cancel()
+    const persisted = await pool.query(
+      'SELECT "userMetadata", role, "emailVerified" FROM public."user" WHERE id = $1',
+      [signup.data.user?.id],
+    )
+    expect(persisted.rows[0].userMetadata).toEqual(finalMetadata)
+    expect(persisted.rows[0].role).toBe(before.data.user?.role)
+    expect(persisted.rows[0].emailVerified).toBe(false)
+  })()
+  await operation
+})
