@@ -35,6 +35,7 @@ export interface BetterAuthDatabase {
     userAgent: string | null
     createdAt: Date
     updatedAt: Date
+    authMethod: Generated<string | null>
   }
   account: {
     id: string
@@ -158,7 +159,8 @@ export async function createAuthTables(db: Kysely<BetterAuthDatabase>): Promise<
   await sql`ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "userMetadata" jsonb NOT NULL DEFAULT '{}'::jsonb`.execute(
     db,
   )
-  // No backfill: an existing verified boolean does not reveal when verification occurred.
+  // GoTrue amr: recovery sessions may set a password without the current one.
+  await sql`ALTER TABLE public."session" ADD COLUMN IF NOT EXISTS "authMethod" text`.execute(db)
   await sql`
     ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "emailVerifiedAt" timestamptz;
     CREATE OR REPLACE FUNCTION public.record_email_verification_time()

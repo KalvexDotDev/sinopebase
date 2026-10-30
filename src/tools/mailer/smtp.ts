@@ -36,8 +36,10 @@ export interface SMTPConfig {
   username?: string
   /** SMTP password (optional). */
   password?: string
-  /** Whether to use TLS (default: false). */
+  /** Whether to use implicit TLS from connect, as on port 465 (default: false). */
   tls?: boolean
+  /** Refuse to send unless STARTTLS upgrades a plain connection, as on port 587 (default: false). */
+  requireTLS?: boolean
   /** SMTP auth method: "PLAIN" or "LOGIN" (default: "PLAIN"). */
   authMethod?: string
   /**
@@ -125,6 +127,7 @@ export class SMTPClient implements Mailer, SendInterceptor {
       host: this.config.host,
       port: this.config.port,
       secure: this.config.tls ?? false,
+      requireTLS: this.config.requireTLS ?? false,
       name: this.config.localName ?? 'localhost',
     }
 

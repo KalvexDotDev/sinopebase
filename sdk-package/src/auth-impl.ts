@@ -291,10 +291,14 @@ export function createAuthClient(
 
     async resetPasswordForEmail(
       email: string,
+      options: { redirectTo?: string } = {},
       // biome-ignore lint/complexity/noBannedTypes: supabase-js API contract
     ): Promise<{ data: {} | null; error: AuthError | null }> {
+      const query = options.redirectTo
+        ? `?redirect_to=${encodeURIComponent(options.redirectTo)}`
+        : ''
       try {
-        await authFetch('POST', '/auth/v1/reset-password', { body: { email } })
+        await authFetch('POST', `/auth/v1/recover${query}`, { body: { email } })
       } catch {
         /* swallow — endpoint always returns success to prevent enumeration */
       }

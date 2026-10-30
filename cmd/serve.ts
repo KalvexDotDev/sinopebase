@@ -189,6 +189,7 @@ async function main(): Promise<void> {
     serviceRoleKey: process.env.SINOPEBASE_SERVICE_ROLE_KEY || undefined,
     anonKey: process.env.SINOPEBASE_ANON_KEY || undefined,
     extraOrigins,
+    siteUrl: process.env.SINOPEBASE_SITE_URL || undefined,
     oauthProviders: oauthProvidersFromEnv(),
     ...deploymentConfigFromEnv(process.env),
     tls,
@@ -204,6 +205,8 @@ async function main(): Promise<void> {
           port: parseInt(process.env.SMTP_PORT ?? '587', 10),
           username: process.env.SMTP_USERNAME,
           password: process.env.SMTP_PASSWORD,
+          fromAddress: process.env.SMTP_ADMIN_EMAIL || undefined,
+          fromName: process.env.SMTP_SENDER_NAME || undefined,
         }
       : undefined,
   } satisfies AppConfig)

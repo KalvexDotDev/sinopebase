@@ -12,6 +12,7 @@ import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 import type { BetterAuthDatabase } from './adapter'
 import { createAuthTables, createBetterAuthDB } from './adapter'
+import { bindRecoveryLink, dropRecoveryLink } from './recovery-links'
 import { createAuthWithSignupPolicy as betterAuth, signupsAllowed } from './signup-policy'
 
 // ---------------------------------------------------------------------------
@@ -54,8 +55,10 @@ export interface CreateAuthOptions {
   oauthProviders?: OAuthProviderConfig[]
   /** Additional trusted origins (e.g. production domain) */
   extraOrigins?: string[]
-  /** Deliver transactional email (password reset, verification). */
+  /** Deliver transactional email (password recovery, verification). */
   sendEmail?: (mail: { to: string; subject: string; text: string; html?: string }) => Promise<void>
+  /** Recovery links fall back here when redirect_to is absent or untrusted (GoTrue SITE_URL). */
+  siteUrl?: string
   /** Disable Better Auth diagnostics only for a private maintenance command handling credentials. */
   disableLogsForMaintenance?: true
 }
@@ -107,18 +110,50 @@ function oauthOptions(allProviders: OAuthProviderConfig[]) {
   }
 }
 
-function mailerOptions(sendEmail: CreateAuthOptions['sendEmail']) {
+/**
+ * GoTrue recovery link: the requested destination (Better Auth's callbackURL,
+ * already allow-listed by POST /auth/v1/recover) or the site URL, carrying the
+ * single-use token as `token_hash` and `type=recovery` for verifyOtp.
+ */
+export function recoveryLink(betterAuthUrl: string, token: string, siteUrl: string): string {
+  const link = new URL(new URL(betterAuthUrl).searchParams.get('callbackURL') || siteUrl)
+  link.searchParams.set('token_hash', token)
+  link.searchParams.set('type', 'recovery')
+  return link.href
+}
+
+function mailerOptions(
+  db: Kysely<BetterAuthDatabase>,
+  sendEmail: CreateAuthOptions['sendEmail'],
+  siteUrl: string,
+) {
   if (!sendEmail) return { emailAndPassword: { enabled: true } }
   return {
     emailAndPassword: {
       enabled: true,
-      sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
-        await sendEmail({
-          to: user.email,
-          subject: 'Sinopebase password reset',
-          text: `Reset your password: ${url}`,
-          html: `<p>Reset your password: <a href="${url}">${url}</a></p>`,
-        })
+      sendResetPassword: async ({
+        user,
+        url,
+        token,
+      }: {
+        user: { email: string }
+        url: string
+        token: string
+      }) => {
+        const link = recoveryLink(url, token, siteUrl)
+        await bindRecoveryLink(db, token, user.email)
+        try {
+          await sendEmail({
+            to: user.email,
+            subject: 'Reset your password',
+            text: `Reset your password: ${link}`,
+            html: `<p>Reset your password: <a href="${link.replaceAll('&', '&amp;')}">Reset password</a></p>`,
+          })
+        } catch (error) {
+          // An undelivered link must not stay valid; POST /auth/v1/recover then reopens its window.
+          await dropRecoveryLink(db, token)
+          throw error
+        }
       },
     },
     emailVerification: {
@@ -146,23 +181,35 @@ function maintenanceLogger(disabled?: true) {
   return disabled ? { disabled: true } : undefined
 }
 
-function authOptions(pool: pg.Pool, options?: CreateAuthOptions): Parameters<typeof betterAuth>[0] {
+function authOptions(
+  pool: pg.Pool,
+  db: Kysely<BetterAuthDatabase>,
+  options?: CreateAuthOptions,
+): Parameters<typeof betterAuth>[0] {
   const allProviders = options?.oauthProviders ?? []
+  const baseURL =
+    process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090'
   return {
     database: pool,
     logger: maintenanceLogger(options?.disableLogsForMaintenance),
     basePath: '/api/auth',
+    // Recovery runs only through GoTrue's /auth/v1/recover and /auth/v1/verify.
+    disabledPaths: ['/request-password-reset', '/reset-password'],
     user: {
       additionalFields: {
         emailVerifiedAt: { type: 'date', required: false, input: false },
         userMetadata: { type: 'json', required: false, input: false },
       },
     },
+    // GoTrue amr method of a session ('recovery'); null for ordinary sign-ins.
+    session: {
+      additionalFields: { authMethod: { type: 'string', required: false, input: false } },
+    },
     advanced: { database: { generateId: () => crypto.randomUUID() } },
-    ...mailerOptions(options?.sendEmail),
+    ...mailerOptions(db, options?.sendEmail, options?.siteUrl || baseURL),
     secret: options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK,
     trustedOrigins: trustedOrigins(options?.extraOrigins),
-    baseURL: process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090',
+    baseURL,
     ...oauthOptions(allProviders),
   }
 }
@@ -360,7 +407,7 @@ export async function createAuth(
 
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
-  const auth = betterAuth(authOptions(pool, options))
+  const auth = betterAuth(authOptions(pool, db, options))
 
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).

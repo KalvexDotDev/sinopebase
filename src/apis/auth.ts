@@ -13,6 +13,11 @@ import { z } from 'zod'
 import { lookupSessionByToken, type SessionLookup, type SinopebaseAuth } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 import {
+  RECOVERY_EMAIL_PREFIX,
+  RESET_PREFIX,
+  retireRecoveryLinks,
+} from '~/tools/auth-better/recovery-links'
+import {
   exchangeRefreshToken,
   LOGOUT_SCOPES,
   refreshTokenForSession,
@@ -352,15 +357,8 @@ export const authPlugin = new Elysia({ name: 'sinopebase-auth-fallback' })
     const user = authStore.toUser(storedUser)
     return userResponse(user)
   })
-  .post('/auth/v1/reset-password', async ({ body }) => {
-    const { email } = body as { email?: string }
-    // In-memory mode: silently accept (no email sender configured)
-    // Return success even for missing email to prevent enumeration
-    if (!email) return {}
-    // Log the intent — actual email sending requires SMTP
-    console.info(`[auth] Password reset requested for ${email} (no-op in memory mode)`)
-    return {}
-  })
+  // In-memory mode has no mail sender; GoTrue's generic success avoids enumeration.
+  .post('/auth/v1/recover', () => ({}))
   .get('/auth/v1/user', async ({ headers, set }) => {
     const authHeader = headers.authorization
     if (!authHeader?.startsWith('Bearer ')) {
@@ -399,7 +397,9 @@ export { errorResponse, sessionResponse, userResponse }
  * Only the surface that this module actually calls is typed.
  */
 interface BetterAuthInstance {
-  $context?: Promise<Pick<Awaited<SinopebaseAuth['$context']>, 'password'>>
+  $context?: Promise<
+    Pick<Awaited<SinopebaseAuth['$context']>, 'password' | 'internalAdapter' | 'isTrustedOrigin'>
+  >
   api: {
     signUpEmail(args: { body: { email: string; password: string; name: string } }): Promise<void>
     signInEmail(args: {
@@ -408,6 +408,7 @@ interface BetterAuthInstance {
     }): Promise<{ headers: Headers; response: BetterAuthSignInResult }>
     signOut(args: { headers: Headers }): Promise<void>
     getSession(args: { headers: Headers }): Promise<BetterAuthGetSessionResult | null>
+    requestPasswordReset?(args: { body: { email: string; redirectTo?: string } }): Promise<unknown>
   }
   /** Kysely-like database handle. Kept wide to avoid coupling to Kysely generics. */
   __db?: {
@@ -471,57 +472,166 @@ const nativeUserUpdate = z
       value.current_password === value.currentPassword,
   )
 
+/** GoTrue error body: supabase-js reads `error_code`/`msg`; Sinopebase's own SDK reads `message`. */
+function goTrueError(
+  set: { status?: number | string },
+  status: number,
+  errorCode: string,
+  msg: string,
+  extra?: Record<string, unknown>,
+) {
+  set.status = status
+  return { code: status, error_code: errorCode, msg, message: msg, ...extra }
+}
+
 class UserUpdateRefused extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  readonly errorCode: string
+  readonly extra?: Record<string, unknown>
+  constructor(status: number, errorCode: string, message: string, extra?: Record<string, unknown>) {
     super(message)
     this.status = status
+    this.errorCode = errorCode
+    this.extra = extra
   }
 }
 
+/** GoTrue amr method of a session created by verifying a recovery link. */
+const RECOVERY = 'recovery'
+
 function parseNativeUpdate(body: unknown) {
   const parsed = nativeUserUpdate.safeParse(body)
-  if (!parsed.success) throw new UserUpdateRefused(400, 'Invalid user update')
-  const currentPassword = parsed.data.current_password ?? parsed.data.currentPassword
-  if (parsed.data.password && !currentPassword)
-    throw new UserUpdateRefused(400, 'current_password is required to change password')
-  return { ...parsed.data, currentPassword }
+  if (!parsed.success) throw new UserUpdateRefused(400, 'validation_failed', 'Invalid user update')
+  return {
+    ...parsed.data,
+    currentPassword: parsed.data.current_password ?? parsed.data.currentPassword,
+  }
 }
 
-async function nativePasswordProvider(auth: BetterAuthInstance, password: string) {
+async function nativeContext(auth: BetterAuthInstance) {
   const native = await auth.$context
-  if (!native) throw new Error('Native password provider unavailable')
-  const policy = native.password.config
-  if (password.length < policy.minPasswordLength || password.length > policy.maxPasswordLength)
-    throw new UserUpdateRefused(400, 'Password does not meet the configured policy')
-  return native.password
+  if (!native) throw new Error('Native auth context unavailable')
+  return native
+}
+
+function weakPassword(message: string) {
+  return new UserUpdateRefused(422, 'weak_password', message, {
+    weak_password: { reasons: ['length'] },
+  })
+}
+
+/** Better Auth's native policy (8–128 by default), reported as GoTrue's weak_password. */
+async function nativePasswordProvider(auth: BetterAuthInstance, password: string) {
+  const { password: provider } = await nativeContext(auth)
+  const { minPasswordLength, maxPasswordLength } = provider.config
+  if (password.length < minPasswordLength)
+    throw weakPassword(`Password should be at least ${minPasswordLength} characters.`)
+  if (password.length > maxPasswordLength)
+    throw weakPassword(`Password should be at most ${maxPasswordLength} characters.`)
+  return provider
+}
+
+type PasswordProvider = Awaited<SinopebaseAuth['$context']>['password']
+
+/** GoTrue UpdatePasswordRequireCurrentPassword, outside a recovery session. */
+async function proveCurrentPassword(
+  provider: PasswordProvider,
+  hash: string | null | undefined,
+  currentPassword: string | undefined,
+) {
+  if (!currentPassword)
+    throw new UserUpdateRefused(
+      400,
+      'current_password_required',
+      'Current password required when setting new password.',
+    )
+  if (!hash || !(await provider.verify({ password: currentPassword, hash })))
+    throw new UserUpdateRefused(400, 'current_password_mismatch', 'Current password is incorrect')
+}
+
+interface UpdatingSession {
+  id: string
+  userId: string
+  authMethod: string | null
+}
+
+/**
+ * GoTrue UpdatePassword: other sessions and their refresh tokens end, pending
+ * recovery links die, and a recovery session becomes an ordinary one.
+ */
+async function finishPasswordChange(
+  transaction: Transaction<BetterAuthDatabase>,
+  session: UpdatingSession,
+) {
+  await transaction
+    .deleteFrom('session')
+    .where('userId', '=', session.userId)
+    .where('id', '<>', session.id)
+    .execute()
+  await transaction
+    .deleteFrom('refresh_tokens')
+    .where('user_id', '=', session.userId)
+    .where('session_id', '<>', session.id)
+    .execute()
+  await retireRecoveryLinks(transaction, session.userId)
+  await transaction
+    .updateTable('session')
+    .set({ authMethod: null })
+    .where('id', '=', session.id)
+    .execute()
+}
+
+/** Write a Better Auth hash; recovery may create the first native credential, as Better Auth's reset does. */
+async function storeNativePassword(
+  transaction: Transaction<BetterAuthDatabase>,
+  userId: string,
+  credentialId: string | undefined,
+  hash: string,
+) {
+  if (credentialId) {
+    await transaction
+      .updateTable('account')
+      .set({ password: hash, updatedAt: new Date() })
+      .where('id', '=', credentialId)
+      .executeTakeFirstOrThrow()
+    return
+  }
+  await sql`INSERT INTO public.account (id, "userId", "providerId", "accountId", password)
+    VALUES (${crypto.randomUUID()}, ${userId}, 'credential', ${userId}, ${hash})`.execute(
+    transaction,
+  )
 }
 
 async function updateNativeCredential(
   auth: BetterAuthInstance,
   transaction: Transaction<BetterAuthDatabase>,
-  userId: string,
+  session: UpdatingSession,
   password: string,
-  currentPassword: string,
+  currentPassword: string | undefined,
 ) {
   const provider = await nativePasswordProvider(auth, password)
   const credential = await transaction
     .selectFrom('account')
     .select(['id', 'password'])
-    .where('userId', '=', userId)
+    .where('userId', '=', session.userId)
     .where('providerId', '=', 'credential')
     .forUpdate()
     .executeTakeFirst()
-  if (
-    !credential?.password ||
-    !(await provider.verify({ password: currentPassword, hash: credential.password }))
+  if (session.authMethod !== RECOVERY)
+    await proveCurrentPassword(provider, credential?.password, currentPassword)
+  if (credential?.password && (await provider.verify({ password, hash: credential.password })))
+    throw new UserUpdateRefused(
+      422,
+      'same_password',
+      'New password should be different from the old password.',
+    )
+  await storeNativePassword(
+    transaction,
+    session.userId,
+    credential?.id,
+    await provider.hash(password),
   )
-    throw new UserUpdateRefused(400, 'Current password is incorrect')
-  await transaction
-    .updateTable('account')
-    .set({ password: await provider.hash(password), updatedAt: new Date() })
-    .where('id', '=', credential.id)
-    .executeTakeFirstOrThrow()
+  await finishPasswordChange(transaction, session)
 }
 
 function nativeProfileUpdate(
@@ -541,6 +651,64 @@ function nativeProfileUpdate(
     update.emailVerified = sql<boolean>`CASE WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified" ELSE false END`
   }
   return update
+}
+
+/**
+ * Lock the caller's user row, then its session row. Every writer here takes
+ * the user lock first, so revoking a user's other sessions cannot deadlock
+ * with a concurrent update from one of them.
+ */
+async function lockUpdatingSession(transaction: Transaction<BetterAuthDatabase>, token: string) {
+  const owner = await transaction
+    .selectFrom('session')
+    .select('userId')
+    .where('token', '=', token)
+    .where('expiresAt', '>', new Date())
+    .executeTakeFirst()
+  if (!owner) throw new UserUpdateRefused(401, 'session_not_found', 'Invalid token')
+  const user = await transaction
+    .selectFrom('user')
+    .selectAll()
+    .where('id', '=', owner.userId)
+    .forUpdate()
+    .executeTakeFirst()
+  // Revalidate the session under the user lock: it may have been revoked meanwhile.
+  const session = await transaction
+    .selectFrom('session')
+    .select(['id', 'userId', 'authMethod'])
+    .where('token', '=', token)
+    .where('userId', '=', owner.userId)
+    .where('expiresAt', '>', new Date())
+    .forUpdate()
+    .executeTakeFirst()
+  if (!user || !session) throw new UserUpdateRefused(401, 'session_not_found', 'Invalid token')
+  return { user, session }
+}
+
+async function applyNativeUpdate(
+  auth: BetterAuthInstance,
+  transaction: Transaction<BetterAuthDatabase>,
+  token: string,
+  update: ReturnType<typeof parseNativeUpdate>,
+) {
+  const { user, session } = await lockUpdatingSession(transaction, token)
+  // Recovery links were mailed to the old address; GoTrue invalidates them with it.
+  if (update.email && update.email.toLowerCase() !== user.email.toLowerCase())
+    await retireRecoveryLinks(transaction, user.id)
+  if (update.password)
+    await updateNativeCredential(
+      auth,
+      transaction,
+      session,
+      update.password,
+      update.currentPassword,
+    )
+  return transaction
+    .updateTable('user')
+    .set(nativeProfileUpdate(user.userMetadata, update))
+    .where('id', '=', user.id)
+    .returningAll()
+    .executeTakeFirstOrThrow()
 }
 
 /** Preserve native password policy; commit credential/profile changes together. */
@@ -564,47 +732,200 @@ async function updateNativeUser(
     const update = parseNativeUpdate(body)
     const row = await authDb(auth)
       .transaction()
-      .execute(async (transaction) => {
-        // Revalidate and lock the actual native session before any write.
-        const session = await transaction
-          .selectFrom('session')
-          .select('userId')
-          .where('token', '=', token)
-          .where('expiresAt', '>', new Date())
-          .forUpdate()
-          .executeTakeFirst()
-        if (!session) throw new UserUpdateRefused(401, 'Invalid token')
-        const user = await transaction
-          .selectFrom('user')
-          .selectAll()
-          .where('id', '=', session.userId)
-          .forUpdate()
-          .executeTakeFirst()
-        if (!user) throw new UserUpdateRefused(401, 'Invalid token')
-        if (update.password && update.currentPassword)
-          await updateNativeCredential(
-            auth,
-            transaction,
-            user.id,
-            update.password,
-            update.currentPassword,
-          )
-        return transaction
-          .updateTable('user')
-          .set(nativeProfileUpdate(user.userMetadata, update))
-          .where('id', '=', user.id)
-          .returningAll()
-          .executeTakeFirstOrThrow()
-      })
+      .execute((transaction) => applyNativeUpdate(auth, transaction, token, update))
     return bridgeGetUserResponse({ user: row, session: {} })
   } catch (error) {
-    if (error instanceof UserUpdateRefused) {
-      set.status = error.status
-      return { message: error.message }
-    }
+    if (error instanceof UserUpdateRefused)
+      return goTrueError(set, error.status, error.errorCode, error.message, error.extra)
     set.status = 500
     return { message: 'User update failed' }
   }
+}
+
+/** GoTrue SMTP_MAX_FREQUENCY default: one recovery email per user per 60 seconds. */
+const RECOVERY_INTERVAL_MS = 60_000
+/** Verification row marking a user's live recovery interval (GoTrue recovery_sent_at). */
+const RECOVERY_SENT_PREFIX = 'recovery-sent:'
+const recoverBody = z.object({ email: z.string().trim().email() })
+
+/** redirect_to is honoured only for Better Auth trusted origins (SINOPEBASE_EXTRA_ORIGINS). */
+async function trustedRedirect(auth: BetterAuthInstance, redirectTo: string | undefined) {
+  if (!redirectTo || !URL.canParse(redirectTo)) return undefined
+  return (await nativeContext(auth)).isTrustedOrigin(redirectTo) ? redirectTo : undefined
+}
+
+/**
+ * Claim the user's recovery interval. The advisory lock serialises concurrent
+ * claims and is released before any mail is sent. Returns the user's existing
+ * recovery tokens, or null while an earlier claim is live.
+ */
+function claimRecoveryInterval(auth: BetterAuthInstance, userId: string) {
+  const identifier = RECOVERY_SENT_PREFIX + userId
+  return authDb(auth)
+    .transaction()
+    .execute(async (transaction) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${identifier}, 0))`.execute(
+        transaction,
+      )
+      const live = await transaction
+        .selectFrom('verification')
+        .select('id')
+        .where('identifier', '=', identifier)
+        .where('expiresAt', '>', new Date())
+        .executeTakeFirst()
+      if (live) return null
+      await transaction.deleteFrom('verification').where('identifier', '=', identifier).execute()
+      const now = new Date()
+      await transaction
+        .insertInto('verification')
+        .values({
+          id: crypto.randomUUID(),
+          identifier,
+          value: userId,
+          expiresAt: new Date(now.getTime() + RECOVERY_INTERVAL_MS),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .execute()
+      const existing = await transaction
+        .selectFrom('verification')
+        .select('identifier')
+        .where('identifier', 'like', `${RESET_PREFIX}%`)
+        .where('value', '=', userId)
+        .execute()
+      return existing.map(({ identifier: token }) => token)
+    })
+}
+
+/**
+ * After the send: the new link replaces older ones (GoTrue keeps one recovery
+ * token per user). If no new link survived, delivery failed and dropped it, so
+ * reopen the interval and leave the earlier links valid.
+ */
+async function settleRecoveryInterval(
+  auth: BetterAuthInstance,
+  userId: string,
+  previous: string[],
+) {
+  await authDb(auth)
+    .transaction()
+    .execute(async (transaction) => {
+      const issued = await transaction
+        .selectFrom('verification')
+        .select('identifier')
+        .where('identifier', 'like', `${RESET_PREFIX}%`)
+        .where('value', '=', userId)
+        .where('identifier', 'not in', ['', ...previous])
+        .orderBy('createdAt', 'desc')
+        .executeTakeFirst()
+      if (issued) {
+        await retireRecoveryLinks(transaction, userId, issued.identifier)
+        return
+      }
+      console.error(`[AUTH] Recovery email delivery failed: user=${userId}`)
+      await transaction
+        .deleteFrom('verification')
+        .where('identifier', '=', RECOVERY_SENT_PREFIX + userId)
+        .execute()
+    })
+}
+
+/** Issue a Better Auth reset token and mail its GoTrue link, once per interval per user. */
+async function sendRecovery(
+  auth: BetterAuthInstance,
+  userId: string,
+  email: string,
+  redirectTo: string | undefined,
+) {
+  const requestPasswordReset = auth.api.requestPasswordReset
+  if (!requestPasswordReset) throw new Error('Native password recovery unavailable')
+  const previous = await claimRecoveryInterval(auth, userId)
+  if (!previous) return
+  await requestPasswordReset({ body: { email, redirectTo } })
+  await settleRecoveryInterval(auth, userId, previous)
+}
+
+/** POST /auth/v1/recover — always `{}` for a valid address, so accounts cannot be enumerated. */
+async function recoverPassword(
+  auth: BetterAuthInstance,
+  context: {
+    body: unknown
+    query: Record<string, string | undefined>
+    set: { status?: number | string }
+  },
+) {
+  const parsed = recoverBody.safeParse(context.body)
+  if (!parsed.success)
+    return goTrueError(
+      context.set,
+      400,
+      'validation_failed',
+      'Unable to validate email address: invalid format',
+    )
+  const email = parsed.data.email.toLowerCase()
+  const redirectTo = await trustedRedirect(auth, context.query.redirect_to)
+  const user = await authDb(auth)
+    .selectFrom('user')
+    .select('id')
+    .where(sql<string>`lower(email)`, '=', email)
+    .executeTakeFirst()
+  if (user) await sendRecovery(auth, user.id, email, redirectTo)
+  return {}
+}
+
+const verifyBody = z.object({ type: z.literal(RECOVERY), token_hash: z.string().min(1) })
+
+/**
+ * Confirm the address on recovery, as GoTrue does: the link proved control of
+ * the mailbox it was sent to. Refused unless the account still has that address.
+ */
+function confirmRecoveredUser(auth: BetterAuthInstance, userId: string, token: string) {
+  return authDb(auth)
+    .transaction()
+    .execute(async (transaction) => {
+      const sentTo = await transaction
+        .deleteFrom('verification')
+        .where('identifier', '=', RECOVERY_EMAIL_PREFIX + token)
+        .where('expiresAt', '>', new Date())
+        .returning('value')
+        .executeTakeFirst()
+      if (!sentTo) return undefined
+      return transaction
+        .updateTable('user')
+        .set({ emailVerified: true })
+        .where('id', '=', userId)
+        .where(sql<string>`lower(email)`, '=', sentTo.value)
+        .returningAll()
+        .executeTakeFirst()
+    })
+}
+
+/** POST /auth/v1/verify (type=recovery, token_hash) — consume the token, open a recovery session. */
+async function verifyRecovery(
+  auth: BetterAuthInstance,
+  context: { body: unknown; set: { status?: number | string } },
+) {
+  const parsed = verifyBody.safeParse(context.body)
+  if (!parsed.success)
+    return goTrueError(
+      context.set,
+      400,
+      'validation_failed',
+      'Only type recovery with a token_hash can be verified',
+    )
+  const native = await nativeContext(auth)
+  const verification = await native.internalAdapter.consumeVerificationValue(
+    RESET_PREFIX + parsed.data.token_hash,
+  )
+  const user = verification
+    ? await confirmRecoveredUser(auth, verification.value, parsed.data.token_hash)
+    : undefined
+  if (!user)
+    return goTrueError(context.set, 403, 'otp_expired', 'Email link is invalid or has expired')
+  const session = await native.internalAdapter.createSession(user.id, false, {
+    authMethod: RECOVERY,
+  })
+  return issueSession(auth, { token: session.token, user })
 }
 
 const refreshGrantBody = z.object({ refresh_token: z.string().min(1) })
@@ -876,23 +1197,8 @@ export function createAuthPlugin(
       })
       .put('/auth/v1/user', (context) => updateNativeUser(auth, context))
       .patch('/auth/v1/user', (context) => updateNativeUser(auth, context))
-      .post('/auth/v1/reset-password', async ({ body }) => {
-        const { email } = body as { email?: string }
-        if (!email) {
-          // Return success even for missing email to prevent enumeration
-          return {}
-        }
-        // Trigger better-auth password reset
-        try {
-          const ba = auth as unknown as {
-            api?: { requestPasswordReset?: (args: { body: { email: string } }) => Promise<void> }
-          }
-          await ba.api?.requestPasswordReset?.({ body: { email } })
-        } catch {
-          // Swallow errors — always return success to prevent email enumeration
-        }
-        return {}
-      })
+      .post('/auth/v1/recover', (context) => recoverPassword(auth, context))
+      .post('/auth/v1/verify', (context) => verifyRecovery(auth, context))
       .get('/auth/v1/user', async ({ headers, set }) => {
         const authHeader = headers.authorization
         if (!authHeader?.startsWith('Bearer ')) {

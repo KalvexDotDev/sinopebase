@@ -545,8 +545,8 @@ test('native password policy accepts its boundaries and matching aliases', async
         password: 'x'.repeat(length),
         current_password: currentPassword,
       })
-      expect(rejected.error?.status).toBe(400)
-      expect(rejected.error?.message).toBe('Password does not meet the configured policy')
+      expect(rejected.error?.status).toBe(422)
+      expect(rejected.error?.code).toBe('weak_password')
       expect(
         (await client.auth.signInWithPassword({ email: accountEmail, password: currentPassword }))
           .error,

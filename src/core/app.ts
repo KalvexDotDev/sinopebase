@@ -511,8 +511,9 @@ import { authorizeApiRequest, requiresApiAuthorization } from '~/core/api-author
 import { type MigrationLockClient, withPostgresMigrationLock } from '~/core/migration-lock'
 import { createMigrationSession } from '~/core/migration-session'
 import { Cron } from '~/tools/cron/cron'
-import type { Mailer } from '~/tools/mailer/mailer'
+import type { Address, Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
+import type { SMTPConfig } from '~/tools/mailer/smtp'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
 import type { MigrationDB } from '../../migrations/types'
 import {
@@ -549,6 +550,32 @@ import {
 import { generateRequestId, logger } from './logger'
 import { loadMigrationsFromDirectory, loadSqlMigrationsFromDirectory } from './migrations_loader'
 import { MigrationRunner } from './migrations_runner'
+
+/**
+ * SMTP transport and sender (GoTrue SMTP_ADMIN_EMAIL / SMTP_SENDER_NAME).
+ * Null without an SMTP host. A host without a sender address refuses startup:
+ * providers such as Resend reject mail with an empty From.
+ */
+export function smtpMailerConfig(
+  smtp: AppConfig['smtp'],
+): { transport: SMTPConfig; from: Address } | null {
+  if (!smtp?.enabled || !smtp.host) return null
+  if (!smtp.fromAddress)
+    throw new Error('SMTP_ADMIN_EMAIL (the From address) is required when SMTP_HOST is set')
+  const port = smtp.port ?? 587
+  return {
+    transport: {
+      host: smtp.host,
+      port,
+      username: smtp.username,
+      password: smtp.password,
+      // 465 is implicit TLS; 587 is submission, where STARTTLS must succeed rather than be skipped.
+      tls: port === 465,
+      requireTLS: port === 587,
+    },
+    from: { name: smtp.fromName ?? '', address: smtp.fromAddress },
+  }
+}
 
 /**
  * Build the file store for migrations from config.
@@ -636,6 +663,8 @@ export interface AppConfig {
   oauthProviders?: import('../tools/auth-better').OAuthProviderConfig[]
   /** Additional trusted origins for CORS/OAuth callbacks */
   extraOrigins?: string[]
+  /** Recovery-link fallback for missing or untrusted redirect_to (default: BETTER_AUTH_URL) */
+  siteUrl?: string
   /** Runtime mode (default: auto-detected from env) */
   mode?: 'production' | 'development'
   /** Service role key for admin-level access (must be >=32 chars in production) */
@@ -700,6 +729,8 @@ export class Sinopebase {
   public readonly metrics = new MetricsPlugin()
   /** SMTP mailer — null when SMTP is not configured. Use `send()` to deliver mail. */
   public mailer: Mailer | null = null
+  /** Sender of every transactional email; set together with `mailer`. */
+  private mailFrom: Address = { name: '', address: '' }
   /** Unique process identifier for PG LISTEN/NOTIFY self-skip. */
   private processId: string = ''
   private database: IDatabase | null = null
@@ -874,6 +905,8 @@ export class Sinopebase {
       }
     }
 
+    const smtp = smtpMailerConfig(this.config.smtp)
+
     // Initialize database: PostgreSQL or in-memory fallback
     const postgresUrl = this.config.postgresUrl || process.env.POSTGRES_URL || ''
     if (this.config.multiReplica) {
@@ -994,6 +1027,7 @@ export class Sinopebase {
           oauthProviders: mergedProviders,
           extraOrigins: this.config.extraOrigins,
           sendEmail: (mail) => this.sendMail(mail),
+          siteUrl: this.config.siteUrl,
         })
         logger.info('Auth', {
           provider: 'better-auth',
@@ -1043,16 +1077,11 @@ export class Sinopebase {
 
     // ── Mailer (SMTP) ────────────────────────────────────────────────
     this.mailer = null
-    if (this.config.smtp?.enabled && this.config.smtp?.host) {
+    if (smtp) {
       const { SMTPClient } = await import('~/tools/mailer/smtp')
-      this.mailer = new SMTPClient({
-        host: this.config.smtp.host,
-        port: this.config.smtp.port ?? 587,
-        username: this.config.smtp.username,
-        password: this.config.smtp.password,
-        tls: this.config.smtp.port === 465,
-      })
-      logger.info('Mailer', { type: 'SMTP', host: this.config.smtp.host })
+      this.mailer = new SMTPClient(smtp.transport)
+      this.mailFrom = smtp.from
+      logger.info('Mailer', { type: 'SMTP', host: smtp.transport.host, from: smtp.from.address })
     }
 
     // Create required tables
@@ -1868,6 +1897,7 @@ export class Sinopebase {
       return
     }
     const message = new Message()
+    message.from = this.mailFrom
     message.to = [{ name: '', address: mail.to }]
     message.subject = mail.subject
     message.text = mail.text

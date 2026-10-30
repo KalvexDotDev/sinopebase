@@ -137,37 +137,65 @@ describe('OAuth provider config mapping (createAuth)', () => {
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 
-  test('keeps password reset and verification delivery configured', async () => {
+  test('keeps password recovery and verification delivery configured', async () => {
     const sent: Array<{ to: string; subject: string; text: string; html?: string }> = []
     const auth = await createAuth(pool, {
+      siteUrl: 'https://site.example.test/home',
       sendEmail: async (mail) => {
         sent.push(mail)
       },
     })
     const emailOptions = auth.options as unknown as {
       emailAndPassword: {
-        sendResetPassword: (args: { user: { email: string }; url: string }) => Promise<void>
+        sendResetPassword: (args: {
+          user: { email: string }
+          url: string
+          token: string
+        }) => Promise<void>
       }
       emailVerification: {
         sendVerificationEmail: (args: { user: { email: string }; url: string }) => Promise<void>
       }
     }
 
+    const callbackURL = encodeURIComponent('https://app.example.test/auth/confirm?next=/account')
+    const [first, second] = [crypto.randomUUID(), crypto.randomUUID()].map((id) => `tok${id}`)
+    await emailOptions.emailAndPassword.sendResetPassword({
+      user: { email: 'Owner@Example.test' },
+      url: `http://localhost:8090/api/auth/reset-password/${first}?callbackURL=${callbackURL}`,
+      token: first as string,
+    })
     await emailOptions.emailAndPassword.sendResetPassword({
       user: { email: 'owner@example.test' },
-      url: 'https://example.test/reset',
+      url: `http://localhost:8090/api/auth/reset-password/${second}?callbackURL=`,
+      token: second as string,
     })
     await emailOptions.emailVerification.sendVerificationEmail({
       user: { email: 'owner@example.test' },
       url: 'https://example.test/verify',
     })
 
+    // Each mailed token is bound to the (lower-cased) address it was sent to.
+    const bound = await pool.query(
+      'DELETE FROM verification WHERE identifier = ANY($1) RETURNING identifier, value',
+      [[`recovery-email:${first}`, `recovery-email:${second}`]],
+    )
+    expect(bound.rows.map((row) => row.value)).toEqual(['owner@example.test', 'owner@example.test'])
+
+    const requested = `https://app.example.test/auth/confirm?next=%2Faccount&token_hash=${first}&type=recovery`
+    const fallback = `https://site.example.test/home?token_hash=${second}&type=recovery`
     expect(sent).toEqual([
       {
+        to: 'Owner@Example.test',
+        subject: 'Reset your password',
+        text: `Reset your password: ${requested}`,
+        html: `<p>Reset your password: <a href="${requested.replaceAll('&', '&amp;')}">Reset password</a></p>`,
+      },
+      {
         to: 'owner@example.test',
-        subject: 'Sinopebase password reset',
-        text: 'Reset your password: https://example.test/reset',
-        html: '<p>Reset your password: <a href="https://example.test/reset">https://example.test/reset</a></p>',
+        subject: 'Reset your password',
+        text: `Reset your password: ${fallback}`,
+        html: `<p>Reset your password: <a href="${fallback.replaceAll('&', '&amp;')}">Reset password</a></p>`,
       },
       {
         to: 'owner@example.test',
@@ -177,6 +205,42 @@ describe('OAuth provider config mapping (createAuth)', () => {
     ])
     expect(auth.options.emailAndPassword?.enabled).toBe(true)
     expect((auth.options.emailVerification as { enabled?: boolean })?.enabled).toBe(true)
+    expect(auth.options.disabledPaths).toEqual(['/request-password-reset', '/reset-password'])
+  })
+
+  test('drops an undelivered recovery link', async () => {
+    const auth = await createAuth(pool, {
+      sendEmail: async () => {
+        throw new Error('synthetic SMTP outage')
+      },
+    })
+    const sendResetPassword = (
+      auth.options as unknown as {
+        emailAndPassword: {
+          sendResetPassword: (args: {
+            user: { email: string }
+            url: string
+            token: string
+          }) => Promise<void>
+        }
+      }
+    ).emailAndPassword.sendResetPassword
+    const token = `tok${crypto.randomUUID()}`
+    await pool.query(
+      `INSERT INTO verification (id, identifier, value, "expiresAt") VALUES ($1, $2, 'user', now() + interval '1 hour')`,
+      [crypto.randomUUID(), `reset-password:${token}`],
+    )
+    await expect(
+      sendResetPassword({
+        user: { email: 'owner@example.test' },
+        url: `http://localhost:8090/api/auth/reset-password/${token}?callbackURL=`,
+        token,
+      }),
+    ).rejects.toThrow('synthetic SMTP outage')
+    const left = await pool.query('SELECT 1 FROM verification WHERE identifier = ANY($1)', [
+      [`reset-password:${token}`, `recovery-email:${token}`],
+    ])
+    expect(left.rowCount).toBe(0)
   })
 
   test('preserves provider links, origin filtering, and operator overrides', async () => {

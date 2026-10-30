@@ -52,9 +52,12 @@ export interface AuthClient {
     data?: Record<string, unknown>
   }): Promise<{ data: { user: User | null }; error: AuthError | null }>
 
-  /** Send a password reset email */
-  // biome-ignore lint/complexity/noBannedTypes: supabase-js API contract uses {}
-  resetPasswordForEmail(email: string): Promise<{ data: {} | null; error: AuthError | null }>
+  /** Send a password recovery email (GoTrue POST /auth/v1/recover) */
+  resetPasswordForEmail(
+    email: string,
+    options?: { redirectTo?: string },
+    // biome-ignore lint/complexity/noBannedTypes: supabase-js API contract uses {}
+  ): Promise<{ data: {} | null; error: AuthError | null }>
 
   /** Restore a session from tokens — verified against the backend, which supplies the user. */
   setSession(session: { access_token: string; refresh_token: string }): Promise<AuthResponse>
