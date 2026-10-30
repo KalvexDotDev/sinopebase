@@ -1,3 +1,5 @@
+// @new-code-test positive src/core/postgres-role-bootstrap.ts
+// @new-code-test negative src/core/postgres-role-bootstrap.ts
 import { describe, expect, it } from 'bun:test'
 import type { QueryResult } from 'pg'
 import {

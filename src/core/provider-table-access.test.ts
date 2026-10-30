@@ -1,3 +1,11 @@
+/**
+ * Provider (Better Auth) tables stay internal: startup repairs browser-role grants and refuses
+ * to listen while any remain (KalvexDotDev/sinope#861).
+ * @new-code-test positive src/core/app.ts
+ * @new-code-test negative src/core/app.ts
+ * @new-code-test positive src/tools/auth-better/index.ts
+ * @new-code-test negative src/tools/auth-better/index.ts
+ */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import pg from 'pg'
 import { startLoopbackApp } from '../../tests/harness/server'

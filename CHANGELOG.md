@@ -5,6 +5,11 @@
 ### Security
 - Upgraded better-auth from 1.6.26 to 1.7.14. This fixes OAuth state accepted as a Magic Link (GHSA-965c-763c-88jm, critical), sign-in as another user through the OAuth Proxy (GHSA-r4xp-prcw-77qf, high), device login approval that hides the requesting client (GHSA-q84f-53jg-9ppm, high), and concurrent requests exceeding database-backed rate limits (GHSA-44jh-23m7-hpcf, low). 1.7 already contains our ID-token signup patch, so `patches/better-auth@1.6.26.patch` is removed.
 - Upgraded decode-uri-component to 0.5.1 (GHSA-qr28-fpjm-wq7f) and qs to 6.17.1 (GHSA-6pq8-jhm2-2vcw), and the admin UI's vite to 6.4.5 (GHSA-8g5g-mxqh-grgj). The admin UI audit ignores GHSA-gcqx-w48m-w2h4 (low). It affects deepmerge, which has no patched release and only merges the UI's build-time Vite configuration.
+- The Better Auth tables (`user`, `session`, `account`, `verification`, `refresh_tokens`) are internal. Every startup revokes table and column privileges on them from `PUBLIC`, `anon` and `authenticated`, and startup fails before listening if any browser privilege remains. A failed PostgreSQL auth setup now refuses startup instead of falling back to in-memory auth (KalvexDotDev/sinope#861).
+
+### Fixed
+- On PostgreSQL 16 and later, the connection role is granted the request roles `WITH SET TRUE`. A role's creator receives ADMIN membership without SET permission there, so switching to `anon`, `authenticated` or `service_role` failed (KalvexDotDev/sinope#861).
+- Replicas starting together on a new database take turns creating and hardening the Better Auth tables. Previously they could deadlock and refuse startup.
 
 ### Changed
 - Startup adds the nullable `account` columns `idToken`, `accessTokenExpiresAt`, `refreshTokenExpiresAt` and `scope`. Better Auth 1.7 fails auth requests while they are missing.
