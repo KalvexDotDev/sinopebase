@@ -27,7 +27,10 @@ jobs:
         run: bun audit
       - name: Bun audit (admin UI dependencies)
         working-directory: ui
-        run: bun audit
+        # CVE-2026-93753 (GHSA-gcqx-w48m-w2h4, low): deepmerge <=4.3.1 has no patched
+        # release and every @sveltejs/vite-plugin-svelte depends on it. It only merges
+        # the build-time Vite/Svelte config from this repository, never request data.
+        run: bun audit --ignore=GHSA-gcqx-w48m-w2h4
       - name: Verify lockfile integrity
         run: bun install --frozen-lockfile
 

@@ -11,7 +11,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "svelte": "^5.0.0",
-    "vite": "^6.4.4"
+    "vite": "^6.4.5"
   },
   "overrides": {
     "devalue": "5.9.3",

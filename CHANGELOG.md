@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- Upgraded better-auth from 1.6.26 to 1.7.14. This fixes OAuth state accepted as a Magic Link (GHSA-965c-763c-88jm, critical), sign-in as another user through the OAuth Proxy (GHSA-r4xp-prcw-77qf, high), device login approval that hides the requesting client (GHSA-q84f-53jg-9ppm, high), and concurrent requests exceeding database-backed rate limits (GHSA-44jh-23m7-hpcf, low). 1.7 already contains our ID-token signup patch, so `patches/better-auth@1.6.26.patch` is removed.
+- Upgraded decode-uri-component to 0.5.1 (GHSA-qr28-fpjm-wq7f) and qs to 6.17.1 (GHSA-6pq8-jhm2-2vcw), and the admin UI's vite to 6.4.5 (GHSA-8g5g-mxqh-grgj). The admin UI audit ignores GHSA-gcqx-w48m-w2h4 (low). It affects deepmerge, which has no patched release and only merges the UI's build-time Vite configuration.
+
+### Changed
+- Startup adds the nullable `account` columns `idToken`, `accessTokenExpiresAt`, `refreshTokenExpiresAt` and `scope`. Better Auth 1.7 fails auth requests while they are missing.
+- A generic OIDC provider whose discovery document cannot be fetched now answers sign-in with 404 `PROVIDER_NOT_FOUND` instead of 400 `INVALID_OAUTH_CONFIGURATION`. Better Auth 1.7 skips such a provider.
+
 ## v0.10.1 — 2026-10-25
 
 ### Security
