@@ -19,6 +19,7 @@ import {
   type OAuthProviderConfig,
   type SinopebaseAuth,
 } from '../../src/tools/auth-better'
+import { createAuthTables, createBetterAuthDB } from '../../src/tools/auth-better/adapter'
 import { requirePostgres } from '../harness'
 
 interface GenericOAuthPluginShape {
@@ -216,6 +217,32 @@ describe('OAuth provider config mapping (createAuth)', () => {
       else process.env.BETTER_AUTH_URL = originalAuth
       if (originalApp === undefined) delete process.env.SINOPEBASE_URL
       else process.env.SINOPEBASE_URL = originalApp
+    }
+  })
+
+  test('adds the account columns Better Auth 1.7 validates to a new database', async () => {
+    const database = `account_columns_${crypto.randomUUID().replaceAll('-', '')}`
+    await pool.query(`CREATE DATABASE "${database}"`)
+    const url = new URL(requirePostgres())
+    url.pathname = `/${database}`
+    const fresh = new Pool({ connectionString: url.href })
+    try {
+      await createAuthTables(createBetterAuthDB(fresh))
+      const columns = await fresh.query<{ column_name: string; is_nullable: string }>(
+        `SELECT column_name, is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'account' AND column_name = ANY($1)
+          ORDER BY column_name`,
+        [['idToken', 'accessTokenExpiresAt', 'refreshTokenExpiresAt', 'scope']],
+      )
+      expect(columns.rows).toEqual([
+        { column_name: 'accessTokenExpiresAt', is_nullable: 'YES' },
+        { column_name: 'idToken', is_nullable: 'YES' },
+        { column_name: 'refreshTokenExpiresAt', is_nullable: 'YES' },
+        { column_name: 'scope', is_nullable: 'YES' },
+      ])
+    } finally {
+      await fresh.end()
+      await pool.query(`DROP DATABASE "${database}" WITH (FORCE)`)
     }
   })
 })
