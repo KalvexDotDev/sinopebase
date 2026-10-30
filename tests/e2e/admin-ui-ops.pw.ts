@@ -113,7 +113,9 @@ test('Auth Users: signup via SDK appears on /_/#/auth', async ({ page }) => {
   const email = `${unique('ui_user')}@example.com`
   const password = 'e2e-test-pass-123456'
 
-  const signUp = await sb.auth.signUp({ email, password })
+  // A separate client: signing up stores the new user's session, and the service client must
+  // keep reading the provider tables as service_role (members cannot read them, sinope#861).
+  const signUp = await createClient(BASE, serviceKey).auth.signUp({ email, password })
 
   // The user row exists — signup is only real once the record is persisted,
   // regardless of what the response envelope looks like.
