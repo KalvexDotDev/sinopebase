@@ -18,7 +18,7 @@ import { z } from 'zod'
 import { createAuthPlugin } from '~/apis/auth'
 import { createAuth, createRefreshTokensTable } from '~/tools/auth-better'
 import { createAuthTables, createBetterAuthDB } from '~/tools/auth-better/adapter'
-import { requirePostgres, reserveLoopbackPort } from '../harness'
+import { dropTestDatabase, requirePostgres, reserveLoopbackPort } from '../harness'
 
 // Actual native verification and compatible HTTP routes; only outbound mail is captured locally.
 const email = `confirmation-${crypto.randomUUID()}@example.test`
@@ -159,8 +159,7 @@ afterAll(async () => {
         await pool?.end()
       } finally {
         try {
-          if (databaseCreated)
-            await adminPool?.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`)
+          if (databaseCreated && adminPool) await dropTestDatabase(adminPool, databaseName)
         } finally {
           try {
             await adminPool?.end()

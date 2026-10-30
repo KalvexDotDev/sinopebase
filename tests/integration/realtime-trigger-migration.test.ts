@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { Client, Pool } from 'pg'
 import { attachRealtimeTriggers } from '~/apis/realtime-pg-listener'
 import { up as installNotificationFunction } from '../../migrations/1780000000_realtime_notify_trigger'
-import { requirePostgres } from '../harness'
+import { dropTestDatabase, requirePostgres } from '../harness'
 
 test('realtime trigger migration publishes small changes without blocking large writes', async () => {
   const baseUrl = new URL(requirePostgres())
@@ -60,7 +60,7 @@ test('realtime trigger migration publishes small changes without blocking large 
   } finally {
     await listener?.end().catch(() => {})
     await pool?.end().catch(() => {})
-    await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`)
+    await dropTestDatabase(admin, databaseName)
     await admin.end()
   }
 })

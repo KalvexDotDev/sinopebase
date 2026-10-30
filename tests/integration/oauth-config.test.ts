@@ -20,7 +20,7 @@ import {
   type SinopebaseAuth,
 } from '../../src/tools/auth-better'
 import { createAuthTables, createBetterAuthDB } from '../../src/tools/auth-better/adapter'
-import { requirePostgres } from '../harness'
+import { dropTestDatabase, requirePostgres } from '../harness'
 
 interface GenericOAuthPluginShape {
   id: string
@@ -242,7 +242,7 @@ describe('OAuth provider config mapping (createAuth)', () => {
       ])
     } finally {
       await fresh.end()
-      await pool.query(`DROP DATABASE "${database}" WITH (FORCE)`)
+      await dropTestDatabase(pool, database)
     }
   })
 })

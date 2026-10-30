@@ -79,9 +79,10 @@ export async function bootstrapPostgresRequestRolesOnConnection(
       if (!existing.has(role)) await client.query(createRoleStatement(role))
     }
 
+    // PostgreSQL 16 can grant role creators ADMIN membership without SET permission.
     const memberships = await client.query<MembershipRow>(
       `
-      SELECT target.rolname, pg_has_role(current_user, target.oid, 'MEMBER') AS member
+      SELECT target.rolname, pg_has_role(current_user, target.oid, 'SET') AS member
       FROM pg_roles AS target
       WHERE target.rolname = ANY($1::text[])
     `,
@@ -93,7 +94,7 @@ export async function bootstrapPostgresRequestRolesOnConnection(
 
     if (missingMemberships.length > 0) {
       // nosemgrep: ts-sql-injection-concat — DDL with controlled role names, not user input
-      await client.query(`GRANT ${missingMemberships.join(', ')} TO CURRENT_USER`)
+      await client.query(`GRANT ${missingMemberships.join(', ')} TO CURRENT_USER WITH SET TRUE`)
     }
 
     for (const role of REQUEST_ROLES) await assertCanSetRole(client, role)

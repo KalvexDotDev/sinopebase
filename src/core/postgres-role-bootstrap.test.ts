@@ -1,3 +1,5 @@
+// @new-code-test positive src/core/postgres-role-bootstrap.ts
+// @new-code-test negative src/core/postgres-role-bootstrap.ts
 import { describe, expect, it } from 'bun:test'
 import type { QueryResult } from 'pg'
 import {
@@ -19,6 +21,7 @@ type Role = {
 class FakeRoleClient implements PostgresRoleBootstrapClient {
   roles = new Map<string, Role>()
   memberships = new Set<string>()
+  assumableRoles = new Set<string>()
   statements: string[] = []
   currentRole = 'sinope_owner'
 
@@ -47,25 +50,32 @@ class FakeRoleClient implements PostgresRoleBootstrapClient {
       const name = parts[2]
       if (!name) throw new Error(`Invalid CREATE ROLE statement: ${normalized}`)
       this.roles.set(name, safeRole(name))
+      // PostgreSQL 16 grants the creator ADMIN membership, but not SET permission.
+      this.memberships.add(name)
       return result([])
     }
-    if (normalized.includes("pg_has_role(current_user, target.oid, 'MEMBER')")) {
+    if (normalized.includes('pg_has_role(current_user, target.oid,')) {
       return result(
         [...this.roles.values()].map((role) => ({
           rolname: role.rolname,
-          member: this.memberships.has(role.rolname),
+          member: normalized.includes("'SET'")
+            ? this.assumableRoles.has(role.rolname)
+            : this.memberships.has(role.rolname),
         })) as R[],
       )
     }
     if (normalized.startsWith('GRANT ')) {
       if (!this.canAdministerRoles) throw new Error('permission denied to grant role')
       const names = normalized.slice('GRANT '.length, normalized.indexOf(' TO CURRENT_USER'))
-      for (const name of names.split(',').map((value) => value.trim())) this.memberships.add(name)
+      for (const name of names.split(',').map((value) => value.trim())) {
+        this.memberships.add(name)
+        if (normalized.endsWith('WITH SET TRUE')) this.assumableRoles.add(name)
+      }
       return result([])
     }
     if (normalized.startsWith('SET LOCAL ROLE ')) {
       const name = normalized.slice('SET LOCAL ROLE '.length)
-      if (!this.memberships.has(name)) throw new Error(`permission denied to set role "${name}"`)
+      if (!this.assumableRoles.has(name)) throw new Error(`permission denied to set role "${name}"`)
       this.currentRole = name
       return result([])
     }
@@ -103,6 +113,7 @@ describe('PostgreSQL request-role bootstrap', () => {
     for (const name of ['anon', 'authenticated', 'service_role']) {
       client.roles.set(name, safeRole(name))
       client.memberships.add(name)
+      client.assumableRoles.add(name)
     }
 
     await bootstrapPostgresRequestRolesOnConnection(client)
@@ -110,6 +121,22 @@ describe('PostgreSQL request-role bootstrap', () => {
 
     expect(client.statements.some((sql) => sql.startsWith('CREATE ROLE '))).toBe(false)
     expect(client.statements.some((sql) => sql.startsWith('GRANT '))).toBe(false)
+  })
+
+  it('repairs existing ADMIN membership without SET permission before assuming roles', async () => {
+    const client = new FakeRoleClient()
+    for (const name of ['anon', 'authenticated', 'service_role']) {
+      client.roles.set(name, safeRole(name))
+      client.memberships.add(name)
+    }
+
+    await bootstrapPostgresRequestRolesOnConnection(client)
+
+    expect([...client.assumableRoles]).toEqual(['anon', 'authenticated', 'service_role'])
+    expect(client.statements).toContain(
+      'GRANT anon, authenticated, service_role TO CURRENT_USER WITH SET TRUE',
+    )
+    expect(client.statements).toContain('COMMIT')
   })
 
   it('fails fast with an actionable diagnostic when role creation is forbidden', async () => {
