@@ -488,6 +488,41 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
     expect(again.error?.code).toBe('current_password_required')
   }, 20000)
 
+  it('refuses a recovery token with no recorded address', async () => {
+    const user = await newUser('recover-unbound')
+    await requestRecovery(user.email, CONFIRM_URL)
+    const token = await tokenHash(user.email, new Set())
+    await pool.query('DELETE FROM verification WHERE identifier = $1', [`recovery-email:${token}`])
+    const unbound = await sdk().auth.verifyOtp({ type: 'recovery', token_hash: token })
+    expect(unbound.error?.code).toBe('otp_expired')
+  }, 20000)
+
+  it('creates the native credential when a recovered account had none', async () => {
+    const user = await newUser('recover-no-credential')
+    await pool.query(`DELETE FROM account WHERE "userId" = $1 AND "providerId" = 'credential'`, [
+      user.id,
+    ])
+    await requestRecovery(user.email, CONFIRM_URL)
+    const token = await tokenHash(user.email, new Set())
+    const recovering = sdk()
+    expect(
+      (await recovering.auth.verifyOtp({ type: 'recovery', token_hash: token })).error,
+    ).toBeNull()
+    const password = `first-${crypto.randomUUID()}`
+    expect((await recovering.auth.updateUser({ password })).error).toBeNull()
+    expect(await canSignIn(user.email, password)).toBe(true)
+  }, 20000)
+
+  it('keeps recovery links when the address changes only in case', async () => {
+    const user = await newUser('recover-case')
+    await requestRecovery(user.email, CONFIRM_URL)
+    const token = await tokenHash(user.email, new Set())
+    expect(
+      (await user.client.auth.updateUser({ email: user.email.toUpperCase() })).error,
+    ).toBeNull()
+    expect((await sdk().auth.verifyOtp({ type: 'recovery', token_hash: token })).error).toBeNull()
+  }, 20000)
+
   it('keeps recovery tokens single-use, replaced by newer links, and expiring', async () => {
     const user = await newUser('recover-token')
     const seen = new Set<string>()
