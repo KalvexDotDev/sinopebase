@@ -510,6 +510,7 @@ import { Elysia } from 'elysia'
 import { authorizeApiRequest, requiresApiAuthorization } from '~/core/api-authorization'
 import { type MigrationLockClient, withPostgresMigrationLock } from '~/core/migration-lock'
 import { createMigrationSession } from '~/core/migration-session'
+import { PosthogPlugin, posthogOptionsFromEnv } from '~/plugins/posthog/plugin'
 import { Cron } from '~/tools/cron/cron'
 import type { Mailer } from '~/tools/mailer/mailer'
 import { Message } from '~/tools/mailer/mailer'
@@ -1146,7 +1147,8 @@ export class Sinopebase {
     // discards hooks, decorators, and type information from prior calls.
     // Use const chains (not let reassignment) so TypeScript infers the full
     // Elysia type after each .use(), .error(), .get(), etc.
-    const server = new Elysia({ name: 'sinopebase' })
+    const server = new PosthogPlugin(posthogOptionsFromEnv(process.env))
+      .register(new Elysia({ name: 'sinopebase' }))
       // OpenAPI spec generation — provider: null means no Scalar/Swagger UI,
       // we serve the raw spec at /openapi/json for our native admin UI to consume.
       .use(
