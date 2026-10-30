@@ -1,3 +1,4 @@
+export * from './databases'
 export * from './infrastructure'
 export * from './inventory'
 export * from './namespace'

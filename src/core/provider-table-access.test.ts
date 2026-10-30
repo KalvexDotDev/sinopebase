@@ -8,6 +8,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import pg from 'pg'
+import { dropTestDatabase } from '../../tests/harness/databases'
 import { startLoopbackApp } from '../../tests/harness/server'
 import { createClient } from '../sdk/client'
 import { createAuth } from '../tools/auth-better'
@@ -146,7 +147,7 @@ postgres('provider table API boundary', () => {
         expect(started.filter((result) => result.status === 'rejected')).toEqual([])
       } finally {
         await Promise.all(replicas.map((replica) => replica.end()))
-        await pool.query(`DROP DATABASE "${database}" WITH (FORCE)`)
+        await dropTestDatabase(pool, database)
       }
     }
   })

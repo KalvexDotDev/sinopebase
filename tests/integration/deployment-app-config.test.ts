@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { Sinopebase } from '~/core/app'
-import { requirePostgres, requireRustFS, reserveLoopbackPort } from '../harness'
+import { dropTestDatabase, requirePostgres, requireRustFS, reserveLoopbackPort } from '../harness'
 
 // @new-code-test positive src/core/app.ts
 // @new-code-test negative src/core/app.ts
@@ -88,7 +88,7 @@ test('replicated readiness requires the PostgreSQL notification listener', async
     await app?.stop()
     await reservation.release()
     await rm(dataDir, { recursive: true, force: true })
-    await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`)
+    await dropTestDatabase(admin, databaseName)
     await admin.end()
   }
 })
