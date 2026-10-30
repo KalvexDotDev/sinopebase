@@ -349,6 +349,9 @@ export async function createAuth(
   // Create a typed Kysely for table creation and direct queries.
   const db = createBetterAuthDB(pool)
   await db.transaction().execute(async (transaction) => {
+    // Replicas starting together would deadlock on this DDL and these grants; take turns.
+    // Same lock space as the migration lock (732031, 1), separate key.
+    await sql`SELECT pg_advisory_xact_lock(732031, 2)`.execute(transaction)
     await createAuthTables(transaction)
     await createRefreshTokensTable(transaction)
     await restrictProviderTableAccess(transaction)

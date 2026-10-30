@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import pg from 'pg'
 import { startLoopbackApp } from '../../tests/harness/server'
 import { createClient } from '../sdk/client'
+import { createAuth } from '../tools/auth-better'
 import { Sinopebase } from './app'
 
 const postgresUrl = process.env.TEST_POSTGRES_URL
@@ -121,6 +122,24 @@ postgres('provider table API boundary', () => {
       await pool.query(
         `REVOKE ${inheritedRole} FROM anon; REVOKE SELECT ON public.session FROM ${inheritedRole}; DROP ROLE ${inheritedRole}`,
       )
+    }
+  })
+
+  it('creates and hardens the provider tables from replicas starting together on a new database', async () => {
+    for (let round = 0; round < 3; round++) {
+      const database = `provider_acl_${crypto.randomUUID().replaceAll('-', '')}`
+      await pool.query(`CREATE DATABASE "${database}"`)
+      const url = new URL(postgresUrl as string)
+      url.pathname = `/${database}`
+      // Separate pools stand in for replicas: each creates the schema and repairs grants at once.
+      const replicas = Array.from({ length: 4 }, () => new pg.Pool({ connectionString: url.href }))
+      try {
+        const started = await Promise.allSettled(replicas.map((replica) => createAuth(replica)))
+        expect(started.filter((result) => result.status === 'rejected')).toEqual([])
+      } finally {
+        await Promise.all(replicas.map((replica) => replica.end()))
+        await pool.query(`DROP DATABASE "${database}" WITH (FORCE)`)
+      }
     }
   })
 })
