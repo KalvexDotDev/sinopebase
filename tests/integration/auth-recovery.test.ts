@@ -12,6 +12,8 @@
  * @new-code-test negative src/apis/auth.ts
  * @new-code-test positive src/tools/auth-better/index.ts
  * @new-code-test negative src/tools/auth-better/index.ts
+ * @new-code-test positive src/tools/auth-better/email-change.ts
+ * @new-code-test negative src/tools/auth-better/email-change.ts
  * @new-code-test positive src/tools/auth-better/adapter.ts
  * @new-code-test negative src/tools/auth-better/adapter.ts
  * @new-code-test positive src/core/app.ts

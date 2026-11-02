@@ -1024,6 +1024,24 @@ function applyEmailChange(auth: BetterAuthInstance, token: string) {
     })
 }
 
+/** type=email_change: apply the staged change, then open an ordinary session. */
+async function verifyEmailChange(
+  auth: BetterAuthInstance,
+  tokenHash: string,
+  set: { status?: number | string },
+) {
+  const changed = await applyEmailChange(auth, tokenHash).catch((error: unknown) => {
+    if (error instanceof UserUpdateRefused) return error
+    throw error
+  })
+  if (changed instanceof UserUpdateRefused)
+    return goTrueError(set, changed.status, changed.errorCode, changed.message)
+  if (!changed) return goTrueError(set, 403, 'otp_expired', 'Email link is invalid or has expired')
+  const native = await nativeContext(auth)
+  const session = await native.internalAdapter.createSession(changed.id, false)
+  return issueSession(auth, { token: session.token, user: changed })
+}
+
 /**
  * POST /auth/v1/verify (token_hash) — use up the token. type=recovery opens a
  * recovery session; type=email_change applies the change and opens a session.
@@ -1040,19 +1058,9 @@ async function verifyEmailLink(
       'validation_failed',
       'Only type recovery or email_change with a token_hash can be verified',
     )
+  if (parsed.data.type === EMAIL_CHANGE)
+    return verifyEmailChange(auth, parsed.data.token_hash, context.set)
   const native = await nativeContext(auth)
-  if (parsed.data.type === EMAIL_CHANGE) {
-    const changed = await applyEmailChange(auth, parsed.data.token_hash).catch((error: unknown) => {
-      if (error instanceof UserUpdateRefused) return error
-      throw error
-    })
-    if (changed instanceof UserUpdateRefused)
-      return goTrueError(context.set, changed.status, changed.errorCode, changed.message)
-    if (!changed)
-      return goTrueError(context.set, 403, 'otp_expired', 'Email link is invalid or has expired')
-    const session = await native.internalAdapter.createSession(changed.id, false)
-    return issueSession(auth, { token: session.token, user: changed })
-  }
   const verification = await native.internalAdapter.consumeVerificationValue(
     RESET_PREFIX + parsed.data.token_hash,
   )
