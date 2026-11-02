@@ -173,7 +173,8 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
           OR tenant_id = current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'));
       CREATE OR REPLACE FUNCTION auth.agent_grant_tenant_allowed(tenant_id text) RETURNS boolean
         LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-        AS $$ SELECT EXISTS (SELECT 1 FROM public.agent_grant_test_memberships m
+        AS $$ SELECT current_setting('request.jwt.claims', true)::jsonb ->> 'channel' = 'first_party'
+          AND EXISTS (SELECT 1 FROM public.agent_grant_test_memberships m
           WHERE m.user_id = auth.uid() AND m.tenant_id = agent_grant_tenant_allowed.tenant_id) $$;
       GRANT EXECUTE ON FUNCTION auth.agent_grant_tenant_allowed(text) TO authenticated;
       CREATE OR REPLACE FUNCTION public.agent_grant_test_claims() RETURNS jsonb LANGUAGE sql STABLE
