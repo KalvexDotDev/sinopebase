@@ -12,7 +12,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Sinopebase } from '../../src/core/app'
@@ -68,7 +68,14 @@ describePostgres('Storage object names with dot segments', () => {
 
   const bTarget = () => `${b.prefix}/b.txt`
   const crossing = () => `${a.prefix}/../${b.prefix}/b.txt`
-  const bBytesOnDisk = () => readFile(join(dataDir, 'storage', bucket, b.prefix, 'b.txt'), 'utf8')
+  // Read through B's own session, so the check holds for the local and S3 stores.
+  const bBytes = async () => {
+    const { data, error } = await createClient(baseUrl, b.token)
+      .storage.from(bucket)
+      .download(bTarget())
+    expect(error).toBeNull()
+    return data?.text()
+  }
 
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'sinopebase-dot-segments-'))
@@ -120,7 +127,7 @@ describePostgres('Storage object names with dot segments', () => {
         message: `Invalid key: ${crossing()}`,
       })
     }
-    expect(await bBytesOnDisk()).toBe('tenant b')
+    expect(await bBytes()).toBe('tenant b')
     const own = await createClient(baseUrl, a.token)
       .storage.from(bucket)
       .download(`${a.prefix}/x.txt`)
@@ -137,7 +144,7 @@ describePostgres('Storage object names with dot segments', () => {
       })
       expect(response.status).toBeGreaterThanOrEqual(400)
     }
-    expect(await bBytesOnDisk()).toBe('tenant b')
+    expect(await bBytes()).toBe('tenant b')
   })
 
   it('rejects deletion and signing through another prefix', async () => {
@@ -145,6 +152,6 @@ describePostgres('Storage object names with dot segments', () => {
     expect(remove.status).toBe(400)
     const sign = await storage(a.token, `/object/sign/${bucket}`, { paths: [crossing()] })
     expect(sign.status).toBe(400)
-    expect(await bBytesOnDisk()).toBe('tenant b')
+    expect(await bBytes()).toBe('tenant b')
   })
 })
