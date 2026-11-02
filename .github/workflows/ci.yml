@@ -327,8 +327,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify SDK package is publishable
-        run: cd sdk-package && npm publish --dry-run
+      # pack, not publish: the runner's npm now refuses `publish --dry-run`
+      # for an already-published version, which every PR without an SDK bump has.
+      - name: Verify SDK package packs
+        run: cd sdk-package && npm pack --dry-run
 
   docker:
     needs: [semgrep, gitleaks, megalinter, test, sdk-check]
