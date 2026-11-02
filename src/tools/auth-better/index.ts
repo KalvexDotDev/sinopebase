@@ -122,6 +122,40 @@ export function recoveryLink(betterAuthUrl: string, token: string, siteUrl: stri
   return link.href
 }
 
+/** Delivers a GoTrue email-change link to the new address; see `./email-change`. */
+export type EmailChangeMailer = (
+  to: string,
+  token: string,
+  redirectTo: string | undefined,
+) => Promise<void>
+
+/**
+ * GoTrue email-change link: the allow-listed redirect_to or the site URL, carrying
+ * the single-use token as `token_hash` and `type=email_change` for verifyOtp.
+ */
+export function emailChangeLink(redirectTo: string | undefined, token: string, siteUrl: string) {
+  const link = new URL(redirectTo || siteUrl)
+  link.searchParams.set('token_hash', token)
+  link.searchParams.set('type', 'email_change')
+  return link.href
+}
+
+function emailChangeMailer(
+  sendEmail: CreateAuthOptions['sendEmail'],
+  siteUrl: string,
+): EmailChangeMailer | undefined {
+  if (!sendEmail) return undefined
+  return async (to, token, redirectTo) => {
+    const link = emailChangeLink(redirectTo, token, siteUrl)
+    await sendEmail({
+      to,
+      subject: 'Confirm your new email address',
+      text: `Confirm your new email address: ${link}`,
+      html: `<p>Confirm your new email address: <a href="${link.replaceAll('&', '&amp;')}">Confirm email address</a></p>`,
+    })
+  }
+}
+
 function mailerOptions(
   db: Kysely<BetterAuthDatabase>,
   sendEmail: CreateAuthOptions['sendEmail'],
@@ -184,16 +218,17 @@ function maintenanceLogger(disabled?: true) {
 function authOptions(
   pool: pg.Pool,
   db: Kysely<BetterAuthDatabase>,
+  baseURL: string,
   options?: CreateAuthOptions,
 ): Parameters<typeof betterAuth>[0] {
   const allProviders = options?.oauthProviders ?? []
-  const baseURL =
-    process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090'
   return {
     database: pool,
     logger: maintenanceLogger(options?.disableLogsForMaintenance),
     basePath: '/api/auth',
-    // Recovery runs only through GoTrue's /auth/v1/recover and /auth/v1/verify.
+    // Recovery runs only through GoTrue's /auth/v1/recover and /auth/v1/verify. Email
+    // changes likewise run only through PUT /auth/v1/user and /auth/v1/verify (see
+    // ./email-change): Better Auth's own user.changeEmail stays disabled (its default).
     disabledPaths: ['/request-password-reset', '/reset-password'],
     user: {
       additionalFields: {
@@ -407,11 +442,18 @@ export async function createAuth(
 
   // Pass the pg.Pool directly — better-auth's createKyselyAdapter detects
   // pools via the `.connect()` method and auto-creates PostgresDialect.
-  const auth = betterAuth(authOptions(pool, db, options))
+  const baseURL =
+    process.env.BETTER_AUTH_URL || process.env.SINOPEBASE_URL || 'http://localhost:8090'
+  const auth = betterAuth(authOptions(pool, db, baseURL, options))
 
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).
   ;(auth as Record<string, unknown>).__db = db
+  // GoTrue email change (PUT /auth/v1/user) mails through the same sender; absent without SMTP.
+  ;(auth as Record<string, unknown>).__mailEmailChange = emailChangeMailer(
+    options?.sendEmail,
+    options?.siteUrl || baseURL,
+  )
 
   return auth
 }
