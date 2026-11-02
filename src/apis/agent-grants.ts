@@ -41,14 +41,20 @@ export interface AgentGrantAuth {
  * error or anything but true refuses.
  */
 async function canBindTenant(database: PostgresDatabase, userId: string, tenantId: string) {
-  return database
-    .withRequestContext({ role: 'authenticated', userId }, async (scoped) => {
-      const { rows } = await sql<{ allowed: boolean | null }>`
+  return (
+    database
+      // The caller proved a sign-in session, so the check runs as that first-party session.
+      .withRequestContext(
+        { role: 'authenticated', userId, channel: 'first_party' },
+        async (scoped) => {
+          const { rows } = await sql<{ allowed: boolean | null }>`
         SELECT auth.agent_grant_tenant_allowed(${tenantId}) AS allowed
       `.execute(scoped.getWriter())
-      return rows[0]?.allowed === true
-    })
-    .catch(() => false)
+          return rows[0]?.allowed === true
+        },
+      )
+      .catch(() => false)
+  )
 }
 
 /** OAuth protocol endpoints a client calls itself; every other oauth2 route stays unreachable. */
