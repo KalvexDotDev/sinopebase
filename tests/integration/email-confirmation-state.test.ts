@@ -35,6 +35,8 @@ let pool: Pool | undefined
 let server: ReturnType<typeof createAuthPlugin> | undefined
 let origin: string
 let verificationUrl: string | undefined
+/** token_hash of the latest GoTrue email-change link (PUT /auth/v1/user { email }). */
+let emailChangeToken: string | undefined
 let setup: Promise<void> | undefined
 let operation: Promise<void> | undefined
 
@@ -87,6 +89,12 @@ beforeAll(async () => {
           const match = /https?:\/\/[^\s]+/.exec(mail.text)
           if (!match) throw new Error('Synthetic verification link missing')
           const url = new URL(match[0])
+          if (mail.subject === 'Confirm your new email address') {
+            if (url.origin !== origin || url.searchParams.get('type') !== 'email_change')
+              throw new Error('Unexpected synthetic email-change destination')
+            emailChangeToken = url.searchParams.get('token_hash') ?? undefined
+            return
+          }
           if (url.origin !== origin || url.pathname !== '/api/auth/verify-email') {
             throw new Error('Unexpected synthetic verification destination')
           }
@@ -208,7 +216,13 @@ test('returns the authoritative native verification timestamp through the offici
       })
       const value: unknown = await response.json()
       if (!response.ok) throw new Error('Synthetic authenticated PATCH failed')
-      return z.object({ email: z.string(), email_confirmed_at: z.string().optional() }).parse(value)
+      return z
+        .object({
+          email: z.string(),
+          email_confirmed_at: z.string().optional(),
+          new_email: z.string().optional(),
+        })
+        .parse(value)
     }
     const forgedVerified = await fetch(`${origin}/api/auth/sign-up/email`, {
       method: 'POST',
@@ -315,14 +329,30 @@ test('returns the authoritative native verification timestamp through the offici
     expect(unchanged.email_confirmed_at).toBe(confirmedAt)
     await createAuthTables(createBetterAuthDB(pool))
     expect((await client.auth.getUser()).data.user?.email_confirmed_at).toBe(confirmedAt)
-    const changed = await patchUser({ email: changedEmail })
-    expect(changed.email).toBe(changedEmail)
-    expect(changed.email_confirmed_at).toBeUndefined()
-    const reset = await pool.query<{ emailVerified: boolean; emailVerifiedAt: Date | null }>(
+    // GoTrue email change: the address and its confirmation stay until the link is verified.
+    const pending = await patchUser({ email: changedEmail })
+    expect(pending.email).toBe(email)
+    expect(pending.new_email).toBe(changedEmail)
+    expect(pending.email_confirmed_at).toBe(confirmedAt)
+    const kept = await pool.query<{ emailVerifiedAt: Date | null }>(
+      'SELECT "emailVerifiedAt" FROM public."user" WHERE email = $1',
+      [email],
+    )
+    expect(kept.rows[0]?.emailVerifiedAt?.toISOString()).toBe(confirmedAt)
+    const token = emailChangeToken
+    if (!token) throw new Error('Synthetic email-change link was not captured')
+    const applied = await client.auth.verifyOtp({ type: 'email_change', token_hash: token })
+    expect(applied.error).toBeNull()
+    expect(applied.data.user?.email).toBe(changedEmail)
+    // The link proved control of the new address, so it is confirmed now, at a new time.
+    const moved = await pool.query<{ emailVerified: boolean; emailVerifiedAt: Date | null }>(
       'SELECT "emailVerified", "emailVerifiedAt" FROM public."user" WHERE email = $1',
       [changedEmail],
     )
-    expect(reset.rows).toEqual([{ emailVerified: false, emailVerifiedAt: null }])
+    expect(moved.rows[0]?.emailVerified).toBe(true)
+    const movedAt = moved.rows[0]?.emailVerifiedAt?.toISOString()
+    expect(movedAt).not.toBe(confirmedAt)
+    expect(applied.data.user?.email_confirmed_at).toBe(movedAt)
     // Re-running the actual schema startup must neither backfill old history nor rewrite new history.
     await createAuthTables(createBetterAuthDB(pool))
     const legacy = await pool.query<{ emailVerified: boolean; emailVerifiedAt: Date | null }>(
@@ -331,59 +361,18 @@ test('returns the authoritative native verification timestamp through the offici
     )
     expect(legacy.rows).toEqual([{ emailVerified: true, emailVerifiedAt: null }])
 
-    // Hold the row while a real authenticated request reads its old address and waits to update.
-    const writer = await pool.connect()
-    let pendingUpdate: ReturnType<typeof patchUser> | undefined
-    try {
-      await writer.query('BEGIN')
-      const held = await writer.query<{ pid: number }>(
-        'SELECT pg_backend_pid() AS pid FROM public."user" WHERE email = $1 FOR UPDATE',
-        [changedEmail],
-      )
-      expect(held.rows).toHaveLength(1)
-      const blockerPid = held.rows[0]?.pid
-      if (!blockerPid) throw new Error('Owned row lock unavailable')
-      pendingUpdate = patchUser({ email: changedEmail })
-      let observed = false
-      const deadline = performance.now() + 5000
-      while (performance.now() < deadline) {
-        const waiting = await pool.query<{ waiting: boolean }>(
-          `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
-           AND $1::integer = ANY(pg_blocking_pids(pid))) AS waiting`,
-          [blockerPid],
-        )
-        if (waiting.rows[0]?.waiting) {
-          observed = true
-          break
-        }
-        await Bun.sleep(10)
-      }
-      expect(observed).toBe(true)
-      // The concurrent trusted provider write changes the address and confirms that address.
-      await writer.query('UPDATE public."user" SET email=$1, "emailVerified"=true WHERE email=$2', [
-        email,
-        changedEmail,
-      ])
-      await writer.query('COMMIT')
-      const stale = await pendingUpdate
-      expect(stale.email).toBe(changedEmail)
-      expect(stale.email_confirmed_at).toBeUndefined()
-      const persisted = await pool.query<{ emailVerified: boolean; emailVerifiedAt: Date | null }>(
-        'SELECT "emailVerified", "emailVerifiedAt" FROM public."user" WHERE email=$1',
-        [changedEmail],
-      )
-      expect(persisted.rows).toEqual([{ emailVerified: false, emailVerifiedAt: null }])
-    } finally {
-      let rollbackFailed = true
-      try {
-        await writer.query('ROLLBACK')
-        rollbackFailed = false
-      } finally {
-        // Destroy a connection whose rollback failed before draining its blocked request.
-        writer.release(rollbackFailed)
-        await pendingUpdate?.catch(() => {})
-      }
-    }
+    // A pending link dies once a trusted provider write moves the address it was requested from.
+    emailChangeToken = undefined
+    expect((await patchUser({ email })).new_email).toBe(email)
+    const stale = emailChangeToken
+    if (!stale) throw new Error('Synthetic email-change link was not captured')
+    await pool.query('UPDATE public."user" SET email=$1 WHERE email=$2', [spoofEmail, changedEmail])
+    const refused = await client.auth.verifyOtp({ type: 'email_change', token_hash: stale })
+    expect(refused.error?.code).toBe('otp_expired')
+    const after = await pool.query('SELECT email FROM public."user" WHERE email = ANY($1)', [
+      [email, spoofEmail],
+    ])
+    expect(after.rows).toEqual([{ email: spoofEmail }])
   })()
   await operation
 }, 15000)

@@ -10,8 +10,21 @@
 import { Elysia } from 'elysia'
 import { type Kysely, sql, type Transaction } from 'kysely'
 import { z } from 'zod'
-import { lookupSessionByToken, type SessionLookup, type SinopebaseAuth } from '~/tools/auth-better'
+import {
+  type EmailChangeMailer,
+  lookupSessionByToken,
+  type SessionLookup,
+  type SinopebaseAuth,
+} from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
+import {
+  consumeEmailChange,
+  dropEmailChange,
+  pendingEmailChange,
+  recentEmailChange,
+  retireEmailChanges,
+  stageEmailChange,
+} from '~/tools/auth-better/email-change'
 import {
   RECOVERY_EMAIL_PREFIX,
   RESET_PREFIX,
@@ -427,6 +440,8 @@ interface BetterAuthInstance {
       }
     }
   }
+  /** Mails GoTrue email-change links; absent when SMTP is not configured. */
+  __mailEmailChange?: EmailChangeMailer
   [key: string]: unknown
 }
 
@@ -634,10 +649,7 @@ async function updateNativeCredential(
   await finishPasswordChange(transaction, session)
 }
 
-function nativeProfileUpdate(
-  metadata: Record<string, unknown>,
-  { data, email }: Pick<ReturnType<typeof parseNativeUpdate>, 'data' | 'email'>,
-) {
+function nativeProfileUpdate(metadata: Record<string, unknown>, data?: Record<string, unknown>) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (data) {
     // Supabase merges top-level keys and removes keys explicitly set to null.
@@ -646,11 +658,49 @@ function nativeProfileUpdate(
       Object.entries({ ...metadata, ...data }).filter(([, value]) => value !== null),
     )
   }
-  if (email) {
-    update.email = email.toLowerCase()
-    update.emailVerified = sql<boolean>`CASE WHEN lower(email) = ${email.toLowerCase()} THEN "emailVerified" ELSE false END`
-  }
   return update
+}
+
+/** Whether another account already uses the (lower-cased) address. */
+async function addressTaken(
+  transaction: Transaction<BetterAuthDatabase>,
+  email: string,
+  userId: string,
+) {
+  const other = await transaction
+    .selectFrom('user')
+    .select('id')
+    .where(sql<string>`lower(email)`, '=', email)
+    .where('id', '<>', userId)
+    .executeTakeFirst()
+  return other !== undefined
+}
+
+/**
+ * GoTrue email change: the address stays as it is and a single-use link goes to
+ * the new one; POST /auth/v1/verify (type=email_change) applies it. One mail per
+ * user per 60 s. An address another account already uses is staged but never
+ * mailed, so the response does not reveal that the address has an account
+ * (as Better Auth's changeEmail does). The caller holds the user lock.
+ */
+async function stageAddressChange(
+  transaction: Transaction<BetterAuthDatabase>,
+  user: { id: string; email: string },
+  requested: string,
+) {
+  if (await recentEmailChange(transaction, user.id))
+    throw new UserUpdateRefused(
+      429,
+      'over_email_send_rate_limit',
+      'For security purposes, you can only request this after 60 seconds.',
+    )
+  const taken = await addressTaken(transaction, requested, user.id)
+  const staged = await stageEmailChange(transaction, {
+    userId: user.id,
+    from: user.email.toLowerCase(),
+    to: requested,
+  })
+  return { ...staged, to: requested, deliver: !taken }
 }
 
 /**
@@ -692,9 +742,6 @@ async function applyNativeUpdate(
   update: ReturnType<typeof parseNativeUpdate>,
 ) {
   const { user, session } = await lockUpdatingSession(transaction, token)
-  // Recovery links were mailed to the old address; GoTrue invalidates them with it.
-  if (update.email && update.email.toLowerCase() !== user.email.toLowerCase())
-    await retireRecoveryLinks(transaction, user.id)
   if (update.password)
     await updateNativeCredential(
       auth,
@@ -703,12 +750,36 @@ async function applyNativeUpdate(
       update.password,
       update.currentPassword,
     )
-  return transaction
+  const requested = update.email?.toLowerCase()
+  const staged =
+    requested && requested !== user.email.toLowerCase()
+      ? await stageAddressChange(transaction, user, requested)
+      : undefined
+  const row = await transaction
     .updateTable('user')
-    .set(nativeProfileUpdate(user.userMetadata, update))
+    .set(nativeProfileUpdate(user.userMetadata, update.data))
     .where('id', '=', user.id)
     .returningAll()
     .executeTakeFirstOrThrow()
+  return { row, staged }
+}
+
+/**
+ * Mail a staged email change once its transaction committed. An undelivered link
+ * is dropped. Without a configured mailer nothing is sent, as for recovery.
+ */
+async function deliverAddressChange(
+  auth: BetterAuthInstance,
+  staged: { token: string; to: string },
+  redirectTo: string | undefined,
+) {
+  try {
+    await auth.__mailEmailChange?.(staged.to, staged.token, await trustedRedirect(auth, redirectTo))
+    return true
+  } catch {
+    await dropEmailChange(authDb(auth), staged.token)
+    return false
+  }
 }
 
 /** Preserve native password policy; commit credential/profile changes together. */
@@ -717,10 +788,11 @@ async function updateNativeUser(
   context: {
     headers: Record<string, string | undefined>
     body: unknown
+    query: Record<string, string | undefined>
     set: { status?: number | string }
   },
 ) {
-  const { headers, body, set } = context
+  const { headers, body, query, set } = context
   const token = headers.authorization?.startsWith('Bearer ')
     ? headers.authorization.slice(7).trim()
     : ''
@@ -730,10 +802,19 @@ async function updateNativeUser(
   }
   try {
     const update = parseNativeUpdate(body)
-    const row = await authDb(auth)
+    const { row, staged } = await authDb(auth)
       .transaction()
       .execute((transaction) => applyNativeUpdate(auth, transaction, token, update))
-    return bridgeGetUserResponse({ user: row, session: {} })
+    if (staged?.deliver && !(await deliverAddressChange(auth, staged, query.redirect_to))) {
+      console.error(`[AUTH] Email change delivery failed: user=${row.id}`)
+      // GoTrue's message when the email-change mail cannot be sent.
+      return goTrueError(set, 500, 'unexpected_failure', 'Error sending email change email')
+    }
+    const user = bridgeGetUserResponse({ user: row, session: {} })
+    // GoTrue reports the pending address until the link is verified.
+    return staged
+      ? { ...user, new_email: staged.to, email_change_sent_at: staged.sentAt.toISOString() }
+      : user
   } catch (error) {
     if (error instanceof UserUpdateRefused)
       return goTrueError(set, error.status, error.errorCode, error.message, error.extra)
@@ -873,7 +954,12 @@ async function recoverPassword(
   return {}
 }
 
-const verifyBody = z.object({ type: z.literal(RECOVERY), token_hash: z.string().min(1) })
+/** GoTrue verification type of an email-change link. */
+const EMAIL_CHANGE = 'email_change'
+const verifyBody = z.object({
+  type: z.enum([RECOVERY, EMAIL_CHANGE]),
+  token_hash: z.string().min(1),
+})
 
 /**
  * Confirm the address on recovery, as GoTrue does: the link proved control of
@@ -900,8 +986,67 @@ function confirmRecoveredUser(auth: BetterAuthInstance, userId: string, token: s
     })
 }
 
-/** POST /auth/v1/verify (type=recovery, token_hash) — consume the token, open a recovery session. */
-async function verifyRecovery(
+/**
+ * Apply an email change: the link proved control of the new address, so it is
+ * confirmed with it. Links die once the account address differs from the one
+ * the change was requested from. Recovery links mailed to the old address and
+ * other pending changes die with it, as in GoTrue.
+ */
+function applyEmailChange(auth: BetterAuthInstance, token: string) {
+  return authDb(auth)
+    .transaction()
+    .execute(async (transaction) => {
+      const pending = await pendingEmailChange(transaction, token)
+      if (!pending) return undefined
+      // The user lock comes first, as for PUT /auth/v1/user, which also writes these rows.
+      const user = await transaction
+        .selectFrom('user')
+        .select('email')
+        .where('id', '=', pending.userId)
+        .forUpdate()
+        .executeTakeFirst()
+      const used = await consumeEmailChange(transaction, token)
+      if (!used || user?.email.toLowerCase() !== pending.from) return undefined
+      if (await addressTaken(transaction, pending.to, pending.userId))
+        throw new UserUpdateRefused(
+          422,
+          'email_exists',
+          'A user with this email address has already been registered',
+        )
+      await retireRecoveryLinks(transaction, pending.userId)
+      await retireEmailChanges(transaction, pending.userId)
+      return transaction
+        .updateTable('user')
+        .set({ email: pending.to, emailVerified: true, updatedAt: new Date() })
+        .where('id', '=', pending.userId)
+        .returningAll()
+        .executeTakeFirstOrThrow()
+    })
+}
+
+/** type=email_change: apply the staged change, then open an ordinary session. */
+async function verifyEmailChange(
+  auth: BetterAuthInstance,
+  tokenHash: string,
+  set: { status?: number | string },
+) {
+  const changed = await applyEmailChange(auth, tokenHash).catch((error: unknown) => {
+    if (error instanceof UserUpdateRefused) return error
+    throw error
+  })
+  if (changed instanceof UserUpdateRefused)
+    return goTrueError(set, changed.status, changed.errorCode, changed.message)
+  if (!changed) return goTrueError(set, 403, 'otp_expired', 'Email link is invalid or has expired')
+  const native = await nativeContext(auth)
+  const session = await native.internalAdapter.createSession(changed.id, false)
+  return issueSession(auth, { token: session.token, user: changed })
+}
+
+/**
+ * POST /auth/v1/verify (token_hash) — use up the token. type=recovery opens a
+ * recovery session; type=email_change applies the change and opens a session.
+ */
+async function verifyEmailLink(
   auth: BetterAuthInstance,
   context: { body: unknown; set: { status?: number | string } },
 ) {
@@ -911,8 +1056,10 @@ async function verifyRecovery(
       context.set,
       400,
       'validation_failed',
-      'Only type recovery with a token_hash can be verified',
+      'Only type recovery or email_change with a token_hash can be verified',
     )
+  if (parsed.data.type === EMAIL_CHANGE)
+    return verifyEmailChange(auth, parsed.data.token_hash, context.set)
   const native = await nativeContext(auth)
   const verification = await native.internalAdapter.consumeVerificationValue(
     RESET_PREFIX + parsed.data.token_hash,
@@ -1198,7 +1345,7 @@ export function createAuthPlugin(
       .put('/auth/v1/user', (context) => updateNativeUser(auth, context))
       .patch('/auth/v1/user', (context) => updateNativeUser(auth, context))
       .post('/auth/v1/recover', (context) => recoverPassword(auth, context))
-      .post('/auth/v1/verify', (context) => verifyRecovery(auth, context))
+      .post('/auth/v1/verify', (context) => verifyEmailLink(auth, context))
       .get('/auth/v1/user', async ({ headers, set }) => {
         const authHeader = headers.authorization
         if (!authHeader?.startsWith('Bearer ')) {

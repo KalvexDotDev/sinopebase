@@ -12,6 +12,8 @@
  * @new-code-test negative src/apis/auth.ts
  * @new-code-test positive src/tools/auth-better/index.ts
  * @new-code-test negative src/tools/auth-better/index.ts
+ * @new-code-test positive src/tools/auth-better/email-change.ts
+ * @new-code-test negative src/tools/auth-better/email-change.ts
  * @new-code-test positive src/tools/auth-better/adapter.ts
  * @new-code-test negative src/tools/auth-better/adapter.ts
  * @new-code-test positive src/core/app.ts
@@ -35,12 +37,14 @@ import { requirePostgres, reserveLoopbackPort } from '../harness'
 const MAILPIT_API = process.env.TEST_MAILPIT_API_URL ?? 'http://localhost:8025/api/v1'
 const RESET_SUBJECT = 'Reset your password'
 const VERIFY_SUBJECT = 'Verify your email'
+const CHANGE_SUBJECT = 'Confirm your new email address'
 const ANON_KEY = 'auth-recovery-anon-key-min-32-chars!!'
 const JWT_SECRET = 'auth-recovery-jwt-secret-min-32-char!'
 const SERVICE_KEY = 'auth-recovery-service-key-min-32-chars'
 /** Sinope's browser origin: a trusted redirect_to. */
 const APP_ORIGIN = 'http://localhost:5173'
 const CONFIRM_URL = `${APP_ORIGIN}/auth/confirm?next=/account/new-password`
+const CHANGE_URL = `${APP_ORIGIN}/auth/confirm?next=/account`
 /** GoTrue SITE_URL fallback for missing or untrusted redirect_to. */
 const SITE_URL = 'http://site.example.test/welcome'
 /** GoTrue SMTP_ADMIN_EMAIL / SMTP_SENDER_NAME. */
@@ -114,6 +118,18 @@ async function nextRecoveryLink(recipient: string, seen: Set<string>): Promise<U
   const link = /Reset your password: (\S+)/.exec(body)?.[1]
   if (!link) throw new Error(`Recovery link missing in mail to ${recipient}`)
   return new URL(link)
+}
+
+/** The GoTrue email-change link from the next unseen email-change email. */
+async function nextChangeLink(recipient: string, seen: Set<string>): Promise<URL> {
+  const body = await waitForMailpitMessage(CHANGE_SUBJECT, recipient, seen)
+  const link = /Confirm your new email address: (\S+)/.exec(body)?.[1]
+  if (!link) throw new Error(`Email-change link missing in mail to ${recipient}`)
+  return new URL(link)
+}
+
+async function changeTokenHash(recipient: string, seen: Set<string>): Promise<string> {
+  return (await nextChangeLink(recipient, seen)).searchParams.get('token_hash') as string
 }
 
 /**
@@ -316,10 +332,21 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
     await requestRecovery(user.email, CONFIRM_URL)
     const mailed = await tokenHash(user.email, seen)
 
-    // Changing the address retires the outstanding link (GoTrue binds it to the old one).
+    // Verifying an address change retires the outstanding link (GoTrue binds it to the old one).
     const moved = `moved-${user.email}`
     emails.push(moved)
-    expect((await user.client.auth.updateUser({ email: moved })).error).toBeNull()
+    expect(
+      (await user.client.auth.updateUser({ email: moved }, { emailRedirectTo: CHANGE_URL })).error,
+    ).toBeNull()
+    expect(await recoveryRows(user.id)).toEqual([
+      'recovery-email',
+      'recovery-sent',
+      'reset-password',
+    ])
+    const change = await changeTokenHash(moved, new Set())
+    expect(
+      (await sdk().auth.verifyOtp({ type: 'email_change', token_hash: change })).error,
+    ).toBeNull()
     expect(await recoveryRows(user.id)).toEqual(['recovery-sent'])
     const retired = await sdk().auth.verifyOtp({ type: 'recovery', token_hash: mailed })
     expect(retired.error?.code).toBe('otp_expired')
@@ -328,7 +355,10 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
     await endRecoveryInterval(user.id)
     await requestRecovery(moved, CONFIRM_URL)
     const second = await tokenHash(moved, new Set())
-    await pool.query('UPDATE "user" SET email = $1 WHERE id = $2', [user.email, user.id])
+    await pool.query('UPDATE "user" SET email = $1, "emailVerified" = false WHERE id = $2', [
+      user.email,
+      user.id,
+    ])
     const swapped = await sdk().auth.verifyOtp({ type: 'recovery', token_hash: second })
     expect(swapped.error?.status).toBe(403)
     expect(swapped.error?.code).toBe('otp_expired')
@@ -587,6 +617,201 @@ describe.skipIf(!mailpitUp)('GoTrue password change and recovery (supabase-js + 
       expect(res.status).toBe(404)
     }
   })
+
+  // -------------------------------------------------------------------------
+  // GoTrue email change: PUT /auth/v1/user { email } + verify type=email_change
+  // -------------------------------------------------------------------------
+
+  /** Backdate the user's pending email change past the 60 s interval instead of waiting. */
+  async function endEmailChangeInterval(userId: string) {
+    const ended = await pool.query(
+      `UPDATE verification SET "createdAt" = now() - interval '61 seconds'
+        WHERE identifier LIKE 'email-change:%' AND value LIKE $1`,
+      [`["${userId}",%`],
+    )
+    expect(ended.rowCount).toBe(1)
+  }
+
+  async function pendingChanges(userId: string) {
+    const rows = await pool.query(
+      `SELECT identifier FROM verification WHERE identifier LIKE 'email-change:%' AND value LIKE $1`,
+      [`["${userId}",%`],
+    )
+    return rows.rowCount
+  }
+
+  it('changes the email only after the new address verifies it', async () => {
+    const user = await newUser('change-email')
+    const other = await signedIn(user.email, user.password)
+    // Not a substring of the old address: Mailpit's to: search matches substrings.
+    const target = user.email.replace('@', '-new@')
+    emails.push(target)
+
+    const update = await user.client.auth.updateUser(
+      { email: target.toUpperCase() },
+      { emailRedirectTo: CHANGE_URL },
+    )
+    expect(update.error).toBeNull()
+    expect(update.data.user?.email).toBe(user.email)
+    expect(update.data.user?.new_email).toBe(target)
+    expect(update.data.user?.email_change_sent_at).toEqual(expect.any(String))
+    expect((await user.client.auth.getUser()).data.user?.email).toBe(user.email)
+    expect(await canSignIn(user.email, user.password)).toBe(true)
+    expect(await canSignIn(target, user.password)).toBe(false)
+
+    const link = await nextChangeLink(target, new Set())
+    expect(`${link.origin}${link.pathname}`).toBe(`${APP_ORIGIN}/auth/confirm`)
+    expect(link.searchParams.get('next')).toBe('/account')
+    expect(link.searchParams.get('type')).toBe('email_change')
+    expect(await mailFor(user.email, CHANGE_SUBJECT)).toEqual([])
+    const [sent] = await mailFor(target, CHANGE_SUBJECT)
+    expect(sent?.From).toEqual({ Name: SENDER.name, Address: SENDER.address })
+    // Only the token's digest is stored.
+    const tokenHash = link.searchParams.get('token_hash') as string
+    const stored = await pool.query(`SELECT 1 FROM verification WHERE identifier LIKE $1`, [
+      `%${tokenHash}%`,
+    ])
+    expect(stored.rowCount).toBe(0)
+
+    const verified = await sdk().auth.verifyOtp({ type: 'email_change', token_hash: tokenHash })
+    expect(verified.error).toBeNull()
+    expect(verified.data.user?.email).toBe(target)
+    expect(verified.data.user?.email_confirmed_at).toEqual(expect.any(String))
+    expect(verified.data.session?.access_token).toEqual(expect.any(String))
+    expect(await canSignIn(target, user.password)).toBe(true)
+    expect(await canSignIn(user.email, user.password)).toBe(false)
+    // GoTrue keeps the user's sessions across an email change.
+    expect(await sessionAlive(other)).toBe(true)
+
+    const reused = await sdk().auth.verifyOtp({ type: 'email_change', token_hash: tokenHash })
+    expect(reused.error?.status).toBe(403)
+    expect(reused.error?.code).toBe('otp_expired')
+  }, 20000)
+
+  it('refuses replaced, expired, unknown and concurrently reused email-change links', async () => {
+    const user = await newUser('change-email-links')
+    const first = `first-${user.email}`
+    const second = `second-${user.email}`
+    const third = `third-${user.email}`
+    emails.push(first, second, third)
+    const change = (email: string, emailRedirectTo = CHANGE_URL) =>
+      user.client.auth.updateUser({ email }, { emailRedirectTo })
+
+    expect((await change(first)).error).toBeNull()
+    const replaced = await changeTokenHash(first, new Set())
+    const throttled = await change(second)
+    expect(throttled.error?.status).toBe(429)
+    expect(throttled.error?.code).toBe('over_email_send_rate_limit')
+
+    // A newer request replaces the pending link; an untrusted redirect_to falls back to the site URL.
+    await endEmailChangeInterval(user.id)
+    expect((await change(second, 'https://evil.example.com/steal')).error).toBeNull()
+    const secondLink = await nextChangeLink(second, new Set())
+    expect(`${secondLink.origin}${secondLink.pathname}`).toBe(SITE_URL)
+    expect(await pendingChanges(user.id)).toBe(1)
+    const stale = await sdk().auth.verifyOtp({ type: 'email_change', token_hash: replaced })
+    expect(stale.error?.code).toBe('otp_expired')
+
+    await pool.query(
+      `UPDATE verification SET "expiresAt" = now() - interval '1 second'
+        WHERE identifier LIKE 'email-change:%' AND value LIKE $1`,
+      [`["${user.id}",%`],
+    )
+    const expired = await sdk().auth.verifyOtp({
+      type: 'email_change',
+      token_hash: secondLink.searchParams.get('token_hash') as string,
+    })
+    expect(expired.error?.code).toBe('otp_expired')
+    const unknown = await sdk().auth.verifyOtp({ type: 'email_change', token_hash: 'not-a-token' })
+    expect(unknown.error?.status).toBe(403)
+    expect(unknown.error?.code).toBe('otp_expired')
+    expect(unknown.data.session).toBeNull()
+    expect((await user.client.auth.getUser()).data.user?.email).toBe(user.email)
+
+    // Two concurrent verifications of one link: exactly one applies it.
+    await pool.query(
+      `DELETE FROM verification WHERE identifier LIKE 'email-change:%' AND value LIKE $1`,
+      [`["${user.id}",%`],
+    )
+    expect((await change(third)).error).toBeNull()
+    const once = await changeTokenHash(third, new Set())
+    const results = await Promise.all(
+      [1, 2].map(() => sdk().auth.verifyOtp({ type: 'email_change', token_hash: once })),
+    )
+    expect(results.filter((result) => result.error === null)).toHaveLength(1)
+    expect(results.find((result) => result.error)?.error?.code).toBe('otp_expired')
+    expect(await canSignIn(third, user.password)).toBe(true)
+  }, 30000)
+
+  it('answers a change to an address in use like any other and mails nothing', async () => {
+    const owner = await newUser('change-email-owner')
+    const user = await newUser('change-email-taker')
+    const taken = await user.client.auth.updateUser(
+      { email: owner.email },
+      { emailRedirectTo: CHANGE_URL },
+    )
+    expect(taken.error).toBeNull()
+    expect(taken.data.user?.email).toBe(user.email)
+    expect(taken.data.user?.new_email).toBe(owner.email)
+    // Any delivery completes before the response, so nothing can still be in flight.
+    expect(await mailFor(owner.email, CHANGE_SUBJECT)).toEqual([])
+    expect(await canSignIn(user.email, user.password)).toBe(true)
+  }, 20000)
+
+  it('drops an undelivered email-change link and does not throttle the retry', async () => {
+    const user = await newUser('change-email-smtp-down')
+    const target = `down-${user.email}`
+    emails.push(target)
+    const portReservation = await reserveLoopbackPort()
+    const unreachable = new Sinopebase({
+      port: portReservation.port,
+      postgresUrl: requirePostgres(),
+      jwtSecret: JWT_SECRET,
+      serviceRoleKey: SERVICE_KEY,
+      anonKey: ANON_KEY,
+      extraOrigins: [APP_ORIGIN],
+      siteUrl: SITE_URL,
+      smtp: { ...SMTP, host: '127.0.0.1', port: 1 },
+    })
+    await portReservation.release()
+    await unreachable.start()
+    try {
+      const session = (await user.client.auth.getSession()).data.session
+      const response = await fetch(`${portReservation.origin}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ email: target }),
+      })
+      expect(response.status).toBe(500)
+      expect(await response.json()).toMatchObject({
+        error_code: 'unexpected_failure',
+        msg: 'Error sending email change email',
+      })
+    } finally {
+      await unreachable.stop()
+    }
+    expect(await pendingChanges(user.id)).toBe(0)
+    expect((await user.client.auth.updateUser({ email: target })).error).toBeNull()
+    expect(await changeTokenHash(target, new Set())).toBeTruthy()
+  }, 30000)
+
+  it('refuses an email change without a live session', async () => {
+    for (const authorization of [undefined, 'Bearer not-a-session']) {
+      const response = await fetch(`${baseUrl}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          ...(authorization ? { authorization } : {}),
+        },
+        body: JSON.stringify({ email: `nobody-${run}@example.com` }),
+      })
+      expect(response.status).toBe(401)
+      await response.body?.cancel()
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -711,6 +936,20 @@ describe('password recovery without SMTP', () => {
     for (const address of [email, `ghost-${Date.now()}@example.com`]) {
       expect(await client.auth.resetPasswordForEmail(address)).toEqual({ data: {}, error: null })
     }
+  })
+
+  it('stages an email change it cannot mail and keeps the address', async () => {
+    const client = createSupabaseClient(baseUrl, ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+    expect(
+      (await client.auth.signInWithPassword({ email, password: 'old-password-123' })).error,
+    ).toBeNull()
+    // As for recovery, an unconfigured mailer skips the send; nothing changes without the link.
+    const staged = await client.auth.updateUser({ email: `moved-${email}` })
+    expect(staged.error).toBeNull()
+    expect(staged.data.user?.new_email).toBe(`moved-${email}`)
+    expect((await client.auth.getUser()).data.user?.email).toBe(email)
   })
 
   it('answers the in-memory fallback recovery route with {}', async () => {
