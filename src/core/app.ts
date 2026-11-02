@@ -516,6 +516,7 @@ import { Message } from '~/tools/mailer/mailer'
 import type { SMTPConfig } from '~/tools/mailer/smtp'
 import { up as applyLeastPrivilegeRoles } from '../../migrations/1779000000_least_privilege_roles'
 import type { MigrationDB } from '../../migrations/types'
+import { type AgentGrantAuth, createAgentGrantsPlugin } from '../apis/agent-grants'
 import {
   ApiError,
   BadRequestError,
@@ -535,7 +536,8 @@ import { mountPostgrestRoutes } from '../apis/postgrest'
 import { createRealtimeHub, createRealtimeWebSocketHandler } from '../apis/realtime'
 import { PostgresStorageAccessPolicy } from '../apis/storage-postgres'
 import { MetricsPlugin } from '../plugins/metrics/plugin'
-import { createAuth, lookupSessionByToken } from '../tools/auth-better'
+import { createAuth, lookupAgentGrant, lookupSessionByToken } from '../tools/auth-better'
+import type { AgentGrantOptions } from '../tools/auth-better/agent-grants'
 import { LocalFileStore } from '../tools/filesystem/store'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { S3FileStore } from '../tools/filesystem/store-s3'
@@ -665,6 +667,8 @@ export interface AppConfig {
   extraOrigins?: string[]
   /** Recovery-link fallback for missing or untrusted redirect_to (default: BETTER_AUTH_URL) */
   siteUrl?: string
+  /** OAuth agent grants for External Agents (sinope#1098); absent, no OAuth provider runs. */
+  agentGrants?: AgentGrantOptions
   /** Runtime mode (default: auto-detected from env) */
   mode?: 'production' | 'development'
   /** Service role key for admin-level access (must be >=32 chars in production) */
@@ -1028,6 +1032,7 @@ export class Sinopebase {
           extraOrigins: this.config.extraOrigins,
           sendEmail: (mail) => this.sendMail(mail),
           siteUrl: this.config.siteUrl,
+          agentGrants: this.config.agentGrants,
         })
         logger.info('Auth', {
           provider: 'better-auth',
@@ -1099,6 +1104,10 @@ export class Sinopebase {
 
       try {
         if (this.auth) {
+          // An agent grant acts for its User in its one tenant, never as a first-party session.
+          const grant = await lookupAgentGrant(this.auth, token)
+          if (grant)
+            return { role: 'authenticated', userId: grant.userId, tenantId: grant.tenantId }
           const row = await lookupSessionByToken(this.auth, token)
           // Better Auth session tokens come only from first-party sign-in; any
           // other credential type must never resolve to this channel.
@@ -1375,6 +1384,14 @@ export class Sinopebase {
 
       // ── Auth — /auth/v1/* ──
       .use((app) => app.use(this.createInstanceAuth(mergedProviderIds)))
+      // ── OAuth agent grants (sinope#1098) — only when configured ──
+      .use((app) =>
+        this.auth && this.config.agentGrants && this.database instanceof PostgresDatabase
+          ? (app.use(
+              createAgentGrantsPlugin(this.auth as unknown as AgentGrantAuth, this.database),
+            ) as unknown as typeof app)
+          : app,
+      )
 
       // Instance-scoped auth guard: applies to every /rest/v1/* and /storage/v1/*
       // route registered on this chain. Instance-scoped (not global) so plugins

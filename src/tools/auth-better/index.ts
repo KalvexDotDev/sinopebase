@@ -12,6 +12,14 @@ import type pg from 'pg'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
 import type { BetterAuthDatabase } from './adapter'
 import { createAuthTables, createBetterAuthDB } from './adapter'
+import {
+  AGENT_GRANT_TABLES,
+  type AgentGrantOptions,
+  type AgentGrantToken,
+  agentGrantProvider,
+  createAgentGrantTables,
+  lookupAgentGrantToken,
+} from './agent-grants'
 import { bindRecoveryLink, dropRecoveryLink } from './recovery-links'
 import { createAuthWithSignupPolicy as betterAuth, signupsAllowed } from './signup-policy'
 
@@ -61,6 +69,8 @@ export interface CreateAuthOptions {
   siteUrl?: string
   /** Disable Better Auth diagnostics only for a private maintenance command handling credentials. */
   disableLogsForMaintenance?: true
+  /** Issue OAuth agent grants for this resource (sinope#1098); absent, no OAuth provider runs. */
+  agentGrants?: AgentGrantOptions
 }
 
 /** Better Auth uses these provider flags at OAuth callback time, including explicit requestSignUp. */
@@ -99,11 +109,14 @@ export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
   return { socialProviders, genericConfigs }
 }
 
-function oauthOptions(allProviders: OAuthProviderConfig[]) {
+function oauthOptions(allProviders: OAuthProviderConfig[], agentGrants?: AgentGrantOptions) {
   const { socialProviders, genericConfigs } = buildOAuthProviderConfigs(allProviders)
   return {
     socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
-    plugins: genericConfigs.length > 0 ? [genericOAuth({ config: genericConfigs })] : [],
+    plugins: [
+      ...(genericConfigs.length > 0 ? [genericOAuth({ config: genericConfigs })] : []),
+      ...(agentGrants ? [agentGrantProvider(agentGrants)] : []),
+    ],
     account: {
       accountLinking: { enabled: true, trustedProviders: allProviders.map((p) => p.providerId) },
     },
@@ -245,7 +258,7 @@ function authOptions(
     secret: options?.jwtSecret || process.env.JWT_SECRET || JWT_DEV_FALLBACK,
     trustedOrigins: trustedOrigins(options?.extraOrigins),
     baseURL,
-    ...oauthOptions(allProviders),
+    ...oauthOptions(allProviders, options?.agentGrants),
   }
 }
 
@@ -391,7 +404,7 @@ async function restrictProviderTableAccess(db: Kysely<BetterAuthDatabase>): Prom
       column_names text;
       browser_role text;
     BEGIN
-      FOREACH provider_table IN ARRAY ARRAY['user', 'session', 'account', 'verification', 'refresh_tokens'] LOOP
+      FOREACH provider_table IN ARRAY ARRAY['user', 'session', 'account', 'verification', 'refresh_tokens', ${sql.raw(AGENT_GRANT_TABLES.map((table) => `'${table}'`).join(', '))}] LOOP
         EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC, anon, authenticated', provider_table);
         SELECT string_agg(quote_ident(attname), ', ') INTO column_names
           FROM pg_attribute
@@ -437,6 +450,7 @@ export async function createAuth(
     await sql`SELECT pg_advisory_xact_lock(732031, 2)`.execute(transaction)
     await createAuthTables(transaction)
     await createRefreshTokensTable(transaction)
+    await createAgentGrantTables(transaction)
     await restrictProviderTableAccess(transaction)
   })
 
@@ -449,6 +463,8 @@ export async function createAuth(
   // Attach the typed Kysely so callers can do direct lookups (better-auth's
   // getSession is cookie-based; direct DB queries are needed for Bearer tokens).
   ;(auth as Record<string, unknown>).__db = db
+  // The resource agent access tokens must be issued for (see lookupAgentGrantToken).
+  ;(auth as Record<string, unknown>).__agentGrantResource = options?.agentGrants?.resource
   // GoTrue email change (PUT /auth/v1/user) mails through the same sender; absent without SMTP.
   ;(auth as Record<string, unknown>).__mailEmailChange = emailChangeMailer(
     options?.sendEmail,
@@ -529,4 +545,22 @@ export async function lookupSessionByToken(
   } catch {
     return null
   }
+}
+
+/**
+ * Resolve a Bearer token to the agent grant it was issued under, or null when
+ * it is not a live agent access token for this server's agent resource.
+ * Agent tokens are never sessions: callers that need a first-party User use
+ * lookupSessionByToken, which does not accept them.
+ */
+export async function lookupAgentGrant(
+  auth: AuthWithDb,
+  token: string,
+): Promise<AgentGrantToken | null> {
+  const { __db: db, __agentGrantResource: resource } = auth as {
+    __db?: Kysely<BetterAuthDatabase>
+    __agentGrantResource?: string
+  }
+  if (!db || !resource) return null
+  return lookupAgentGrantToken(db, token, resource)
 }
