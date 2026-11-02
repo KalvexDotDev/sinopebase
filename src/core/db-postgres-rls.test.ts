@@ -1,3 +1,7 @@
+// @new-code-test positive src/core/app.ts
+// @new-code-test negative src/core/app.ts
+// @new-code-test positive src/core/db-postgres.ts
+// @new-code-test negative src/core/db-postgres.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { reserveLoopbackPort } from '../../tests/harness'
 import { Sinopebase } from './app'
