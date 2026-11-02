@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { reserveLoopbackPort } from '../../tests/harness'
 import { Sinopebase } from './app'
-import { PostgresDatabase } from './db-postgres'
+import { PostgresDatabase, type PostgresRequestContext } from './db-postgres'
 
 const postgresUrl = process.env.TEST_POSTGRES_URL ?? process.env.POSTGRES_URL
 const describePostgres = postgresUrl ? describe : describe.skip
@@ -52,6 +52,10 @@ describePostgres('PostgreSQL request RLS context', () => {
       GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
       GRANT SELECT, INSERT, UPDATE, DELETE ON sinopebase_rls_context_test TO anon, authenticated, service_role;
       GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated;
+      CREATE OR REPLACE FUNCTION public.sinopebase_request_claims() RETURNS jsonb
+      LANGUAGE sql STABLE
+      AS $$ SELECT NULLIF(current_setting('request.jwt.claims', true), '')::jsonb $$;
+      GRANT EXECUTE ON FUNCTION public.sinopebase_request_claims() TO anon, authenticated, service_role;
       DO $$
       BEGIN
         IF NOT EXISTS (
@@ -281,5 +285,43 @@ describePostgres('PostgreSQL request RLS context', () => {
     expect(memberCount).toBe('*/1')
     expect(anonCount).toBe('*/1')
     expect(serviceCount).toBe('*/4')
+  })
+
+  it('marks only first-party session tokens with the first_party channel claim', async () => {
+    const claims = (token: string) =>
+      fetch(`${baseUrl}/rest/v1/rpc/sinopebase_request_claims`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      }).then((response) => response.json() as Promise<Record<string, unknown>>)
+
+    const [member, anon, service] = await Promise.all([
+      claims(memberAToken),
+      claims(process.env.SINOPEBASE_ANON_KEY ?? 'test-anon-key'),
+      claims(process.env.SINOPEBASE_SERVICE_ROLE_KEY ?? 'test-service-role-key'),
+    ])
+
+    expect(member).toEqual({ sub: memberA, role: 'authenticated', channel: 'first_party' })
+    expect(anon).toEqual({ role: 'anon' })
+    expect(service).toEqual({ role: 'service_role' })
+  })
+
+  it('emits the first_party claim only for an identified user whose context asserts it', async () => {
+    const claimsFor = (context: PostgresRequestContext) =>
+      db.withRequestContext(context, (requestDb) => requestDb.rpc('sinopebase_request_claims', {}))
+
+    const [plain, firstParty, service, anonymous, unidentified] = await Promise.all([
+      claimsFor({ role: 'authenticated', userId: memberA }),
+      claimsFor({ role: 'authenticated', userId: memberA, channel: 'first_party' }),
+      claimsFor({ role: 'service_role', userId: memberA, channel: 'first_party' }),
+      claimsFor({ role: 'anon', channel: 'first_party' }),
+      claimsFor({ role: 'authenticated', channel: 'first_party' }),
+    ])
+
+    expect(plain).toEqual({ sub: memberA, role: 'authenticated' })
+    expect(firstParty).toEqual({ sub: memberA, role: 'authenticated', channel: 'first_party' })
+    expect(service).toEqual({ sub: memberA, role: 'service_role' })
+    expect(anonymous).toEqual({ role: 'anon' })
+    expect(unidentified).toEqual({ role: 'authenticated' })
   })
 })
