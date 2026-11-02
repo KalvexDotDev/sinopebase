@@ -447,7 +447,7 @@ describe('object names with empty or dot segments (sinope#1111)', () => {
     })
   }
 
-  it('still moves and copies within the caller prefix', async () => {
+  it('still moves, copies and deletes within the caller prefix', async () => {
     const access = new TestStorageAccess()
     const store = new TestFileStore()
     store.files.set('evidence/tenant-a/x.txt', Buffer.from('tenant a'))
@@ -471,5 +471,22 @@ describe('object names with empty or dot segments (sinope#1111)', () => {
       'evidence/tenant-a/y.txt',
       'evidence/tenant-a/z.txt',
     ])
+    const remove = await app.handle(
+      new Request(
+        'http://localhost/storage/v1/object/evidence',
+        json('DELETE', { prefixes: ['tenant-a/z.txt'] }),
+      ),
+    )
+    expect(await remove.json()).toEqual([{ name: 'tenant-a/z.txt', bucket_id: 'evidence' }])
+    expect([...store.files.keys()]).toEqual(['evidence/tenant-a/y.txt'])
+  })
+
+  it('lists the bucket root when no prefix is given', async () => {
+    const { app, store } = storageApp()
+    store.files.set('evidence/tenant-a/x.txt', Buffer.from('tenant a'))
+    const list = await app.handle(
+      new Request('http://localhost/storage/v1/object/list/evidence', json('POST', {})),
+    )
+    expect(await list.json()).toEqual([expect.objectContaining({ name: 'tenant-a/x.txt' })])
   })
 })
