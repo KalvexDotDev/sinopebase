@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { dirname, join, resolve as resolvePath, sep } from 'node:path'
+import { isValidObjectName } from './object-name'
 import type { IFileStore } from './store-interface'
 
 export interface LocalFileInfo {
@@ -44,6 +45,8 @@ export class LocalFileStore implements IFileStore {
   }
 
   private resolveObjectPath(bucket: string, path: string): string {
+    // A dot segment can stay inside the bucket yet leave the owner's prefix.
+    if (!isValidObjectName(path)) throw new Error(`Invalid object name: ${path}`)
     const baseDir = resolvePath(this.bucketPath(bucket))
     const fullPath = resolvePath(join(baseDir, path))
     // Prevent path traversal attacks
@@ -67,8 +70,8 @@ export class LocalFileStore implements IFileStore {
    * Save a file to the store.
    */
   async save(bucket: string, path: string, data: ArrayBuffer): Promise<void> {
-    await this.ensureBucket(bucket)
     const fp = this.resolveObjectPath(bucket, path)
+    await this.ensureBucket(bucket)
     await fs.mkdir(dirname(fp), { recursive: true })
     await fs.writeFile(fp, Buffer.from(data))
   }

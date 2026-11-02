@@ -11,6 +11,7 @@ import { Elysia } from 'elysia'
 import type { PostgresRequestContext } from '../core/db-postgres'
 import type { Bucket, FileObject, IFileStore } from '../tools/filesystem/store-interface'
 import { createStoragePlugin } from './file'
+import { signUrl } from './signed-url'
 import {
   StorageAccessError,
   type StorageAccessPolicy,
@@ -368,5 +369,107 @@ describe('Supabase Storage HTTP compatibility', () => {
         contentType: 'image/png',
       }),
     ).not.toThrow()
+  })
+})
+
+describe('object names with empty or dot segments (sinope#1111)', () => {
+  const crossing = 'tenant-a/../tenant-b/b.txt'
+  const json = (method: string, body: unknown) => ({
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  // URL parsing already collapses `..` in request paths, so path-parameter
+  // routes are exercised with an empty segment, which survives it.
+  const requests: [string, string, RequestInit][] = [
+    ['tenant-a//b.txt', '/object/evidence/tenant-a//b.txt', { method: 'POST', body: 'x' }],
+    ['tenant-a//b.txt', '/object/evidence/tenant-a//b.txt', { method: 'GET' }],
+    ['tenant-a//b.txt', '/object/public/evidence/tenant-a//b.txt', { method: 'GET' }],
+    ['tenant-a//b.txt', '/object/sign/evidence/tenant-a//b.txt', json('POST', { expiresIn: 60 })],
+    [crossing, '/object/sign/evidence', json('POST', { paths: ['tenant-a/x.txt', crossing] })],
+    [crossing, '/object/evidence', json('DELETE', { prefixes: ['tenant-a/x.txt', crossing] })],
+    ['tenant-a/../', '/object/list/evidence', json('POST', { prefix: 'tenant-a/../' })],
+    [
+      crossing,
+      '/object/copy',
+      json('POST', { bucket: 'evidence', from: 'tenant-a/x.txt', to: crossing }),
+    ],
+    [
+      crossing,
+      '/object/copy',
+      json('POST', { bucket: 'evidence', from: crossing, to: 'tenant-a/y.txt' }),
+    ],
+    [
+      crossing,
+      '/object/move',
+      json('POST', { bucket: 'evidence', from: 'tenant-a/x.txt', to: crossing }),
+    ],
+    [
+      crossing,
+      '/object/move',
+      json('POST', { bucket: 'evidence', from: crossing, to: 'tenant-a/y.txt' }),
+    ],
+    [crossing, `/object/signed/${signUrl('evidence', crossing, 60, 'GET')}`, { method: 'GET' }],
+    [
+      crossing,
+      `/object/signed/upload/${signUrl('evidence', crossing, 60, 'PUT')}`,
+      { method: 'PUT', body: 'x' },
+    ],
+  ]
+
+  for (const [mode, access] of [
+    ['metadata policy', () => new TestStorageAccess()],
+    ['local service role', () => undefined],
+  ] as const) {
+    it(`rejects them as InvalidKey before any store or policy work (${mode})`, async () => {
+      for (const [name, route, init] of requests) {
+        const store = new TestFileStore()
+        store.files.set('evidence/tenant-a/x.txt', Buffer.from('tenant a'))
+        store.files.set('evidence/tenant-b/b.txt', Buffer.from('tenant b'))
+        const policy = access()
+        policy?.owners.set('evidence/tenant-a/x.txt', 'member-a')
+        const { app } = storageApp(store, policy, () =>
+          policy ? { role: 'authenticated', userId: 'member-a' } : { role: 'service_role' },
+        )
+        const response = await app.handle(new Request(`http://localhost/storage/v1${route}`, init))
+        expect({ route, status: response.status, body: await response.json() }).toEqual({
+          route,
+          status: 400,
+          body: { statusCode: '400', error: 'InvalidKey', message: `Invalid key: ${name}` },
+        })
+        expect([...store.files.keys()]).toEqual([
+          'evidence/tenant-a/x.txt',
+          'evidence/tenant-b/b.txt',
+        ])
+        expect(store.files.get('evidence/tenant-b/b.txt')?.toString()).toBe('tenant b')
+        expect(policy?.lastUpload).toBeUndefined()
+      }
+    })
+  }
+
+  it('still moves and copies within the caller prefix', async () => {
+    const access = new TestStorageAccess()
+    const store = new TestFileStore()
+    store.files.set('evidence/tenant-a/x.txt', Buffer.from('tenant a'))
+    access.owners.set('evidence/tenant-a/x.txt', 'member-a')
+    const { app } = storageApp(store, access, () => ({ role: 'authenticated', userId: 'member-a' }))
+    const copy = await app.handle(
+      new Request(
+        'http://localhost/storage/v1/object/copy',
+        json('POST', { bucket: 'evidence', from: 'tenant-a/x.txt', to: 'tenant-a/y.txt' }),
+      ),
+    )
+    expect(await copy.json()).toEqual({ data: { path: 'tenant-a/y.txt' }, error: null })
+    const move = await app.handle(
+      new Request(
+        'http://localhost/storage/v1/object/move',
+        json('POST', { bucket: 'evidence', from: 'tenant-a/x.txt', to: 'tenant-a/z.txt' }),
+      ),
+    )
+    expect(await move.json()).toEqual({ data: { path: 'tenant-a/z.txt' }, error: null })
+    expect([...store.files.keys()].sort()).toEqual([
+      'evidence/tenant-a/y.txt',
+      'evidence/tenant-a/z.txt',
+    ])
   })
 })

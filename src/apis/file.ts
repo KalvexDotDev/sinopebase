@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { Elysia } from 'elysia'
 import type { PostgresRequestContext } from '../core/db-postgres'
+import { isValidObjectName, isValidObjectPrefix } from '../tools/filesystem/object-name'
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { RequestEntityTooLargeError } from './api_error_aliases'
 import { DEFAULT_MAX_UPLOAD_SIZE, uploadBodyLimit } from './middlewares_body_limit'
@@ -300,7 +301,11 @@ async function storageOperation<T>(
         ? error
         : new StorageAccessError(500, '500', 'Storage operation failed')
     set.status = failure.status
-    return { statusCode: failure.code, error: failure.code, message: failure.message }
+    return {
+      statusCode: String(failure.status),
+      error: failure.code,
+      message: failure.message,
+    }
   }
 }
 
@@ -310,6 +315,16 @@ const BUCKET_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/
 
 function isValidBucketName(name: string): boolean {
   return name !== '.' && name !== '..' && BUCKET_NAME_PATTERN.test(name)
+}
+
+/** Supabase Storage's InvalidKey error, for names that are unsafe to resolve (sinope#1111). */
+function invalidKey(name: unknown): StorageAccessError {
+  return new StorageAccessError(400, 'InvalidKey', `Invalid key: ${String(name)}`)
+}
+
+function requireObjectName(name: unknown): string {
+  if (!isValidObjectName(name)) throw invalidKey(name)
+  return name
 }
 
 /** Map a missing-source read error to a 404; rethrow anything else. */
@@ -480,8 +495,9 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     const b = (body ?? {}) as Record<string, unknown>
-    const prefix = b.prefix as string | undefined
+    const prefix = b.prefix ?? ''
     return storageOperation(set, async () => {
+      if (!isValidObjectPrefix(prefix)) throw invalidKey(prefix)
       const { context, access } = await resolveStorageAccess(options, request)
       if (access) return access.listObjects(context, bucket, prefix)
       await store.ensureBucket(bucket)
@@ -562,6 +578,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
         }
       }
       return storageOperation(set, async () => {
+        requireObjectName(path)
         const { context, access } = await resolveStorageAccess(options, request)
         if (access) {
           await access.upload(
@@ -612,6 +629,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
+      requireObjectName(path)
       const { context, access } = await resolveStorageAccess(options, request)
       const buffer = access
         ? await access.download(context, bucket, path, () => store.read(bucket, path))
@@ -672,12 +690,11 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
+      const names = paths.map(requireObjectName)
       const { context, access } = await resolveStorageAccess(options, request)
       const deleted = access
-        ? await access.remove(context, bucket, paths as string[], (allowed) =>
-            store.delete(bucket, allowed),
-          )
-        : await store.delete(bucket, paths as string[])
+        ? await access.remove(context, bucket, names, (allowed) => store.delete(bucket, allowed))
+        : await store.delete(bucket, names)
       return deleted.map((name: string) => ({ name, bucket_id: bucket }))
     })
   })
@@ -711,6 +728,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
+      requireObjectName(path)
       if (!options.access || !(await options.access.isAvailable())) {
         throw new StorageAccessError(503, '503', 'Supabase storage metadata schema is unavailable')
       }
@@ -736,6 +754,8 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
+      requireObjectName(from)
+      requireObjectName(to)
       const { context, access } = await resolveStorageAccess(options, request)
       // Supabase contract: copying onto an existing object is a 400.
       await existsOrThrow(access, context, store, bucket, to)
@@ -775,6 +795,8 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
+      requireObjectName(from)
+      requireObjectName(to)
       const { context, access } = await resolveStorageAccess(options, request)
       await existsOrThrow(access, context, store, bucket, to)
       const buffer = access
@@ -825,6 +847,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
+      const paths = rawPaths.map(requireObjectName)
       const { context, access } = await resolveStorageAccess(options, request)
       const expiresInSec =
         typeof rawExpiresIn === 'number'
@@ -833,8 +856,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
             ? parseInt(rawExpiresIn, 10) || 3600
             : 3600
       const results: { path: string; signedUrl: string }[] = []
-      for (const rawPath of rawPaths) {
-        const path = String(rawPath)
+      for (const path of paths) {
         if (access) await access.authorizeSignedUrl(context, bucket, path)
         const token = signUrl(bucket, path, expiresInSec, 'GET')
         results.push({ path, signedUrl: `/storage/v1/object/signed/${token}` })
@@ -875,6 +897,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     const rawExpiresIn = b.expiresIn
     const rawMethod = b.method
     return storageOperation(set, async () => {
+      requireObjectName(path)
       const { context, access } = await resolveStorageAccess(options, request)
       if (access) await access.authorizeSignedUrl(context, bucket, path)
       const expiresInSec =
@@ -918,6 +941,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       if (method !== 'GET') {
         throw new StorageAccessError(403, '403', 'Token method mismatch: expected GET')
       }
+      requireObjectName(path)
       const buffer = await store.read(bucket, path)
       return fullResponse(buffer, inferContentType(path))
     })
@@ -953,6 +977,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
         if (method !== 'PUT') {
           throw new StorageAccessError(403, '403', 'Token method mismatch: expected PUT')
         }
+        requireObjectName(path)
         const data = await request.arrayBuffer()
         if (!data || data.byteLength === 0) {
           throw new StorageAccessError(400, '400', 'File body is required')

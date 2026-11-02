@@ -6,6 +6,7 @@
  */
 
 import { Client as MinioClient } from 'minio'
+import { isValidObjectName } from './object-name'
 import type { IFileStore } from './store-interface'
 
 export interface S3Config {
@@ -23,6 +24,15 @@ export interface FileObject {
   created_at: string | null
   last_accessed_at: string | null
   metadata: Record<string, unknown> | null
+}
+
+/**
+ * S3 keys are opaque, but the proxy or backend behind an S3 endpoint may
+ * collapse dot segments, so a key must never contain one (sinope#1111).
+ */
+function objectKey(path: string): string {
+  if (!isValidObjectName(path)) throw new Error(`Invalid object name: ${path}`)
+  return path
 }
 
 export class S3FileStore implements IFileStore {
@@ -87,12 +97,13 @@ export class S3FileStore implements IFileStore {
   // -----------------------------------------------------------------------
 
   async save(bucket: string, path: string, data: ArrayBuffer): Promise<void> {
+    const key = objectKey(path)
     await this.ensureBucket(bucket)
-    await this.client.putObject(bucket, path, Buffer.from(data), data.byteLength)
+    await this.client.putObject(bucket, key, Buffer.from(data), data.byteLength)
   }
 
   async read(bucket: string, path: string): Promise<Buffer> {
-    const stream = await this.client.getObject(bucket, path)
+    const stream = await this.client.getObject(bucket, objectKey(path))
     const chunks: Buffer[] = []
     for await (const chunk of stream) {
       chunks.push(chunk as Buffer)
@@ -101,7 +112,7 @@ export class S3FileStore implements IFileStore {
   }
 
   async delete(bucket: string, paths: string[]): Promise<string[]> {
-    await this.client.removeObjects(bucket, paths)
+    await this.client.removeObjects(bucket, paths.map(objectKey))
     return paths
   }
 
@@ -133,6 +144,6 @@ export class S3FileStore implements IFileStore {
    * @param ttlSec   Time-to-live in seconds (default 3600).
    */
   async presignedGetUrl(bucket: string, path: string, ttlSec: number = 3600): Promise<string> {
-    return this.client.presignedGetObject(bucket, path, ttlSec)
+    return this.client.presignedGetObject(bucket, objectKey(path), ttlSec)
   }
 }
