@@ -1100,7 +1100,9 @@ export class Sinopebase {
       try {
         if (this.auth) {
           const row = await lookupSessionByToken(this.auth, token)
-          return row ? { role: 'authenticated', userId: row.id } : undefined
+          // Better Auth session tokens come only from first-party sign-in; any
+          // other credential type must never resolve to this channel.
+          return row ? { role: 'authenticated', userId: row.id, channel: 'first_party' } : undefined
         }
         const payload = await verifyAccessToken(token)
         return { role: 'authenticated', userId: payload.sub }

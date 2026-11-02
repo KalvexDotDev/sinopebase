@@ -50,6 +50,13 @@ export interface PostgresConfig {
 export interface PostgresRequestContext {
   role: 'anon' | 'authenticated' | 'service_role'
   userId?: string
+  /**
+   * Set only when the request was authenticated by a first-party session (a
+   * Better Auth session token issued by sign-in). Emitted as the positive
+   * `channel: 'first_party'` JWT claim that database approval rules require;
+   * every other credential leaves it unset so those rules fail closed.
+   */
+  channel?: 'first_party'
 }
 
 /**
@@ -306,6 +313,8 @@ export class PostgresDatabase implements IDatabase {
       const claims = JSON.stringify({
         sub: userId || undefined,
         role: context.role,
+        // Only an identified user can hold a first-party session.
+        channel: context.role === 'authenticated' && userId ? context.channel : undefined,
       })
 
       // Set PostgREST-compatible GUC parameters so auth.uid() and
