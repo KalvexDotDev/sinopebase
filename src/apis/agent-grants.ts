@@ -15,7 +15,7 @@ import { Elysia } from 'elysia'
 import { type Kysely, sql } from 'kysely'
 import { z } from 'zod'
 import type { PostgresDatabase } from '~/core/db-postgres'
-import { lookupSessionByToken } from '~/tools/auth-better'
+import { lookupAgentGrant, lookupSessionByToken } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 import {
   type AgentGrantTables,
@@ -65,11 +65,15 @@ const oauthQuery = z.string().min(1).max(8192)
 const decision = z.object({ oauth_query: oauthQuery })
 const acceptance = decision.extend({ tenant_id: z.string().min(1).max(255) })
 
+function bearerToken(request: Request): string | null {
+  return /^Bearer (\S+)$/i.exec(request.headers.get('authorization') ?? '')?.[1] ?? null
+}
+
 /** The first-party User behind a Better Auth session token; agent tokens are not sessions. */
 async function sessionUser(auth: AgentGrantAuth, request: Request) {
-  const token = /^Bearer (\S+)$/i.exec(request.headers.get('authorization') ?? '')?.[1]
-  const user = await lookupSessionByToken(auth, token ?? null)
-  return user ? { id: user.id, token: token as string } : null
+  const token = bearerToken(request)
+  const user = await lookupSessionByToken(auth, token)
+  return user && token ? { id: user.id, token } : null
 }
 
 function grantDb(auth: AgentGrantAuth) {
@@ -154,6 +158,21 @@ export function createAgentGrantsPlugin(auth: AgentGrantAuth, database: Postgres
           return auth.handler(new Request(url, request))
         }
         return auth.handler(request)
+      })
+      // For the protected resource: the grant an agent token acts under, or 401.
+      .get('/auth/v1/agent-grant', async ({ request, set }) => {
+        const token = bearerToken(request)
+        const grant = token ? await lookupAgentGrant(auth, token) : null
+        if (!grant) {
+          set.headers['www-authenticate'] = 'Bearer error="invalid_token"'
+          return refuse(set, 401, 'Invalid agent token')
+        }
+        return {
+          grant_id: grant.grantId,
+          user_id: grant.userId,
+          tenant_id: grant.tenantId,
+          client_id: grant.clientId,
+        }
       })
       // Consent screen data, from a signed authorization request only.
       .post('/auth/v1/agent-grants/request', async ({ request, body, set }) => {

@@ -456,9 +456,22 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
   })
 
   it('applies a token only where a session would not: not to the GoTrue user or grant APIs', async () => {
-    const { tokens } = await grant(await registerClient('Agent 1098 surfaces'), tenantA)
+    const clientId = await registerClient('Agent 1098 surfaces')
+    const { tokens } = await grant(clientId, tenantA)
     expect((await json('/auth/v1/user', { token: tokens.access_token })).status).toBe(401)
     expect((await json('/auth/v1/agent-grants', { token: tokens.access_token })).status).toBe(401)
+
+    // The protected resource resolves the token to its grant; a session is not a grant.
+    const identity = await json('/auth/v1/agent-grant', { token: tokens.access_token })
+    expect(await identity.json()).toMatchObject({
+      user_id: member,
+      tenant_id: tenantA,
+      client_id: clientId,
+    })
+    const notAGrant = await json('/auth/v1/agent-grant', { token: memberSession })
+    expect(notAGrant.status).toBe(401)
+    expect(notAGrant.headers.get('www-authenticate')).toBe('Bearer error="invalid_token"')
+    expect((await json('/auth/v1/agent-grant')).status).toBe(401)
   })
 
   it('exposes only the OAuth client endpoints and issues no client-credential tokens', async () => {
