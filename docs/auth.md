@@ -76,24 +76,35 @@ oauthProviders: [{
 }]
 ```
 
-### Client-Side OAuth
+### Client-Side OAuth (GoTrue PKCE)
 
-Use the SDK to initiate OAuth login from your frontend:
+The official supabase-js SDK signs in and links identities through the GoTrue PKCE flow. Only PKCE (`code_challenge_method=s256`) is accepted; the implicit flow is refused with 400.
 
 ```ts
-import { createClient } from 'sinopebase'
+import { createClient } from '@supabase/supabase-js'
 
-const sb = createClient('https://your-instance.example.com', 'your-anon-key')
-
-// Initiate OAuth login — redirects to the provider
-await sb.auth.signInWithOAuth({ provider: 'google' })
-
-// With options
-await sb.auth.signInWithOAuth({
-  provider: 'github',
-  options: { redirectTo: 'https://yourapp.com/auth/callback' }
+const sb = createClient('https://your-instance.example.com', 'your-anon-key', {
+  auth: { flowType: 'pkce' },
 })
+
+// Sign in or sign up: the browser opens GET /auth/v1/authorize
+await sb.auth.signInWithOAuth({
+  provider: 'google',
+  options: { redirectTo: 'https://yourapp.com/auth/callback' },
+})
+// On the callback page: grant_type=pkce
+await sb.auth.exchangeCodeForSession(code)
+
+// Signed in: link another provider, list and remove identities
+await sb.auth.linkIdentity({ provider: 'microsoft', options: { redirectTo } })
+const { data } = await sb.auth.getUserIdentities()
+await sb.auth.unlinkIdentity(data.identities[0])
 ```
+
+- `GET /auth/v1/authorize` binds the flow to the browser with an HttpOnly cookie and runs the provider round trip through Better Auth (the provider's registered redirect URI is `<BETTER_AUTH_URL>/api/auth/callback/<provider>`). `GET /auth/v1/oauth/complete` then sends the browser to `redirect_to` with a single-use `code` valid for 5 minutes, or with `error=access_denied&error_code=<reason>` when the sign-in or link is refused. An untrusted `redirect_to` (origin not in `SINOPEBASE_EXTRA_ORIGINS`) falls back to `SINOPEBASE_SITE_URL`.
+- `GET /auth/v1/user/identities/authorize` (Bearer) returns the URL a signed-in user opens to link a provider; it carries a single-use, 2-minute ticket instead of the access token.
+- `DELETE /auth/v1/user/identities/:identity_id` removes an identity. Removing the last way to log in is refused with 422 `single_identity_not_deletable`. `GET /auth/v1/user` returns `identities`, with the password as provider `email`.
+- A user with no password (signed up with a provider) sets a first one with `updateUser({ password })`, without `current_password`, as in GoTrue.
 
 ### OAuth Provider Discovery
 
@@ -112,18 +123,15 @@ Providers can also be managed through the Admin UI at `/_/` → Settings → OAu
 
 This file-based management applies to a single instance. In multi-replica mode, provide identical OAuth settings to every pod through `SINOPEBASE_OAUTH_PROVIDERS_JSON` (for example, from a private Kubernetes Secret). Startup rejects a local `oauth_providers.json` file, and Admin UI provider mutations are disabled. Roll all pods when changing providers. See [Kubernetes deployment](kubernetes.md).
 
-### Account Linking
+### Identity Linking Policy
 
-Accounts are linked by email by default. A user signing in with Google
-and GitHub using the same email gets one account with both providers linked.
+Which provider identity may sign in, create a user, or link to an existing one is decided by one pure module, `src/tools/auth-better/identity-linking-policy.ts`, enforced in Better Auth's `validateUserInfo` hook:
 
-```ts
-const app = new Sinopebase({
-  postgresUrl: '...',
-  oauthProviders: [...],
-})
-// accountLinking is enabled automatically for configured providers
-```
+- An identity already linked signs in as its user.
+- A new identity whose email matches an existing user links to it only when both the provider and the local account have a verified email, and only for Google, the one provider whose email claim is treated as authoritative. Otherwise the sign-in is refused (`provider_email_unverified`, `local_email_unverified`, `email_claim_not_authoritative`); the user signs in another way and links from their account.
+- Microsoft (built-in provider, tenant `organizations` by default) is keyed by the token's `tid` and `oid`, never by email. Its email claim is not authoritative, so a Microsoft identity never links by email, and users it creates have an unverified email.
+- An explicit link (`linkIdentity`) links the provider account to the signed-in user, unless it is already linked to someone else (`account_already_linked_to_different_user`). A new link counts only once its code is redeemed with the verifier of the browser that asked for it; until then the identity signs in to nobody (`identity_link_pending`), and a wrong verifier or an abandoned code removes it.
+- A recovery link that confirms an address for the first time removes the account's provider identities and sessions.
 
 ## Enterprise SSO
 
@@ -182,11 +190,11 @@ Keycloak's OIDC endpoint.
 | `POSTGRES_URL` | Database connection | `postgresql://localhost:5432/sinopebase` |
 | `BETTER_AUTH_URL` | Public-facing base URL for OAuth callbacks | `http://localhost:8090` |
 | `ALLOW_SIGNUPS` | Public email/password signup | Disabled in production; enabled in development |
-| `GOOGLE_CLIENT_ID` | Google OAuth client | — |
+| `GOOGLE_CLIENT_ID` | Google OAuth client (built-in provider `google`) | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret | — |
-| `AZURE_CLIENT_ID` | Entra ID client | — |
-| `AZURE_CLIENT_SECRET` | Entra ID secret | — |
-| `AZURE_TENANT_ID` | Entra ID tenant | — |
+| `MICROSOFT_CLIENT_ID` | Microsoft Entra app client (built-in provider `microsoft`) | — |
+| `MICROSOFT_CLIENT_SECRET` | Microsoft Entra app secret | — |
+| `MICROSOFT_TENANT_ID` | Entra tenant, or `organizations` for any work or school account | `organizations` |
 
 ## Security
 

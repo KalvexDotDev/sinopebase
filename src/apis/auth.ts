@@ -25,6 +25,7 @@ import {
   retireEmailChanges,
   stageEmailChange,
 } from '~/tools/auth-better/email-change'
+import { removeSignInMethod } from '~/tools/auth-better/identity-linking-policy'
 import {
   RECOVERY_EMAIL_PREFIX,
   RESET_PREFIX,
@@ -51,6 +52,16 @@ import {
   verifyAccessToken,
   verifyRefreshToken,
 } from './auth-jwt'
+import {
+  authorize,
+  authorizeLink,
+  completeFlow,
+  type OAuthFlowAuth,
+  pkceGrant,
+  signInAccounts,
+  startLink,
+  toIdentities,
+} from './auth-oauth'
 import { authStore } from './auth-store'
 import { generateFamilyId, generateSessionId, generateTokenId } from './auth-utils'
 
@@ -472,6 +483,10 @@ function authDb(auth: BetterAuthInstance): Kysely<BetterAuthDatabase> {
   return auth.__db as unknown as Kysely<BetterAuthDatabase>
 }
 
+function oauthFlowAuth(auth: BetterAuthInstance): OAuthFlowAuth {
+  return auth as unknown as OAuthFlowAuth
+}
+
 const nativeUserUpdate = z
   .object({
     email: z.string().email().optional(),
@@ -632,8 +647,9 @@ async function updateNativeCredential(
     .where('providerId', '=', 'credential')
     .forUpdate()
     .executeTakeFirst()
-  if (session.authMethod !== RECOVERY)
-    await proveCurrentPassword(provider, credential?.password, currentPassword)
+  // As in GoTrue, a user without a password (social sign-in only) sets their first one.
+  if (session.authMethod !== RECOVERY && credential?.password)
+    await proveCurrentPassword(provider, credential.password, currentPassword)
   if (credential?.password && (await provider.verify({ password, hash: credential.password })))
     throw new UserUpdateRefused(
       422,
@@ -964,6 +980,9 @@ const verifyBody = z.object({
 /**
  * Confirm the address on recovery, as GoTrue does: the link proved control of
  * the mailbox it was sent to. Refused unless the account still has that address.
+ * An address confirmed for the first time drops every provider identity and
+ * session the account had (sinope#1097): a provider that asserted an address
+ * it never proved (e.g. Microsoft) must not keep the mailbox owner's account.
  */
 function confirmRecoveredUser(auth: BetterAuthInstance, userId: string, token: string) {
   return authDb(auth)
@@ -976,6 +995,23 @@ function confirmRecoveredUser(auth: BetterAuthInstance, userId: string, token: s
         .returning('value')
         .executeTakeFirst()
       if (!sentTo) return undefined
+      const unproven = await transaction
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', userId)
+        .where('emailVerified', '=', false)
+        .where(sql<string>`lower(email)`, '=', sentTo.value)
+        .forUpdate()
+        .executeTakeFirst()
+      if (unproven) {
+        await transaction
+          .deleteFrom('account')
+          .where('userId', '=', userId)
+          .where('providerId', '<>', 'credential')
+          .execute()
+        await transaction.deleteFrom('refresh_tokens').where('user_id', '=', userId).execute()
+        await transaction.deleteFrom('session').where('userId', '=', userId).execute()
+      }
       return transaction
         .updateTable('user')
         .set({ emailVerified: true })
@@ -1135,11 +1171,62 @@ async function authorizationCodeGrant(auth: BetterAuthInstance, { set, request }
   return issueSession(auth, { token: sessionToken, user })
 }
 
-const TOKEN_GRANTS = new Map([
+const TOKEN_GRANTS = new Map<
+  string,
+  (auth: BetterAuthInstance, context: GrantContext) => Promise<unknown>
+>([
   ['password', passwordGrant],
   ['refresh_token', refreshTokenGrant],
   ['authorization_code', authorizationCodeGrant],
+  ['pkce', (auth, { body }) => pkceGrant(oauthFlowAuth(auth), body)],
 ])
+
+/** GoTrue unlinkIdentity, refusing the user's last sign-in method (sinope#1097). */
+async function unlinkIdentity(
+  auth: BetterAuthInstance,
+  context: {
+    headers: Record<string, string | undefined>
+    params: { id: string }
+    set: { status?: number | string }
+  },
+) {
+  const { headers, params, set } = context
+  const token = headers.authorization?.startsWith('Bearer ')
+    ? headers.authorization.slice(7).trim()
+    : ''
+  if (!token) return goTrueError(set, 401, 'no_authorization', 'Invalid authorization header')
+  try {
+    return await authDb(auth)
+      .transaction()
+      .execute(async (transaction) => {
+        // The user lock serialises concurrent unlinks, so two cannot both see a spare method.
+        const { user } = await lockUpdatingSession(transaction, token)
+        const methods = (await signInAccounts(transaction, user.id)).map((account) => ({
+          id: account.id,
+          provider: account.providerId,
+        }))
+        const removal = removeSignInMethod(methods, params.id)
+        if (!removal.allowed)
+          throw removal.reason === 'not_found'
+            ? new UserUpdateRefused(404, 'identity_not_found', 'Identity does not exist')
+            : new UserUpdateRefused(
+                422,
+                'single_identity_not_deletable',
+                'User must have at least 1 identity after unlinking',
+              )
+        await transaction
+          .deleteFrom('account')
+          .where('id', '=', removal.method.id)
+          .where('userId', '=', user.id)
+          .execute()
+        return {}
+      })
+  } catch (error) {
+    if (error instanceof UserUpdateRefused)
+      return goTrueError(set, error.status, error.errorCode, error.message)
+    throw error
+  }
+}
 
 export function createAuthPlugin(
   auth: BetterAuthInstance,
@@ -1364,11 +1451,22 @@ export function createAuthPlugin(
             set.status = 401
             return { message: 'Invalid token' }
           }
-          return bridgeGetUserResponse({ user: row, session: {} })
+          // GoTrue user.identities: the sign-in methods the Account page lists and unlinks.
+          const identities = toIdentities(await signInAccounts(authDb(auth), row.id), row)
+          return { ...bridgeGetUserResponse({ user: row, session: {} }), identities }
         } catch {
           set.status = 401
           return { message: 'Invalid authorization header' }
         }
       })
+      .delete('/auth/v1/user/identities/:id', (context) => unlinkIdentity(auth, context))
+      .get('/auth/v1/authorize', ({ query }) => authorize(oauthFlowAuth(auth), query))
+      .get('/auth/v1/user/identities/authorize', ({ request, query }) =>
+        authorizeLink(oauthFlowAuth(auth), request, query),
+      )
+      .get('/auth/v1/user/identities/link', ({ query }) => startLink(oauthFlowAuth(auth), query))
+      .get('/auth/v1/oauth/complete', ({ request, query }) =>
+        completeFlow(oauthFlowAuth(auth), request, query),
+      )
   )
 }

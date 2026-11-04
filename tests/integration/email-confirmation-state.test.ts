@@ -568,7 +568,7 @@ test('native password policy accepts its boundaries and matching aliases', async
   await operation
 })
 
-test('missing native credential refuses password and profile updates together', async () => {
+test('a user without a password sets one and a profile update together (sinope#1097)', async () => {
   operation = (async () => {
     const accountEmail = `missing-credential-${crypto.randomUUID()}@example.test`
     const accountPassword = crypto.randomUUID()
@@ -579,21 +579,26 @@ test('missing native credential refuses password and profile updates together', 
     expect(signup.error).toBeNull()
     const userId = z.string().uuid().parse(signup.data.user?.id)
     if (!pool) throw new Error('Owned native database unavailable')
+    // A social-only user has no native credential.
     const removed = await pool.query(
       'DELETE FROM public.account WHERE "userId"=$1 AND "providerId"=$2 RETURNING id',
       [userId, 'credential'],
     )
     expect(removed.rowCount).toBe(1)
-    const rejected = await client.auth.updateUser({
-      password: crypto.randomUUID(),
-      current_password: accountPassword,
-      data: { partial: true },
-    })
-    expect(rejected.error?.status).toBe(400)
-    expect(rejected.error?.message).toBe('Current password is incorrect')
+    const firstPassword = crypto.randomUUID()
+    // As in GoTrue, a first password needs no current one.
+    const updated = await client.auth.updateUser({ password: firstPassword, data: { set: true } })
+    expect(updated.error).toBeNull()
     const read = await client.auth.getUser()
     expect(read.error).toBeNull()
-    expect(read.data.user?.user_metadata).toEqual({})
+    expect(read.data.user?.user_metadata).toEqual({ set: true })
+    expect(
+      (await client.auth.signInWithPassword({ email: accountEmail, password: firstPassword }))
+        .error,
+    ).toBeNull()
+    // From then on the password guards itself.
+    const refused = await client.auth.updateUser({ password: crypto.randomUUID() })
+    expect(refused.error?.status).toBe(400)
   })()
   await operation
 })

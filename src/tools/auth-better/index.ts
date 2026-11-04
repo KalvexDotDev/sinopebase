@@ -6,6 +6,8 @@
 // operations (sign-up, sign-in, session lookup, sign-out).
 // ---------------------------------------------------------------------------
 
+import type { BetterAuthPlugin } from 'better-auth'
+import { getOAuthState } from 'better-auth/api'
 import { type GenericOAuthConfig, genericOAuth } from 'better-auth/plugins/generic-oauth'
 import { type Kysely, sql } from 'kysely'
 import type pg from 'pg'
@@ -20,6 +22,11 @@ import {
   createAgentGrantTables,
   lookupAgentGrantToken,
 } from './agent-grants'
+import {
+  decideIdentityLink,
+  microsoftAccountId,
+  type ProviderIdentity,
+} from './identity-linking-policy'
 import { bindRecoveryLink, dropRecoveryLink } from './recovery-links'
 import { createAuthWithSignupPolicy as betterAuth, signupsAllowed } from './signup-policy'
 
@@ -73,18 +80,36 @@ export interface CreateAuthOptions {
   agentGrants?: AgentGrantOptions
 }
 
+interface SocialProviderConfig {
+  clientId: string
+  clientSecret: string
+  disableSignUp: boolean
+  tenantId?: string
+  disableProfilePhoto?: boolean
+  mapProfileToUser?: () => { emailVerified: false }
+}
+
 /** Better Auth uses these provider flags at OAuth callback time, including explicit requestSignUp. */
 export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
   const disableSignUp = !signupsAllowed()
-  const socialProviders: Record<
-    string,
-    { clientId: string; clientSecret: string; disableSignUp: boolean }
-  > = {}
+  const socialProviders: Record<string, SocialProviderConfig> = {}
   // tenantId is carried for operator configuration; Better Auth's generic config ignores it.
   const genericConfigs: Array<GenericOAuthConfig & { tenantId?: string }> = []
 
   for (const p of allProviders) {
-    if (BUILTIN_SOCIAL.has(p.providerId)) {
+    if (p.providerId === 'microsoft') {
+      socialProviders.microsoft = {
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+        disableSignUp,
+        // 'organizations' (work and school accounts) unless the operator names one tenant.
+        tenantId: p.tenantId || 'organizations',
+        // No Graph photo fetch: the profile comes from the ID token alone.
+        disableProfilePhoto: true,
+        // The email claim is never authoritative (nOAuth); see ./identity-linking-policy.
+        mapProfileToUser: () => ({ emailVerified: false }),
+      }
+    } else if (BUILTIN_SOCIAL.has(p.providerId)) {
       socialProviders[p.providerId] = {
         clientId: p.clientId,
         clientSecret: p.clientSecret,
@@ -109,16 +134,75 @@ export function buildOAuthProviderConfigs(allProviders: OAuthProviderConfig[]) {
   return { socialProviders, genericConfigs }
 }
 
+/** Key Microsoft accounts on tid + oid; Better Auth's built-in provider keys on oid alone. */
+const microsoftTenantObjectKey: BetterAuthPlugin = {
+  id: 'sinopebase-microsoft-account-key',
+  init: (context) => ({
+    context: {
+      socialProviders: context.socialProviders.map((provider) =>
+        provider.id === 'microsoft'
+          ? {
+              ...provider,
+              accountSubject: ({ profile }: { profile: object }) =>
+                microsoftAccountId(profile as Record<string, unknown>),
+            }
+          : provider,
+      ),
+    },
+  }),
+}
+
+type ValidateUserInfo = NonNullable<
+  NonNullable<Parameters<typeof betterAuth>[0]['user']>['validateUserInfo']
+>
+
+/**
+ * Enforce the Identity Linking Policy wherever Better Auth links an OAuth
+ * identity to an existing user. An explicit link (Account page) carries the
+ * signed-in user in its server-side OAuth state; any other link is implicit,
+ * matched on email. Better Auth has already resolved identity ownership.
+ */
+export const enforceIdentityLinkingPolicy: ValidateUserInfo = async ({ user, source }, context) => {
+  if (source.method !== 'oauth' || source.action !== 'link-account') return
+  const identity = {
+    providerId: source.oauth?.providerId ?? '',
+    emailVerified: user.emailVerified === true,
+  }
+  const decision = await linkDecision(identity, String(user.id), context)
+  if (decision.action === 'refuse')
+    return { error: decision.reason, errorDescription: 'This sign-in method cannot be linked.' }
+}
+
+async function linkDecision(
+  identity: ProviderIdentity,
+  userId: string,
+  context: Parameters<ValidateUserInfo>[1],
+) {
+  const existing = { kind: 'email_match' as const, userId }
+  if ((await getOAuthState())?.link?.userId === userId)
+    return decideIdentityLink(identity, { ...existing, emailVerified: true }, userId)
+  const local = await context.context.internalAdapter.findUserById(userId)
+  return decideIdentityLink(identity, { ...existing, emailVerified: local?.emailVerified === true })
+}
+
 function oauthOptions(allProviders: OAuthProviderConfig[], agentGrants?: AgentGrantOptions) {
   const { socialProviders, genericConfigs } = buildOAuthProviderConfigs(allProviders)
+  const plugins: BetterAuthPlugin[] = []
+  if (genericConfigs.length > 0) plugins.push(genericOAuth({ config: genericConfigs }))
+  if (socialProviders.microsoft) plugins.push(microsoftTenantObjectKey)
+  if (agentGrants) plugins.push(agentGrantProvider(agentGrants))
   return {
     socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
-    plugins: [
-      ...(genericConfigs.length > 0 ? [genericOAuth({ config: genericConfigs })] : []),
-      ...(agentGrants ? [agentGrantProvider(agentGrants)] : []),
-    ],
+    plugins,
     account: {
-      accountLinking: { enabled: true, trustedProviders: allProviders.map((p) => p.providerId) },
+      // Trusting every provider by name only lifts Better Auth's own emailVerified gate;
+      // enforceIdentityLinkingPolicy decides every link instead. Explicit links may
+      // differ in email: the signed-in user proves both identities.
+      accountLinking: {
+        enabled: true,
+        trustedProviders: allProviders.map((p) => p.providerId),
+        allowDifferentEmails: true,
+      },
     },
   }
 }
@@ -248,6 +332,7 @@ function authOptions(
         emailVerifiedAt: { type: 'date', required: false, input: false },
         userMetadata: { type: 'json', required: false, input: false },
       },
+      validateUserInfo: enforceIdentityLinkingPolicy,
     },
     // GoTrue amr method of a session ('recovery'); null for ordinary sign-ins.
     session: {
@@ -470,6 +555,8 @@ export async function createAuth(
     options?.sendEmail,
     options?.siteUrl || baseURL,
   )
+  // OAuth redirect_to falls back here when absent or untrusted, as recovery links do.
+  ;(auth as Record<string, unknown>).__siteUrl = options?.siteUrl || baseURL
 
   return auth
 }

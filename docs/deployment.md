@@ -42,6 +42,9 @@ await app.start()
 | `SINOPEBASE_EXTERNAL_RATE_LIMIT` | Multi-replica | Assert a shared ingress rate limit is configured. |
 | `TRUSTED_PROXIES` | Behind sanitizing ingress | Enable rightmost forwarded IP selection; ingress must overwrite forwarding headers. |
 | `SINOPEBASE_OAUTH_PROVIDERS_JSON` | If OAuth is used across pods | Common provider array from a Secret. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For Google sign-in | Built-in Google provider; set both. Redirect URI `<BETTER_AUTH_URL>/api/auth/callback/google`. |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | For Microsoft sign-in | Built-in Microsoft provider; set both. Redirect URI `<BETTER_AUTH_URL>/api/auth/callback/microsoft`. |
+| `MICROSOFT_TENANT_ID` | No | Entra tenant for Microsoft sign-in (default `organizations`). |
 
 See `.env.example` for a complete template with placeholder values. Copy with `cp .env.example .env`.
 
