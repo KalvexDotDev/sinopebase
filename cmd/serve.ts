@@ -21,6 +21,7 @@
 
 import { type AppConfig, Sinopebase } from '~/core/app.ts'
 import type { OAuthProviderConfig } from '~/tools/auth-better'
+import { agentGrantsFromEnv } from '~/tools/auth-better/agent-grants'
 import { deploymentConfigFromEnv } from './deployment-config.ts'
 
 function oauthProvidersFromEnv(): OAuthProviderConfig[] {
@@ -191,6 +192,7 @@ async function main(): Promise<void> {
     extraOrigins,
     siteUrl: process.env.SINOPEBASE_SITE_URL || undefined,
     oauthProviders: oauthProvidersFromEnv(),
+    agentGrants: agentGrantsFromEnv(process.env),
     ...deploymentConfigFromEnv(process.env),
     tls,
     minioEndpoint: process.env.S3_ENDPOINT || undefined,

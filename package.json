@@ -73,6 +73,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "1.7.17",
     "@elysia/openapi": "^1.4.15",
     "@sinclair/typebox": "^0.34.52",
     "adm-zip": "^0.6.1",

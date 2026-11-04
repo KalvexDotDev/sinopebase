@@ -57,6 +57,12 @@ export interface PostgresRequestContext {
    * every other credential leaves it unset so those rules fail closed.
    */
   channel?: 'first_party'
+  /**
+   * Set only for an agent grant token (sinope#1098): the tenant the grant is
+   * bound to, emitted as the `tenant_id` JWT claim that tenant-scoped rules
+   * require to match. Never set together with `channel`.
+   */
+  tenantId?: string
 }
 
 /**
@@ -313,8 +319,13 @@ export class PostgresDatabase implements IDatabase {
       const claims = JSON.stringify({
         sub: userId || undefined,
         role: context.role,
-        // Only an identified user can hold a first-party session.
-        channel: context.role === 'authenticated' && userId ? context.channel : undefined,
+        // Only an identified user can hold a first-party session, and a grant-bound one never does.
+        channel:
+          context.role === 'authenticated' && userId && !context.tenantId
+            ? context.channel
+            : undefined,
+        // Tenant claims only ever narrow access, so a bound context always emits its tenant.
+        tenant_id: context.tenantId || undefined,
       })
 
       // Set PostgREST-compatible GUC parameters so auth.uid() and
