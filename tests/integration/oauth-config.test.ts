@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Pool } from 'pg'
 import {
   createAuth,
+  enforceIdentityLinkingPolicy,
   type OAuthProviderConfig,
   type SinopebaseAuth,
 } from '../../src/tools/auth-better'
@@ -117,6 +118,36 @@ describe('OAuth provider config mapping (createAuth)', () => {
     )
   })
 
+  test('passes the tenant to built-in Microsoft and never trusts its email claim', async () => {
+    const auth = await createAuth(pool, {
+      oauthProviders: [
+        {
+          providerId: 'microsoft',
+          clientId: 'ms-cid',
+          clientSecret: 'ms-cs',
+          tenantId: 'organizations',
+        },
+      ],
+    })
+    expect(auth.options.socialProviders?.microsoft).toMatchObject({
+      tenantId: 'organizations',
+      disableProfilePhoto: true,
+    })
+    const context = await auth.$context
+    const provider = context.socialProviders.find((p) => p.id === 'microsoft')
+    const tid = '6fdb255f-1111-4111-8111-111111111111'
+    const oid = '11111111-2222-4333-8444-555555555555'
+    const claims = { tid, oid, email: 'a@contoso.test', email_verified: true }
+    const idToken = ['{"alg":"none"}', JSON.stringify(claims), '']
+      .map((part) => Buffer.from(part).toString('base64url'))
+      .join('.')
+    const info = await provider?.getUserInfo({ idToken })
+    expect(info?.user.emailVerified).toBe(false)
+    // Microsoft accounts are keyed on tid + oid by the account-key plugin.
+    expect(auth.options.plugins?.map((p) => p.id)).toEqual(['sinopebase-microsoft-account-key'])
+    expect(await provider?.accountSubject({ tokens: {}, profile: claims })).toBe(`${tid}:${oid}`)
+  })
+
   test('defaults to an empty provider set without errors', async () => {
     const auth = await createAuth(pool)
 
@@ -126,6 +157,7 @@ describe('OAuth provider config mapping (createAuth)', () => {
     expect(auth.options.account?.accountLinking).toEqual({
       enabled: true,
       trustedProviders: [],
+      allowDifferentEmails: true,
     })
     expect(auth.options.emailAndPassword?.enabled).toBe(true)
     expect(auth.options.emailVerification).toBeUndefined()
@@ -260,10 +292,14 @@ describe('OAuth provider config mapping (createAuth)', () => {
     ])
     expect(auth.options.plugins).toHaveLength(1)
     expect(auth.options.plugins?.[0]?.id).toBe('generic-oauth')
+    // Trust by name only lifts Better Auth's emailVerified gate: the Identity
+    // Linking Policy (user.validateUserInfo) decides every link.
     expect(auth.options.account?.accountLinking).toEqual({
       enabled: true,
       trustedProviders: ['google', 'enterprise'],
+      allowDifferentEmails: true,
     })
+    expect(auth.options.user?.validateUserInfo).toBe(enforceIdentityLinkingPolicy)
   })
 
   test('selects the configured public auth URL before the app URL', async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { Sinopebase } from '~/core/app.ts'
 
 describe('cmd/serve argument parsing', () => {

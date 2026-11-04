@@ -20,31 +20,9 @@
  */
 
 import { type AppConfig, Sinopebase } from '~/core/app.ts'
-import type { OAuthProviderConfig } from '~/tools/auth-better'
 import { agentGrantsFromEnv } from '~/tools/auth-better/agent-grants'
 import { deploymentConfigFromEnv } from './deployment-config.ts'
-
-function oauthProvidersFromEnv(): OAuthProviderConfig[] {
-  const value = process.env.SINOPEBASE_OAUTH_PROVIDERS_JSON
-  if (!value) return []
-  const parsed: unknown = JSON.parse(value)
-  if (
-    !Array.isArray(parsed) ||
-    !parsed.every(
-      (provider) =>
-        provider &&
-        typeof provider === 'object' &&
-        typeof provider.providerId === 'string' &&
-        typeof provider.clientId === 'string' &&
-        typeof provider.clientSecret === 'string',
-    )
-  ) {
-    throw new Error(
-      'SINOPEBASE_OAUTH_PROVIDERS_JSON must be an array of OAuth provider configurations',
-    )
-  }
-  return parsed as OAuthProviderConfig[]
-}
+import { oauthProvidersFromEnv } from './oauth-providers.ts'
 
 // ---------------------------------------------------------------------------
 // Argument parser
@@ -191,7 +169,7 @@ async function main(): Promise<void> {
     anonKey: process.env.SINOPEBASE_ANON_KEY || undefined,
     extraOrigins,
     siteUrl: process.env.SINOPEBASE_SITE_URL || undefined,
-    oauthProviders: oauthProvidersFromEnv(),
+    oauthProviders: oauthProvidersFromEnv(process.env),
     agentGrants: agentGrantsFromEnv(process.env),
     ...deploymentConfigFromEnv(process.env),
     tls,
