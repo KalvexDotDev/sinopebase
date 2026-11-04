@@ -76,7 +76,7 @@
     "@elysia/openapi": "^1.4.15",
     "@sinclair/typebox": "^0.34.52",
     "adm-zip": "^0.6.1",
-    "better-auth": "^1.7.14",
+    "better-auth": "^1.7.17",
     "elysia": "^1.4.29",
     "js-yaml": "^5.4.2",
     "kysely": "^0.29.4",
