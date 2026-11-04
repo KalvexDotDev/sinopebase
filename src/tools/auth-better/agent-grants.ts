@@ -330,6 +330,16 @@ export interface AgentGrant {
   last_used_at: string | null
 }
 
+/** A registered, enabled client by id, for the consent screen; undefined when unknown. */
+export function findEnabledAgentClient(db: Kysely<BetterAuthDatabase>, clientId: string) {
+  return (db as unknown as GrantDb)
+    .selectFrom('oauthClient')
+    .select(['clientId', 'name', 'uri', 'icon'])
+    .where('clientId', '=', clientId)
+    .where(sql<boolean>`coalesce("disabled", false) = false`)
+    .executeTakeFirst()
+}
+
 export async function listAgentGrants(
   db: Kysely<BetterAuthDatabase>,
   userId: string,

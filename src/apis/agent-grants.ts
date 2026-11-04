@@ -18,8 +18,8 @@ import type { PostgresDatabase } from '~/core/db-postgres'
 import { lookupAgentGrant, lookupSessionByToken } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 import {
-  type AgentGrantTables,
   agentGrantTenant,
+  findEnabledAgentClient,
   listAgentGrants,
   revokeAgentGrant,
 } from '~/tools/auth-better/agent-grants'
@@ -83,7 +83,7 @@ async function sessionUser(auth: AgentGrantAuth, request: Request) {
 }
 
 function grantDb(auth: AgentGrantAuth) {
-  return auth.__db as Kysely<BetterAuthDatabase & AgentGrantTables>
+  return auth.__db as Kysely<BetterAuthDatabase>
 }
 
 /** The client and scopes of a signed authorization request; null when unsigned, expired or unknown. */
@@ -91,12 +91,7 @@ async function authorizationRequest(auth: AgentGrantAuth, query: string) {
   const { secret } = await auth.$context
   if (!(await verifyOAuthQueryParams(query, secret))) return null
   const params = new URLSearchParams(query)
-  const client = await grantDb(auth)
-    .selectFrom('oauthClient')
-    .select(['clientId', 'name', 'uri', 'icon'])
-    .where('clientId', '=', params.get('client_id') ?? '')
-    .where(sql<boolean>`coalesce("disabled", false) = false`)
-    .executeTakeFirst()
+  const client = await findEnabledAgentClient(grantDb(auth), params.get('client_id') ?? '')
   if (!client) return null
   return {
     client: {
