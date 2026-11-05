@@ -44,7 +44,7 @@ import {
   bridgeGetUserResponse,
   bridgeSignInResponse,
 } from '~/tools/auth-better/supabase-bridge'
-import { createAdminUsersPlugin } from './admin-users'
+import { createAdminUsersPlugin, type DeliverMail } from './admin-users'
 import {
   ACCESS_TOKEN_TTL,
   generateAccessToken,
@@ -1232,6 +1232,7 @@ export function createAuthPlugin(
   auth: BetterAuthInstance,
   oauthProviderIds?: string[],
   serviceKey?: string,
+  deliverMail?: DeliverMail,
 ) {
   // Map known provider IDs to display labels and colors.
   // Source of truth: BUILTIN_SOCIAL from auth-better.
@@ -1252,7 +1253,7 @@ export function createAuthPlugin(
 
   return (
     new Elysia({ name: 'sinopebase-auth' })
-      .use(createAdminUsersPlugin(authDb(auth), serviceKey))
+      .use(createAdminUsersPlugin(authDb(auth), serviceKey, deliverMail))
       .onBeforeHandle(({ request, set }) => {
         if (!nativeSignupBlocked(request)) return
         set.status = 403

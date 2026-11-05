@@ -49,30 +49,91 @@ async function provision(db: Kysely<BetterAuthDatabase>, input: z.infer<typeof c
   })
 }
 
-/** Service-only provisioning: no public signup policy changes, sessions or tenant grants. */
+/** A plain-text notice for one registered user. No addresses, no HTML, no attachments. */
+const notice = z.strictObject({
+  subject: z.string().trim().min(1).max(200),
+  text: z.string().trim().min(1).max(5000),
+})
+
+/** Sends one message through the configured SMTP mailer; false when none is configured. */
+export type DeliverMail = (mail: { to: string; subject: string; text: string }) => Promise<boolean>
+
+/** The login address of a registered user, or null. */
+async function userEmail(db: Kysely<BetterAuthDatabase>, id: string): Promise<string | null> {
+  const rows = await sql<{
+    email: string
+  }>`SELECT email FROM public."user" WHERE id = ${id}`.execute(db)
+  return rows.rows[0]?.email ?? null
+}
+
+/**
+ * Service-only user administration: provisioning (no public signup policy changes, sessions
+ * or tenant grants), and a plain-text notice to one registered user by id (sinope#1104
+ * overdue nudges). The caller never supplies an address, so the notice route can only ever
+ * mail an account holder, at the address they sign in with.
+ */
 export function createAdminUsersPlugin(
   db: Kysely<BetterAuthDatabase>,
   serviceKey: string | undefined,
+  deliver?: DeliverMail,
 ) {
-  return new Elysia().post('/auth/v1/admin/users', async ({ request, body, set }) => {
-    if (!authorized(request, serviceKey)) {
-      set.status = 403
-      return { message: 'Service authorization required.' }
-    }
-    const parsed = credentials.safeParse(body)
-    if (!parsed.success) {
-      set.status = 400
-      return { message: 'Valid email and a password between 12 and 128 characters required.' }
-    }
-    try {
-      const user = await provision(db, parsed.data)
-      set.status = 201
-      return { user }
-    } catch (error: unknown) {
-      // Driver errors can contain credentials and identity data; never forward or log them.
-      const failure = creationFailure(error)
-      set.status = failure.status
-      return { message: failure.message }
-    }
-  })
+  return new Elysia()
+    .post('/auth/v1/admin/users', async ({ request, body, set }) => {
+      if (!authorized(request, serviceKey)) {
+        set.status = 403
+        return { message: 'Service authorization required.' }
+      }
+      const parsed = credentials.safeParse(body)
+      if (!parsed.success) {
+        set.status = 400
+        return { message: 'Valid email and a password between 12 and 128 characters required.' }
+      }
+      try {
+        const user = await provision(db, parsed.data)
+        set.status = 201
+        return { user }
+      } catch (error: unknown) {
+        // Driver errors can contain credentials and identity data; never forward or log them.
+        const failure = creationFailure(error)
+        set.status = failure.status
+        return { message: failure.message }
+      }
+    })
+    .post('/auth/v1/admin/users/:id/mail', async ({ request, params, body, set }) => {
+      if (!authorized(request, serviceKey)) {
+        set.status = 403
+        return { message: 'Service authorization required.' }
+      }
+      const parsed = notice.safeParse(body)
+      if (!parsed.success) {
+        set.status = 400
+        return {
+          message: 'A subject of at most 200 and a text of at most 5000 characters required.',
+        }
+      }
+      let to: string | null
+      try {
+        to = await userEmail(db, params.id)
+      } catch {
+        set.status = 503
+        return { message: 'The user could not be read.' }
+      }
+      if (!to) {
+        set.status = 404
+        return { message: 'User not found.' }
+      }
+      try {
+        // Not configured is a refusal, never a silent success: the caller must not record it sent.
+        if (!deliver || !(await deliver({ to, ...parsed.data }))) {
+          set.status = 503
+          return { message: 'Mail is not configured.' }
+        }
+      } catch {
+        // SMTP errors can echo the address; never forward or log them.
+        set.status = 502
+        return { message: 'The mail could not be sent.' }
+      }
+      set.status = 202
+      return { sent: true }
+    })
 }

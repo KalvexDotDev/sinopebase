@@ -869,8 +869,17 @@ export class Sinopebase {
 
   private createInstanceAuth(providers?: string[]) {
     return this.auth
-      ? createAuthPlugin(this.auth, providers, this.cachedServiceRoleKey)
+      ? createAuthPlugin(this.auth, providers, this.cachedServiceRoleKey, (mail) =>
+          this.deliverMail(mail),
+        )
       : authPlugin
+  }
+
+  /** Send through the SMTP mailer; false, never a silent skip, when none is configured. */
+  private async deliverMail(mail: { to: string; subject: string; text: string }) {
+    if (!this.mailer) return false
+    await this.sendMail(mail)
+    return true
   }
 
   private async initializeServer(): Promise<void> {
