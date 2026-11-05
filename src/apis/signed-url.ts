@@ -22,9 +22,8 @@
  *   while the body streams and, when bound, the one `type` it may upload.
  */
 
-import { createHmac, hkdfSync, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, hkdfSync, randomUUID, timingSafeEqual } from 'node:crypto'
 import { JWT_DEV_FALLBACK } from '~/tools/security/constants'
-import { DEFAULT_MAX_UPLOAD_SIZE } from './middlewares_body_limit'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,6 +31,9 @@ import { DEFAULT_MAX_UPLOAD_SIZE } from './middlewares_body_limit'
 
 /** Default TTL when expiresIn is not provided. */
 const DEFAULT_TTL_SEC = 60 * 60 // 1 hour
+
+/** A signed upload's byte limit when neither its signer nor its bucket names one (25 MiB). */
+export const DEFAULT_SIGNED_UPLOAD_BYTES = 25 * 1024 * 1024
 
 /** Current key ID — bump when the HKDF info string or algorithm changes. */
 const DEFAULT_KEY_ID = 'sinopebase-v1'
@@ -116,7 +118,7 @@ export function signUrl(
   path: string,
   expiresInSec: number = DEFAULT_TTL_SEC,
   method: 'GET' | 'PUT' = 'GET',
-  limits: UploadLimits = { maxBytes: DEFAULT_MAX_UPLOAD_SIZE },
+  limits: UploadLimits = { maxBytes: DEFAULT_SIGNED_UPLOAD_BYTES },
 ): string {
   const exp = Math.floor(Date.now() / 1000) + expiresInSec
   const payload = {
@@ -184,9 +186,26 @@ export function isByteLimit(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) > 0
 }
 
-/** The single-use claims a PUT token must carry; a PUT token without them is refused. */
-function uploadClaims(payload: Record<string, unknown>, expiresAt: number): VerifiedUpload {
-  const { jti, max, type = null } = payload
+/**
+ * A UUID-shaped id for a token minted without a `jti`: one per signature, so still single-use.
+ * It hashes the decoded bytes, as a re-encoded signature verifies too.
+ */
+function signatureId(signature: Buffer): string {
+  const hex = createHash('sha256').update(signature).digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
+
+/**
+ * A PUT token's single-use claims. A token minted before they existed (no `jti`, `max` or
+ * `type`) is still accepted: its signature stands in for the `jti` and the default limit
+ * applies. A claim that is present but malformed is refused.
+ */
+function uploadClaims(
+  payload: Record<string, unknown>,
+  expiresAt: number,
+  signature: Buffer,
+): VerifiedUpload {
+  const { jti = signatureId(signature), max = DEFAULT_SIGNED_UPLOAD_BYTES, type = null } = payload
   if (!isUuid(jti) || !isByteLimit(max) || !(type === null || isContentType(type))) {
     throw new SignedUrlError('Malformed payload')
   }
@@ -203,8 +222,9 @@ function uploadClaims(payload: Record<string, unknown>, expiresAt: number): Veri
  * 4. `method` is "GET" or "PUT"
  * 5. `exp` is not past
  * 6. HMAC signature matches (per-bucket derived key)
- * 7. A PUT token carries its single-use claims (`jti`, `max`, optional `type`); the upload
- *    route consumes the `jti`. A GET token is stateless and reusable within its expiry.
+ * 7. A PUT token yields its single-use claims (`jti`, `max`, optional `type`, defaulted for a
+ *    token minted without them); the upload route consumes the `jti`. A GET token is
+ *    stateless and reusable within its expiry.
  *
  * @param token  The signed token string.
  * @returns      `{ bucket, path, method }` from the verified payload, and `upload` for PUT.
@@ -286,7 +306,7 @@ export function verifySignedUrl(token: string): VerifiedToken {
 
   const verified = { bucket: payload.bucket, path: payload.path, method: payload.method }
   return payload.method === 'PUT'
-    ? { ...verified, upload: uploadClaims(payload, payload.exp) }
+    ? { ...verified, upload: uploadClaims(payload, payload.exp, sigBuf) }
     : verified
 }
 

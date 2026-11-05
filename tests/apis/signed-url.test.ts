@@ -19,8 +19,8 @@ import { describe, expect, it } from 'bun:test'
 import { createHmac, hkdfSync } from 'node:crypto'
 import { Elysia } from 'elysia'
 import { createStoragePlugin } from '~/apis/file'
-import { DEFAULT_MAX_UPLOAD_SIZE } from '~/apis/middlewares_body_limit'
 import {
+  DEFAULT_SIGNED_UPLOAD_BYTES,
   SignedUrlError,
   signUrl,
   uploadUrl,
@@ -295,7 +295,7 @@ describe('uploadUrl', () => {
       upload: {
         jti: expect.stringMatching(/^[0-9a-f-]{36}$/),
         expiresAt: expect.any(Number),
-        maxBytes: DEFAULT_MAX_UPLOAD_SIZE,
+        maxBytes: DEFAULT_SIGNED_UPLOAD_BYTES,
         contentType: null,
       },
     })
@@ -314,11 +314,25 @@ describe('uploadUrl', () => {
     expect(verifySignedUrl(signUrl('b', 'f', 60)).upload).toBeUndefined()
   })
 
-  it('refuses a PUT token without valid single-use claims, as an older server minted them', () => {
+  it('accepts a PUT token minted without the single-use claims, still once and bounded', () => {
+    const token = signPayload('evidence', uploadPayload({ jti: undefined, max: undefined }))
+    const legacy = uploadOf(verifySignedUrl(token))
+    expect(legacy).toMatchObject({ maxBytes: DEFAULT_SIGNED_UPLOAD_BYTES, contentType: null })
+    expect(legacy.jti).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    // Its signature names its one use, however the signature is encoded: the last character
+    // of a 32-byte base64url signature carries two spare bits a decoder ignores.
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    const reencoded = token.slice(0, -1) + alphabet[alphabet.indexOf(token.slice(-1)) ^ 1]
+    expect(reencoded).not.toBe(token)
+    expect(uploadOf(verifySignedUrl(reencoded)).jti).toBe(legacy.jti)
+    const other = signPayload('evidence', uploadPayload({ jti: undefined, path: 'tenant/b.pdf' }))
+    expect(uploadOf(verifySignedUrl(other)).jti).not.toBe(legacy.jti)
+  })
+
+  it('refuses a PUT token whose single-use claims are malformed', () => {
     const malformed = [
-      uploadPayload({ jti: undefined }),
       uploadPayload({ jti: 'not-a-uuid' }),
-      uploadPayload({ max: undefined }),
+      uploadPayload({ jti: null }),
       uploadPayload({ max: 0 }),
       uploadPayload({ max: 1.5 }),
       uploadPayload({ max: '64' }),
@@ -470,6 +484,23 @@ describe('POST /storage/v1/object/sign/:bucket/* — signed URL creation', () =>
     const { signedURL } = (await defaulted.json()) as { signedURL: string }
     const token = signedURL.replace('/storage/v1/object/signed/upload/', '')
     expect(uploadOf(verifySignedUrl(token)).maxBytes).toBe(4096)
+  })
+
+  it('gives an upload URL without limits the 25 MiB default', async () => {
+    const { app } = storageApp()
+    const response = await app.handle(
+      new Request('http://localhost/storage/v1/object/sign/evidence/doc.pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ method: 'PUT' }),
+      }),
+    )
+    const { signedURL } = (await response.json()) as { signedURL: string }
+    const token = signedURL.replace('/storage/v1/object/signed/upload/', '')
+    expect(uploadOf(verifySignedUrl(token))).toMatchObject({
+      maxBytes: DEFAULT_SIGNED_UPLOAD_BYTES,
+      contentType: null,
+    })
   })
 })
 
@@ -709,6 +740,100 @@ describe('PUT /storage/v1/object/signed/upload/:token — file upload via signed
     expect(store.files.size).toBe(0)
     const typed = await put(app, token, '%PDF-1.7', { 'content-type': 'Application/PDF; x=1' })
     expect(typed.status).toBe(200)
+  })
+})
+
+describe('supabase-js signed uploads — /storage/v1/object/upload/sign/:bucket/*', () => {
+  const route = 'http://localhost/storage/v1/object/upload/sign'
+
+  function mint(app: Elysia, object: string, headers: Record<string, string> = {}) {
+    return app.handle(new Request(`${route}/${object}`, { method: 'POST', headers, body: '{}' }))
+  }
+
+  function upload(app: Elysia, object: string, token: string, body: BodyInit) {
+    return app.handle(new Request(`${route}/${object}?token=${token}`, { method: 'PUT', body }))
+  }
+
+  it('mints the URL createSignedUploadUrl() reads, with the 25 MiB default and no type', async () => {
+    const { app } = storageApp()
+    const response = await mint(app, 'evidence/tenant/sdk.pdf')
+    expect(response.status).toBe(200)
+    const { url, token } = (await response.json()) as { url: string; token: string }
+    expect(url).toBe(`/object/upload/sign/evidence/tenant/sdk.pdf?token=${token}`)
+    const claims = verifySignedUrl(token)
+    expect(claims).toMatchObject({ bucket: 'evidence', path: 'tenant/sdk.pdf', method: 'PUT' })
+    expect(uploadOf(claims)).toMatchObject({
+      maxBytes: DEFAULT_SIGNED_UPLOAD_BYTES,
+      contentType: null,
+    })
+    // Supabase's signed upload URLs last two hours.
+    const lifetime = uploadOf(claims).expiresAt - Math.floor(Date.now() / 1000)
+    expect(lifetime).toBeGreaterThan(7190)
+    expect(lifetime).toBeLessThanOrEqual(7200)
+  })
+
+  it('refuses an invalid bucket, an invalid name and upsert', async () => {
+    const { app } = storageApp()
+    const refusals = [
+      [await mint(app, 'bad~bucket/tenant/sdk.pdf'), 'Invalid bucket name'],
+      [await mint(app, 'evidence/tenant//sdk.pdf'), 'Invalid key: tenant//sdk.pdf'],
+      [
+        await mint(app, 'evidence/tenant/sdk.pdf', { 'x-upsert': 'true' }),
+        'A signed upload never overwrites (no upsert)',
+      ],
+    ] as const
+    for (const [response, message] of refusals) {
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ message })
+    }
+  })
+
+  it('takes the form uploadToSignedUrl() sends for a Blob, once', async () => {
+    const { app, store } = storageApp()
+    const { token } = (await (await mint(app, 'evidence/tenant/form.pdf')).json()) as {
+      token: string
+    }
+    const form = () => {
+      const body = new FormData()
+      body.append('cacheControl', '3600')
+      body.append('', new Blob(['%PDF-1.7 form'], { type: 'application/pdf' }), 'form.pdf')
+      return body
+    }
+    const response = await upload(app, 'evidence/tenant/form.pdf', token, form())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      Id: 'evidence/tenant/form.pdf',
+      Key: 'evidence/tenant/form.pdf',
+    })
+    expect((await store.read('evidence', 'tenant/form.pdf')).toString()).toBe('%PDF-1.7 form')
+    expect((await upload(app, 'evidence/tenant/form.pdf', token, form())).status).toBe(403)
+  })
+
+  it('writes only the object its token names, and checks a form file against the limits', async () => {
+    const { app, store } = storageApp()
+    const token = uploadUrl('evidence', 'tenant/mine.pdf', 60, {
+      maxBytes: 8,
+      contentType: 'application/pdf',
+    })
+    for (const object of ['evidence/tenant/theirs.pdf', 'other/tenant/mine.pdf']) {
+      const elsewhere = await upload(app, object, token, '%PDF')
+      expect(elsewhere.status).toBe(403)
+      expect(await elsewhere.json()).toMatchObject({
+        message: 'The token was signed for another object',
+      })
+    }
+    const file = (content: string, type: string) => {
+      const body = new FormData()
+      body.append('', new Blob([content], { type }), 'file')
+      return body
+    }
+    const html = await upload(app, 'evidence/tenant/mine.pdf', token, file('<p>', 'text/html'))
+    expect(html.status).toBe(415)
+    expect(store.files.size).toBe(0)
+    const big = uploadUrl('evidence', 'tenant/big.pdf', 60, { maxBytes: 8 })
+    const tooBig = await upload(app, 'evidence/tenant/big.pdf', big, file('%PDF-1.7 x', 'a/b'))
+    expect(tooBig.status).toBe(413)
+    expect(store.files.size).toBe(0)
   })
 })
 

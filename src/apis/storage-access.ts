@@ -67,12 +67,13 @@ export interface StorageAccessPolicy {
   /**
    * Whether the caller may mint a single-use upload URL for a new object (sinope#1103): its own
    * insert rules allow the object, and the name is free (a signed upload never overwrites).
+   * Resolves to the bucket's file size limit, null when it has none.
    */
   authorizeSignedUpload(
     context: PostgresRequestContext,
     bucket: string,
     path: string,
-  ): Promise<void>
+  ): Promise<number | null>
   /** Record a signed upload token's single use; false when it was already used. */
   consumeSignedUpload(upload: SignedUploadUse): Promise<boolean>
   /**

@@ -139,7 +139,9 @@ class TestStorageAccess implements StorageAccessPolicy {
     return read()
   }
   consumed = new Set<string>()
-  async authorizeSignedUpload() {}
+  async authorizeSignedUpload() {
+    return null
+  }
   async consumeSignedUpload(use: SignedUploadUse) {
     if (this.consumed.has(use.jti)) return false
     this.consumed.add(use.jti)

@@ -19,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { Pool } from 'pg'
 import { Sinopebase } from '~/core/app'
 import { createClient, type SinopebaseClient } from '~/sdk/client'
@@ -253,5 +254,65 @@ describe('signed uploads through the served app', () => {
     expect(anonymous.status).toBe(401)
     const forged = await put(`${origin}/storage/v1/object/signed/upload/forged.token`, 'x')
     expect(forged.status).toBe(403)
+  })
+})
+
+describe('supabase-js createSignedUploadUrl() then uploadToSignedUrl(), without new options', () => {
+  const official = (key: string) =>
+    createSupabaseClient(origin, key, { auth: { persistSession: false, autoRefreshToken: false } })
+  const pdf = (content: string) => new Blob([content], { type: 'application/pdf' })
+
+  async function mintWithSdk(path: string): Promise<string> {
+    const minted = await official(serviceKey).storage.from(bucket).createSignedUploadUrl(path)
+    expect(minted.error).toBeNull()
+    expect(minted.data?.signedUrl).toStartWith(
+      `${origin}/storage/v1/object/upload/sign/${bucket}/${path}?token=`,
+    )
+    return minted.data?.token ?? ''
+  }
+
+  it('uploads a Blob once, bounded by the bucket limit', async () => {
+    const path = 'tenant-a/request-2/sdk.pdf'
+    const token = await mintWithSdk(path)
+    // No limit was asked for: the bucket's 1024 bytes is the URL's own.
+    const claims = JSON.parse(Buffer.from(token.split('.')[0] ?? '', 'base64url').toString())
+    expect(claims).toMatchObject({ method: 'PUT', max: 1024 })
+    expect(claims.type).toBeUndefined()
+
+    const agent = official(anonKey).storage.from(bucket)
+    const uploaded = await agent.uploadToSignedUrl(path, token, pdf('%PDF-1.7 sdk'))
+    expect(uploaded.error).toBeNull()
+    expect(uploaded.data).toEqual({ path, fullPath: `${bucket}/${path}` })
+    expect(await stored(path)).toBe('%PDF-1.7 sdk')
+
+    const again = await agent.uploadToSignedUrl(path, token, pdf('%PDF-1.7 again'))
+    expect(again.error?.message).toBe('Token already used')
+    expect(await stored(path)).toBe('%PDF-1.7 sdk')
+  })
+
+  it('uploads a raw body with its content type', async () => {
+    const path = 'tenant-a/request-2/raw.txt'
+    const token = await mintWithSdk(path)
+    const uploaded = await official(anonKey)
+      .storage.from(bucket)
+      .uploadToSignedUrl(path, token, Buffer.from('plain text'), { contentType: 'text/plain' })
+    expect(uploaded.error).toBeNull()
+    expect(await stored(path)).toBe('plain text')
+  })
+
+  it('refuses a file over the bucket limit, another path and an upsert', async () => {
+    const path = 'tenant-a/request-2/big.pdf'
+    const token = await mintWithSdk(path)
+    const agent = official(anonKey).storage.from(bucket)
+    const elsewhere = await agent.uploadToSignedUrl('tenant-b/request-2/big.pdf', token, pdf('x'))
+    expect(elsewhere.error?.message).toBe('The token was signed for another object')
+    const big = await agent.uploadToSignedUrl(path, token, pdf(`%PDF-1.7 ${'x'.repeat(2000)}`))
+    expect(big.error?.message).toBe('Upload body exceeds the 1024 byte limit.')
+    expect(await stored(path)).toBeNull()
+
+    const upsert = await official(serviceKey)
+      .storage.from(bucket)
+      .createSignedUploadUrl('tenant-a/request-2/upsert.pdf', { upsert: true })
+    expect(upsert.error?.message).toBe('A signed upload never overwrites (no upsert)')
   })
 })

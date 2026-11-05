@@ -396,10 +396,12 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     context: PostgresRequestContext,
     bucket: string,
     path: string,
-  ): Promise<void> {
+  ): Promise<number | null> {
+    const found = await this.getBucket(bucket)
+    if (!found) throw new StorageAccessError(404, '404', 'Bucket not found')
     // The upload itself runs outside any request role, so the minting caller's own insert
-    // rules are proved now: the row is inserted under its role, then rolled back. A missing
-    // bucket is a 404, a taken name a 409 and a refused insert a 403.
+    // rules are proved now: the row is inserted under its role, then rolled back. A taken
+    // name is a 409 and a refused insert a 403.
     try {
       await this.db.withRequestContext(context, async (db) => {
         await sql`
@@ -411,6 +413,7 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     } catch (error) {
       if (error !== PROBE_ROLLBACK) throw mapDatabaseError(error)
     }
+    return found.file_size_limit === null ? null : Number(found.file_size_limit)
   }
 
   async consumeSignedUpload(upload: SignedUploadUse): Promise<boolean> {

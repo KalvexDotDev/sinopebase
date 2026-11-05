@@ -15,6 +15,7 @@ import type { IFileStore } from '../tools/filesystem/store-interface'
 import { RequestEntityTooLargeError } from './api_error_aliases'
 import { DEFAULT_MAX_UPLOAD_SIZE, uploadBodyLimit } from './middlewares_body_limit'
 import {
+  DEFAULT_SIGNED_UPLOAD_BYTES,
   isByteLimit,
   isContentType,
   SignedUrlError,
@@ -385,6 +386,12 @@ async function existsOrThrow(
   }
 }
 
+/** Room for storage-js's form fields around a signed upload's file (its limit counts the file). */
+const SIGNED_FORM_OVERHEAD_BYTES = 64 * 1024
+
+/** How long a URL from supabase-js `createSignedUploadUrl()` lasts, as in Supabase: 2 hours. */
+const SDK_SIGNED_UPLOAD_TTL_SEC = 2 * 60 * 60
+
 /** A signed token's claims, or the 403 refusing it. */
 function signedTokenClaims(token: string): VerifiedToken {
   try {
@@ -402,10 +409,13 @@ function signedUploadClaims(token: string): VerifiedToken & { upload: VerifiedUp
   return { ...claims, upload }
 }
 
-/** A signed PUT's limits from its sign request: at most the upload limit, and a valid type. */
-function uploadLimits(body: Record<string, unknown>, maxUploadSize: number): UploadLimits {
-  const { maxBytes = maxUploadSize, contentType } = body
-  if (!isByteLimit(maxBytes) || maxBytes > maxUploadSize) {
+/**
+ * A signed PUT's limits from its sign request: a byte limit up to the upload limit and a valid
+ * type, each optional. A missing byte limit is resolved when the URL is minted.
+ */
+function uploadLimits(body: Record<string, unknown>, maxUploadSize: number): Partial<UploadLimits> {
+  const { maxBytes, contentType } = body
+  if (maxBytes !== undefined && !(isByteLimit(maxBytes) && maxBytes <= maxUploadSize)) {
     throw new StorageAccessError(
       400,
       '400',
@@ -415,30 +425,55 @@ function uploadLimits(body: Record<string, unknown>, maxUploadSize: number): Upl
   if (contentType !== undefined && !isContentType(contentType)) {
     throw new StorageAccessError(400, '400', 'contentType must be a lowercase type/subtype')
   }
-  return { maxBytes, contentType }
+  return { maxBytes: maxBytes as number | undefined, contentType }
 }
 
 /** The upload's content type; a token bound to one type accepts only that type. */
-function signedUploadType(request: Request, upload: VerifiedUpload): string {
-  const declared = (request.headers.get('content-type') ?? '')
-    .replace(/;.*$/s, '')
-    .trim()
-    .toLowerCase()
-  if (upload.contentType !== null && declared !== upload.contentType) {
+function signedUploadType(declared: string, upload: VerifiedUpload): string {
+  const type = declared.replace(/;.*$/s, '').trim().toLowerCase()
+  if (upload.contentType !== null && type !== upload.contentType) {
     throw new StorageAccessError(415, '415', 'The upload content type differs from the signed one')
   }
-  return declared || 'application/octet-stream'
+  return type || 'application/octet-stream'
 }
 
-/** The body, read while it streams and refused (413) as soon as it passes `limit`. */
-async function signedUploadBody(request: Request, limit: number): Promise<ArrayBuffer> {
-  const data = await readBodyStreamed(request, limit).catch((error: unknown) => {
+/**
+ * The checks a signed upload passes before its single use is spent, and the most bytes its
+ * body may then carry. A raw body's type is checked now; storage-js sends a Blob as a form
+ * whose file part carries the type, so a form's type is checked once it is read.
+ */
+function signedUploadBodyLimit(request: Request, upload: VerifiedUpload, limit: number): number {
+  const declared = request.headers.get('content-type') ?? ''
+  const form = /^multipart\/form-data/i.test(declared)
+  if (!form) signedUploadType(declared, upload)
+  const bodyLimit = form ? limit + SIGNED_FORM_OVERHEAD_BYTES : limit
+  if (Number(request.headers.get('content-length')) > bodyLimit) {
+    throw new StorageAccessError(413, '413', `Upload body exceeds the ${limit} byte limit.`)
+  }
+  return bodyLimit
+}
+
+/** The uploaded file, raw or in a form, read while it streams and refused (413) past `limit`. */
+async function signedUploadContent(
+  request: Request,
+  upload: VerifiedUpload,
+  limit: number,
+  bodyLimit: number,
+): Promise<{ data: ArrayBuffer; contentType: string }> {
+  const body = await parseUploadBody(
+    request,
+    request.headers.get('content-type') ?? '',
+    bodyLimit,
+  ).catch((error: unknown) => {
     throw error instanceof RequestEntityTooLargeError
       ? new StorageAccessError(413, '413', error.message)
       : error
   })
-  if (data.byteLength === 0) throw new StorageAccessError(400, '400', 'File body is required')
-  return data
+  if (body.data.byteLength > limit) {
+    throw new StorageAccessError(413, '413', `Upload body exceeds the ${limit} byte limit.`)
+  }
+  if (body.data.byteLength === 0) throw new StorageAccessError(400, '400', 'File body is required')
+  return { data: body.data, contentType: signedUploadType(body.contentType, upload) }
 }
 
 /** Single use without a metadata database (the local store): this process remembers each use. */
@@ -997,7 +1032,9 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
             ? parseInt(rawExpiresIn, 10) || 3600
             : 3600
       if (rawMethod === 'PUT') {
-        return signUpload(request, bucket, path, expiresInSec, uploadLimits(b, maxUploadSize))
+        const limits = uploadLimits(b, maxUploadSize)
+        const token = await signUpload(request, bucket, path, expiresInSec, limits)
+        return { signedURL: `/storage/v1/object/signed/upload/${token}` }
       }
       const { context, access } = await resolveStorageAccess(options, request)
       if (access) await access.authorizeSignedUrl(context, bucket, path)
@@ -1052,21 +1089,53 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
       return storageOperation(set, () => receiveSignedUpload(token, request))
     },
-    { parse: () => undefined },
+    // The handler streams the body itself, within the token's limit.
+    { parse: 'none' },
   )
 
-  /** A single-use upload URL for a new object. Minting one is a write: agent grants are refused. */
+  // POST /storage/v1/object/upload/sign/:bucket/* — supabase-js createSignedUploadUrl()
+  app.post('/storage/v1/object/upload/sign/:bucket/*', async ({ params, request, set }) => {
+    const { bucket, '*': path } = params
+    return storageOperation(set, async () => {
+      if (!isValidBucketName(bucket))
+        throw new StorageAccessError(400, '400', 'Invalid bucket name')
+      requireObjectName(path)
+      if (request.headers.get('x-upsert') === 'true') {
+        throw new StorageAccessError(400, '400', 'A signed upload never overwrites (no upsert)')
+      }
+      const token = await signUpload(request, bucket, path, SDK_SIGNED_UPLOAD_TTL_SEC, {})
+      return { url: `/object/upload/sign/${bucket}/${path}?token=${token}`, token }
+    })
+  })
+
+  // PUT /storage/v1/object/upload/sign/:bucket/*?token= — supabase-js uploadToSignedUrl()
+  app.put(
+    '/storage/v1/object/upload/sign/:bucket/*',
+    async ({ params, request, set }) => {
+      const token = new URL(request.url).searchParams.get('token') ?? ''
+      const target = { bucket: params.bucket, path: params['*'] }
+      return storageOperation(set, () => receiveSignedUpload(token, request, target))
+    },
+    { parse: 'none' },
+  )
+
+  /**
+   * A single-use upload token for a new object. Minting one is a write: agent grants are
+   * refused. Without a byte limit of its own it takes the bucket's, else 25 MiB, never more
+   * than the upload limit.
+   */
   async function signUpload(
     request: Request,
     bucket: string,
     path: string,
     expiresInSec: number,
-    limits: UploadLimits,
-  ) {
+    limits: Partial<UploadLimits>,
+  ): Promise<string> {
     const { context, access } = await resolveStorageWriteAccess(options, request)
-    if (access) await access.authorizeSignedUpload(context, bucket, path)
-    const token = signUrl(bucket, path, expiresInSec, 'PUT', limits)
-    return { signedURL: `/storage/v1/object/signed/upload/${token}` }
+    const bucketLimit = access ? await access.authorizeSignedUpload(context, bucket, path) : null
+    const maxBytes =
+      limits.maxBytes ?? Math.min(bucketLimit ?? DEFAULT_SIGNED_UPLOAD_BYTES, maxUploadSize)
+    return signUrl(bucket, path, expiresInSec, 'PUT', { ...limits, maxBytes })
   }
 
   /** Spend a token's single use: in the metadata database, or in this process without one. */
@@ -1079,21 +1148,25 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
 
   /**
    * One upload through a signed PUT token (sinope#1103). The token names the only bucket and
-   * path it writes. Its content type and declared length are checked before its single use is
-   * spent; the body is then read only up to its byte limit. With a metadata database it never
-   * overwrites an object (409); the local store, like its other uploads, does not check.
+   * path it writes; on the supabase-js route the URL must name the same object. Its content
+   * type and declared length are checked before its single use is spent; the body is then
+   * read only up to its byte limit. With a metadata database it never overwrites an object
+   * (409); the local store, like its other uploads, does not check.
    */
-  async function receiveSignedUpload(token: string, request: Request) {
+  async function receiveSignedUpload(
+    token: string,
+    request: Request,
+    target?: { bucket: string; path: string },
+  ) {
     const { bucket, path, upload } = signedUploadClaims(token)
-    requireObjectName(path)
-    const contentType = signedUploadType(request, upload)
-    const limit = Math.min(upload.maxBytes, maxUploadSize)
-    // A declared length over the limit is refused before the single use is spent.
-    if (Number(request.headers.get('content-length') ?? 0) > limit) {
-      throw new StorageAccessError(413, '413', `Upload body exceeds the ${limit} byte limit.`)
+    if (target && (target.bucket !== bucket || target.path !== path)) {
+      throw new StorageAccessError(403, '403', 'The token was signed for another object')
     }
+    requireObjectName(path)
+    const limit = Math.min(upload.maxBytes, maxUploadSize)
+    const bodyLimit = signedUploadBodyLimit(request, upload, limit)
     await spendSignedUpload({ jti: upload.jti, bucket, path, expiresAt: upload.expiresAt })
-    const data = await signedUploadBody(request, limit)
+    const { data, contentType } = await signedUploadContent(request, upload, limit, bodyLimit)
     const persist = async () => {
       await store.ensureBucket(bucket)
       await store.save(bucket, path, data)
