@@ -8,6 +8,7 @@
     "dev": "bun run --watch cmd/serve.ts",
     "build": "bun build cmd/serve.ts --outdir dist --target bun",
     "compile": "bun build cmd/serve.ts --compile --outfile sinopebase",
+    "compile:release": "bun build cmd/serve.ts --compile --minify-syntax --minify-whitespace --sourcemap=external",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "test:harness": "bun test tests/harness/harness.test.ts",

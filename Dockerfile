@@ -27,15 +27,20 @@ RUN cd ui && bun run build
 # runtime explicitly. This avoids emulating esbuild during the admin UI build.
 # The self-contained executable carries the
 # Bun runtime and therefore needs no Bun installation in the final image.
-# --minify reduces binary size and attack surface; --sourcemap=external keeps
-# debugging symbols out of the binary while preserving them for crash forensics.
+# The flags live in the `compile:release` script, which
+# tests/integration/compiled-server-auth.test.ts builds and serves over HTTP.
+# Whitespace and syntax are minified; identifiers are not. Elysia infers which
+# request parts a route reads from each handler's and hook's source text, and
+# mangled one-letter names made it parse every body before Better Auth could
+# read it (sinope#1144). --sourcemap=external keeps debugging symbols out of
+# the binary while preserving them for crash forensics.
 ARG TARGETARCH
 RUN case "$TARGETARCH" in \
       amd64) bun_target=bun-linux-x64-musl ;; \
       arm64) bun_target=bun-linux-arm64-musl ;; \
       *) echo "Unsupported runtime architecture" >&2; exit 1 ;; \
     esac \
- && bun build cmd/serve.ts --compile --minify --sourcemap=external --outfile /out/sinopebase --target "$bun_target"
+ && bun run compile:release --outfile /out/sinopebase --target "$bun_target"
 
 # Runtime libraries must match TARGETPLATFORM, not the native build host.
 FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS runtime-libs
