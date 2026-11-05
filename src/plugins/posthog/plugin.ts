@@ -10,6 +10,9 @@ const settings = z.object({
     .string()
     .url()
     .refine((value) => {
+      // Zod still runs refinements after .url() fails, and Bun's URL errors
+      // carry the raw input, so never let new URL() throw here.
+      if (!URL.canParse(value)) return false
       const url = new URL(value)
       return (
         url.protocol === 'https:' &&
