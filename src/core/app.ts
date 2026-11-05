@@ -1107,7 +1107,12 @@ export class Sinopebase {
           // An agent grant acts for its User in its one tenant, never as a first-party session.
           const grant = await lookupAgentGrant(this.auth, token)
           if (grant)
-            return { role: 'authenticated', userId: grant.userId, tenantId: grant.tenantId }
+            return {
+              role: 'authenticated',
+              userId: grant.userId,
+              tenantId: grant.tenantId,
+              clientId: grant.clientId,
+            }
           const row = await lookupSessionByToken(this.auth, token)
           // Better Auth session tokens come only from first-party sign-in; any
           // other credential type must never resolve to this channel.
