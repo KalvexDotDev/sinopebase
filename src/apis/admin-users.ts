@@ -66,6 +66,18 @@ async function userEmail(db: Kysely<BetterAuthDatabase>, id: string): Promise<st
   return rows.rows[0]?.email ?? null
 }
 
+/** Sends one notice, mapping every outcome to a response that never echoes SMTP errors. */
+async function sendNotice(deliver: DeliverMail | undefined, mail: Parameters<DeliverMail>[0]) {
+  try {
+    // Not configured is a refusal, never a silent success: the caller must not record it sent.
+    if (deliver && (await deliver(mail))) return { status: 202, body: { sent: true } }
+    return { status: 503, body: { message: 'Mail is not configured.' } }
+  } catch {
+    // SMTP errors can echo the address; never forward or log them.
+    return { status: 502, body: { message: 'The mail could not be sent.' } }
+  }
+}
+
 /**
  * Service-only user administration: provisioning (no public signup policy changes, sessions
  * or tenant grants), and a plain-text notice to one registered user by id (sinope#1104
@@ -122,18 +134,8 @@ export function createAdminUsersPlugin(
         set.status = 404
         return { message: 'User not found.' }
       }
-      try {
-        // Not configured is a refusal, never a silent success: the caller must not record it sent.
-        if (!deliver || !(await deliver({ to, ...parsed.data }))) {
-          set.status = 503
-          return { message: 'Mail is not configured.' }
-        }
-      } catch {
-        // SMTP errors can echo the address; never forward or log them.
-        set.status = 502
-        return { message: 'The mail could not be sent.' }
-      }
-      set.status = 202
-      return { sent: true }
+      const sent = await sendNotice(deliver, { to, ...parsed.data })
+      set.status = sent.status
+      return sent.body
     })
 }

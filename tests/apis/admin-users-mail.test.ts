@@ -10,6 +10,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Kysely } from 'kysely'
 import { createAdminUsersPlugin, type DeliverMail } from '~/apis/admin-users'
+import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
 
 const serviceKey = 'admin-users-unit-service-key-at-least-32-chars'
 const USER = '6c303797-acc4-486a-9770-42a1e2d288ff'
@@ -23,7 +24,7 @@ const unreachable = new Proxy(
       throw new Error('connect ECONNREFUSED secret@db')
     },
   },
-) as Kysely<never>
+) as Kysely<BetterAuthDatabase>
 
 /** A database that knows one user's address: it answers every raw query with that row. */
 const knowsOne = {
@@ -32,7 +33,7 @@ const knowsOne = {
     compileQuery: (node: unknown) => ({ query: node, sql: '', parameters: [] }),
     executeQuery: async () => ({ rows: [{ email: 'owner@example.com' }] }),
   }),
-} as unknown as Kysely<never>
+} as unknown as Kysely<BetterAuthDatabase>
 
 function call(
   app: ReturnType<typeof createAdminUsersPlugin>,
