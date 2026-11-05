@@ -60,7 +60,8 @@ export interface PostgresRequestContext {
   /**
    * Set only for an agent grant token (sinope#1098): the tenant the grant is
    * bound to, emitted as the `tenant_id` JWT claim that tenant-scoped rules
-   * require to match. Never set together with `channel`.
+   * require to match. Never set together with `channel`. A context with a
+   * tenant runs read-only (sinope#1099), and storage refuses it every write.
    */
   tenantId?: string
 }
@@ -308,6 +309,10 @@ export class PostgresDatabase implements IDatabase {
    *
    * Always sets `SET LOCAL ROLE <context.role>` so every request context
    * (including service_role) runs under the intended PostgreSQL role.
+   *
+   * A tenant-bound context (an agent grant, sinope#1099) runs READ ONLY, set
+   * before any other statement so nothing later in the transaction, not even a
+   * SECURITY DEFINER function, can write or switch it back.
    */
   async withRequestContext<T>(
     context: PostgresRequestContext,
@@ -315,6 +320,7 @@ export class PostgresDatabase implements IDatabase {
   ): Promise<T> {
     const requestWriter = this.requestWriter()
     return requestWriter.transaction().execute(async (transaction) => {
+      if (context.tenantId) await sql`SET TRANSACTION READ ONLY`.execute(transaction)
       const userId = context.userId ?? ''
       const claims = JSON.stringify({
         sub: userId || undefined,
