@@ -10,6 +10,8 @@
 // @new-code-test negative src/core/db-postgres.ts
 // @new-code-test positive src/apis/file.ts
 // @new-code-test negative src/apis/file.ts
+// @new-code-test positive src/apis/postgrest.ts
+// @new-code-test negative src/apis/postgrest.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Pool } from 'pg'
@@ -201,7 +203,12 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
       string,
       unknown
     >
-    expect(tokenClaims).toEqual({ sub: member, role: 'authenticated', tenant_id: tenantA })
+    expect(tokenClaims).toEqual({
+      sub: member,
+      role: 'authenticated',
+      tenant_id: tenantA,
+      client_id: clientId,
+    })
     // The member's first-party session keeps the channel claim and no tenant.
     expect(await (await claims(memberSession)).json()).toEqual({
       sub: member,
@@ -539,6 +546,73 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
         `INSERT INTO agent_grant_test_rows VALUES ('a-row', $1) ON CONFLICT DO NOTHING`,
         [tenantA],
       )
+    }
+  })
+
+  it('lets an agent token write only through an agent supply function, naming its tenant and client (sinope#1102)', async () => {
+    // Stand-ins for Sinope's supply functions: each writes, and answers with the claims it ran under.
+    for (const name of ['fulfil_input_request', 'record_agent_guardrail_detection'])
+      await pool.query(`
+        CREATE OR REPLACE FUNCTION public.${name}(p_id text) RETURNS jsonb
+          LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+          AS $$ BEGIN
+            INSERT INTO public.agent_grant_test_rows (id, tenant_id) VALUES (p_id, '${tenantA}');
+            RETURN current_setting('request.jwt.claims')::jsonb;
+          END $$;
+        GRANT EXECUTE ON FUNCTION public.${name}(text) TO authenticated;
+      `)
+    const clientId = await registerClient('Agent 1102 supplier')
+    const { tokens } = await grant(clientId, tenantA)
+    const post = (token: string, path: string, body: unknown) =>
+      json(path, { method: 'POST', token, body: JSON.stringify(body) })
+    const rows = async () =>
+      (await pool.query(`SELECT id FROM agent_grant_test_rows ORDER BY id`)).rows.map(
+        (row: { id: string }) => row.id,
+      )
+
+    try {
+      const supplied = await post(tokens.access_token, '/rest/v1/rpc/fulfil_input_request', {
+        p_id: 'agent-supplied-row',
+      })
+      expect(supplied.status).toBe(200)
+      const claims = (await supplied.json()) as Record<string, unknown>
+      expect(claims).toMatchObject({
+        sub: member,
+        role: 'authenticated',
+        tenant_id: tenantA,
+        client_id: clientId,
+      })
+      expect(claims).not.toHaveProperty('channel')
+      const detected = await post(
+        tokens.access_token,
+        '/rest/v1/rpc/record_agent_guardrail_detection',
+        { p_id: 'agent-detection-row' },
+      )
+      expect(detected.status).toBe(200)
+      expect(await rows()).toEqual(['a-row', 'agent-detection-row', 'agent-supplied-row', 'b-row'])
+
+      // Everything else the same token sends stays read-only.
+      const insert = await post(tokens.access_token, '/rest/v1/agent_grant_test_rows', {
+        id: 'agent-row',
+        tenant_id: tenantA,
+      })
+      expect(insert.status).toBe(405)
+      expect(((await insert.json()) as { code: string }).code).toBe('25006')
+      expect(await rows()).toEqual(['a-row', 'agent-detection-row', 'agent-supplied-row', 'b-row'])
+
+      // A first-party session names no client and no tenant.
+      const session = await post(memberSession, '/rest/v1/rpc/fulfil_input_request', {
+        p_id: 'session-supplied-row',
+      })
+      expect(session.status).toBe(200)
+      const sessionClaims = (await session.json()) as Record<string, unknown>
+      expect(sessionClaims).toMatchObject({ sub: member, channel: 'first_party' })
+      expect(sessionClaims).not.toHaveProperty('client_id')
+      expect(sessionClaims).not.toHaveProperty('tenant_id')
+    } finally {
+      await pool.query(`DROP FUNCTION IF EXISTS public.fulfil_input_request(text)`)
+      await pool.query(`DROP FUNCTION IF EXISTS public.record_agent_guardrail_detection(text)`)
+      await pool.query(`DELETE FROM agent_grant_test_rows WHERE id NOT IN ('a-row', 'b-row')`)
     }
   })
 

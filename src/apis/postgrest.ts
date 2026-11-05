@@ -30,6 +30,17 @@ import { parseFilterParam, parseOrFilters } from '../tools/search/filter'
 import { BadRequestError, InternalServerError } from './api_error_aliases'
 import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange } from './realtime'
 
+/**
+ * The only functions an agent grant may call read-write (sinope#1102): Sinope's supply
+ * functions, which record the Input an External Agent supplies and the guardrail detections
+ * on it, and decide nothing. Every other request of an agent grant runs read-only
+ * (sinope#1099). Fixed in code, never configured.
+ */
+export const AGENT_SUPPLY_FUNCTIONS: readonly string[] = Object.freeze([
+  'fulfil_input_request',
+  'record_agent_guardrail_detection',
+])
+
 // ---------------------------------------------------------------------------
 // Helper types
 // ---------------------------------------------------------------------------
@@ -406,8 +417,12 @@ export function mountPostgrestRoutes(
     // (bound to the transaction connection carrying the RLS role).
     try {
       const singular = acceptsSingularObject(request.headers.get('accept') ?? undefined)
-      const rows = await withRequestDatabase(db, request, resolveContext, (requestDb) =>
-        (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input, { singular }),
+      const rows = await withRequestDatabase(
+        db,
+        request,
+        resolveContext,
+        (requestDb) => (requestDb.rpc as NonNullable<IDatabase['rpc']>)(fn, input, { singular }),
+        AGENT_SUPPLY_FUNCTIONS.includes(fn),
       )
       return Response.json(
         rows,
@@ -448,11 +463,16 @@ function postgresChange(
   }
 }
 
+/**
+ * Run `operation` in the request's own context. `supplyCall` is true only for an RPC to one
+ * of `AGENT_SUPPLY_FUNCTIONS`, which then runs read-write even for an agent grant.
+ */
 async function withRequestDatabase<T>(
   db: IDatabase,
   request: Request,
   resolveContext: PostgrestContextResolver | undefined,
   operation: (requestDb: IDatabase) => Promise<T>,
+  supplyCall = false,
 ): Promise<T> {
   if (!(db instanceof PostgresDatabase) || !resolveContext) return operation(db)
 
@@ -460,7 +480,7 @@ async function withRequestDatabase<T>(
   if (!context)
     throw new InternalServerError('PostgREST request reached the database without an auth context')
 
-  return db.withRequestContext(context, operation)
+  return db.withRequestContext(supplyCall ? { ...context, supplyCall: true } : context, operation)
 }
 
 // ---------------------------------------------------------------------------

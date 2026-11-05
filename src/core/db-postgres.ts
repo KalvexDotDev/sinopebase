@@ -64,6 +64,18 @@ export interface PostgresRequestContext {
    * tenant runs read-only (sinope#1099), and storage refuses it every write.
    */
   tenantId?: string
+  /**
+   * Set only with `tenantId`: the OAuth client the agent grant was issued to,
+   * emitted as the `client_id` claim so a supply function can record which
+   * agent supplied what (sinope#1102).
+   */
+  clientId?: string
+  /**
+   * Set only by the RPC route, for a call to one of `AGENT_SUPPLY_FUNCTIONS`
+   * (sinope#1102): that one function call runs read-write. Every other
+   * request of a tenant-bound context stays read-only.
+   */
+  supplyCall?: true
 }
 
 /**
@@ -312,7 +324,9 @@ export class PostgresDatabase implements IDatabase {
    *
    * A tenant-bound context (an agent grant, sinope#1099) runs READ ONLY, set
    * before any other statement so nothing later in the transaction, not even a
-   * SECURITY DEFINER function, can write or switch it back.
+   * SECURITY DEFINER function, can write or switch it back. The one exception is
+   * a `supplyCall`, which the RPC route sets only for an agent supply function
+   * (sinope#1102).
    */
   async withRequestContext<T>(
     context: PostgresRequestContext,
@@ -320,7 +334,8 @@ export class PostgresDatabase implements IDatabase {
   ): Promise<T> {
     const requestWriter = this.requestWriter()
     return requestWriter.transaction().execute(async (transaction) => {
-      if (context.tenantId) await sql`SET TRANSACTION READ ONLY`.execute(transaction)
+      if (context.tenantId && !context.supplyCall)
+        await sql`SET TRANSACTION READ ONLY`.execute(transaction)
       const userId = context.userId ?? ''
       const claims = JSON.stringify({
         sub: userId || undefined,
@@ -332,6 +347,8 @@ export class PostgresDatabase implements IDatabase {
             : undefined,
         // Tenant claims only ever narrow access, so a bound context always emits its tenant.
         tenant_id: context.tenantId || undefined,
+        // Provenance for supply functions; only an agent grant names a client.
+        client_id: context.tenantId ? context.clientId || undefined : undefined,
       })
 
       // Set PostgREST-compatible GUC parameters so auth.uid() and
