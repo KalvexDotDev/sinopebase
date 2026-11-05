@@ -6,6 +6,10 @@
  *
  * @new-code-test positive src/apis/admin-users.ts
  * @new-code-test negative src/apis/admin-users.ts
+ * @new-code-test positive src/apis/auth.ts
+ * @new-code-test negative src/apis/auth.ts
+ * @new-code-test positive src/core/app.ts
+ * @new-code-test negative src/core/app.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
