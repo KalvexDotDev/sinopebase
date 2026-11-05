@@ -13,6 +13,8 @@ import type { Bucket, FileObject, IFileStore } from '../tools/filesystem/store-i
 import { createStoragePlugin } from './file'
 import { signUrl } from './signed-url'
 import {
+  type SignedUploadInput,
+  type SignedUploadUse,
   StorageAccessError,
   type StorageAccessPolicy,
   type StorageBucketInput,
@@ -135,6 +137,19 @@ class TestStorageAccess implements StorageAccessPolicy {
   async authorizeSignedUrl() {}
   async downloadPublic(_bucket: string, _path: string, read: () => Promise<Buffer>) {
     return read()
+  }
+  consumed = new Set<string>()
+  async authorizeSignedUpload() {
+    return null
+  }
+  async consumeSignedUpload(use: SignedUploadUse) {
+    if (this.consumed.has(use.jti)) return false
+    this.consumed.add(use.jti)
+    return true
+  }
+  async uploadSigned(input: SignedUploadInput, persist: () => Promise<unknown>) {
+    this.lastUpload = { ...input, upsert: false }
+    await persist()
   }
 }
 

@@ -17,6 +17,17 @@ export interface StorageUploadInput {
   upsert: boolean
 }
 
+/** A consumed signed upload token: its id, where it wrote, and when it stops being valid. */
+export interface SignedUploadUse {
+  jti: string
+  bucket: string
+  path: string
+  /** Seconds since the epoch. */
+  expiresAt: number
+}
+
+export type SignedUploadInput = Pick<StorageUploadInput, 'bucket' | 'path' | 'data' | 'contentType'>
+
 export interface StorageAccessPolicy {
   isAvailable(): Promise<boolean>
   listBuckets(context: PostgresRequestContext): Promise<Bucket[]>
@@ -53,6 +64,23 @@ export interface StorageAccessPolicy {
     persist: (allowedPaths: string[]) => Promise<string[]>,
   ): Promise<string[]>
   authorizeSignedUrl(context: PostgresRequestContext, bucket: string, path: string): Promise<void>
+  /**
+   * Whether the caller may mint a single-use upload URL for a new object (sinope#1103): its own
+   * insert rules allow the object, and the name is free (a signed upload never overwrites).
+   * Resolves to the bucket's file size limit, null when it has none.
+   */
+  authorizeSignedUpload(
+    context: PostgresRequestContext,
+    bucket: string,
+    path: string,
+  ): Promise<number | null>
+  /** Record a signed upload token's single use; false when it was already used. */
+  consumeSignedUpload(upload: SignedUploadUse): Promise<boolean>
+  /**
+   * Store a signed upload. The HMAC token is its authorization, so no request role applies;
+   * the bucket's limits do, and an existing object is never overwritten.
+   */
+  uploadSigned(input: SignedUploadInput, persist: () => Promise<unknown>): Promise<void>
   downloadPublic(bucket: string, path: string, read: () => Promise<Buffer>): Promise<Buffer>
 }
 
