@@ -480,7 +480,8 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
   it('refuses every account, auth and grant mutation to an agent token (sinope#1099)', async () => {
     const clientId = await registerClient('Agent 1098 account')
     const { tokens } = await grant(clientId, tenantA)
-    const [listed] = await grants()
+    const listedId = (await grants())[0]?.id ?? ''
+    expect(listedId).not.toBe('')
     const attempts: Array<[string, string, string?]> = [
       ['PUT', '/auth/v1/user', '{"email":"agent-1099@evil.test"}'],
       ['PUT', '/auth/v1/user', '{"password":"Agent-1099-takeover!"}'],
@@ -492,7 +493,7 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
       ['POST', '/auth/v1/agent-grants', `{"oauth_query":"x","tenant_id":"${tenantB}"}`],
       ['POST', '/auth/v1/agent-grants/request', '{"oauth_query":"x"}'],
       ['POST', '/auth/v1/agent-grants/deny', '{"oauth_query":"x"}'],
-      ['DELETE', `/auth/v1/agent-grants/${listed?.id}`],
+      ['DELETE', `/auth/v1/agent-grants/${listedId}`],
       ['POST', '/api/auth/update-user', '{"name":"Agent"}'],
       ['POST', '/api/auth/change-email', '{"newEmail":"agent-1099@evil.test"}'],
       ['POST', '/api/auth/change-password', '{"currentPassword":"x","newPassword":"y"}'],
@@ -505,7 +506,7 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
     }
     const user = await pool.query(`SELECT "email", "name" FROM "user" WHERE "id" = $1`, [member])
     expect(user.rows[0]).toEqual({ email: `${member}@agent-grants.test`, name: 'Agent grant user' })
-    expect((await grants()).map((entry) => entry.id)).toContain(listed?.id)
+    expect((await grants()).map((entry) => entry.id)).toContain(listedId)
     expect((await json('/auth/v1/user', { token: memberSession })).status).toBe(200)
   })
 
