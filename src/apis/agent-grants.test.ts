@@ -10,6 +10,8 @@
 // @new-code-test negative src/core/db-postgres.ts
 // @new-code-test positive src/apis/file.ts
 // @new-code-test negative src/apis/file.ts
+// @new-code-test positive src/apis/postgrest.ts
+// @new-code-test negative src/apis/postgrest.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Pool } from 'pg'
