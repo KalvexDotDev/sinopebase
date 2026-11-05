@@ -8,6 +8,8 @@
 // @new-code-test negative src/core/app.ts
 // @new-code-test positive src/core/db-postgres.ts
 // @new-code-test negative src/core/db-postgres.ts
+// @new-code-test positive src/apis/file.ts
+// @new-code-test negative src/apis/file.ts
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Pool } from 'pg'
@@ -473,6 +475,190 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
     expect(notAGrant.status).toBe(401)
     expect(notAGrant.headers.get('www-authenticate')).toBe('Bearer error="invalid_token"')
     expect((await json('/auth/v1/agent-grant')).status).toBe(401)
+  })
+
+  it('refuses every account, auth and grant mutation to an agent token (sinope#1099)', async () => {
+    const clientId = await registerClient('Agent 1098 account')
+    const { tokens } = await grant(clientId, tenantA)
+    const listedId = (await grants())[0]?.id ?? ''
+    expect(listedId).not.toBe('')
+    const attempts: Array<[string, string, string?]> = [
+      ['PUT', '/auth/v1/user', '{"email":"agent-1099@evil.test"}'],
+      ['PUT', '/auth/v1/user', '{"password":"Agent-1099-takeover!"}'],
+      ['PATCH', '/auth/v1/user', '{"data":{"name":"Agent"}}'],
+      ['POST', '/auth/v1/logout', '{}'],
+      ['DELETE', '/auth/v1/user/identities/any'],
+      ['GET', '/auth/v1/user/identities/authorize?provider=google'],
+      ['POST', '/auth/v1/admin/users', '{"email":"agent-1099@evil.test","password":"x"}'],
+      ['POST', '/auth/v1/agent-grants', `{"oauth_query":"x","tenant_id":"${tenantB}"}`],
+      ['POST', '/auth/v1/agent-grants/request', '{"oauth_query":"x"}'],
+      ['POST', '/auth/v1/agent-grants/deny', '{"oauth_query":"x"}'],
+      ['DELETE', `/auth/v1/agent-grants/${listedId}`],
+      ['POST', '/api/auth/update-user', '{"name":"Agent"}'],
+      ['POST', '/api/auth/change-email', '{"newEmail":"agent-1099@evil.test"}'],
+      ['POST', '/api/auth/change-password', '{"currentPassword":"x","newPassword":"y"}'],
+      ['POST', '/api/auth/revoke-sessions', '{}'],
+      ['POST', '/api/auth/delete-user', '{}'],
+    ]
+    for (const [method, path, body] of attempts) {
+      const response = await json(path, { method, token: tokens.access_token, body })
+      expect([401, 403], `${method} ${path}`).toContain(response.status)
+    }
+    const user = await pool.query(`SELECT "email", "name" FROM "user" WHERE "id" = $1`, [member])
+    expect(user.rows[0]).toEqual({ email: `${member}@agent-grants.test`, name: 'Agent grant user' })
+    expect((await grants()).map((entry) => entry.id)).toContain(listedId)
+    expect((await json('/auth/v1/user', { token: memberSession })).status).toBe(200)
+  })
+
+  it('runs an agent token read-only on REST and RPC, SECURITY DEFINER included (sinope#1099)', async () => {
+    await pool.query(`
+      GRANT INSERT, UPDATE, DELETE ON agent_grant_test_rows TO authenticated;
+      DROP POLICY IF EXISTS member_insert ON agent_grant_test_rows;
+      DROP POLICY IF EXISTS member_update ON agent_grant_test_rows;
+      DROP POLICY IF EXISTS member_delete ON agent_grant_test_rows;
+      CREATE POLICY member_insert ON agent_grant_test_rows FOR INSERT TO authenticated WITH CHECK (
+        tenant_id IN (SELECT m.tenant_id FROM agent_grant_test_memberships m WHERE m.user_id = auth.uid()));
+      CREATE POLICY member_update ON agent_grant_test_rows FOR UPDATE TO authenticated USING (true);
+      CREATE POLICY member_delete ON agent_grant_test_rows FOR DELETE TO authenticated USING (true);
+      CREATE OR REPLACE FUNCTION public.agent_grant_test_write(p_id text) RETURNS void
+        LANGUAGE sql SECURITY DEFINER SET search_path = ''
+        AS $$ INSERT INTO public.agent_grant_test_rows (id, tenant_id) VALUES (p_id, '${tenantA}') $$;
+      GRANT EXECUTE ON FUNCTION public.agent_grant_test_write(text) TO authenticated;
+    `)
+    const clientId = await registerClient('Agent 1098 writer')
+    const { tokens } = await grant(clientId, tenantA)
+    const write = (token: string, path: string, method: string, body?: unknown) =>
+      json(path, { method, token, body: body === undefined ? undefined : JSON.stringify(body) })
+    const rows = async () =>
+      (await pool.query(`SELECT id FROM agent_grant_test_rows ORDER BY id`)).rows.map(
+        (row: { id: string }) => row.id,
+      )
+
+    try {
+      const refused = [
+        await write(tokens.access_token, '/rest/v1/agent_grant_test_rows', 'POST', {
+          id: 'agent-row',
+          tenant_id: tenantA,
+        }),
+        await write(tokens.access_token, '/rest/v1/agent_grant_test_rows?id=eq.a-row', 'PATCH', {
+          id: 'a-row-renamed',
+        }),
+        await write(tokens.access_token, '/rest/v1/agent_grant_test_rows?id=eq.a-row', 'DELETE'),
+        await write(tokens.access_token, '/rest/v1/rpc/agent_grant_test_write', 'POST', {
+          p_id: 'agent-definer-row',
+        }),
+      ]
+      for (const response of refused) {
+        expect(response.status).toBe(405)
+        expect(((await response.json()) as { code: string }).code).toBe('25006')
+      }
+      expect(await rows()).toEqual(['a-row', 'b-row'])
+      expect((await tenantRows(tokens.access_token)).rows.map((row) => row.id)).toEqual(['a-row'])
+
+      // The same User's first-party session still writes through the same policies.
+      const sessionWrite = await write(
+        memberSession,
+        '/rest/v1/rpc/agent_grant_test_write',
+        'POST',
+        { p_id: 'session-row' },
+      )
+      expect(sessionWrite.status).toBeLessThan(300)
+      expect(await rows()).toEqual(['a-row', 'b-row', 'session-row'])
+    } finally {
+      // Restore the shared fixture rows whatever a failed run wrote.
+      await pool.query(`DELETE FROM agent_grant_test_rows WHERE id NOT IN ('a-row', 'b-row')`)
+      await pool.query(
+        `INSERT INTO agent_grant_test_rows VALUES ('a-row', $1) ON CONFLICT DO NOTHING`,
+        [tenantA],
+      )
+    }
+  })
+
+  it('refuses every storage write to an agent token before the store changes (sinope#1099)', async () => {
+    const bucket = 'agent-grant-1099'
+    await pool.query(
+      `INSERT INTO storage.buckets (id, name, public) VALUES ($1, $1, false) ON CONFLICT DO NOTHING`,
+      [bucket],
+    )
+    // A fresh folder per run: the local store outlives the database between runs.
+    const folder = `${tenantA}/${randomBytes(6).toString('hex')}`
+    const kept = `${folder}/kept.txt`
+    const upload = (token: string, path: string, body: string, upsert = false) =>
+      fetch(`${baseUrl}/storage/v1/object/${bucket}/${path}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'text/plain',
+          ...(upsert ? { 'x-upsert': 'true' } : {}),
+        },
+        body,
+      })
+    expect((await upload(memberSession, kept, 'original', true)).status).toBe(200)
+    const clientId = await registerClient('Agent 1098 storage')
+    const { tokens } = await grant(clientId, tenantA)
+    const agent = tokens.access_token
+
+    const refused = [
+      await upload(agent, `${folder}/agent.txt`, 'written by an agent'),
+      await upload(agent, kept, 'overwritten by an agent', true),
+      await json('/storage/v1/object/copy', {
+        method: 'POST',
+        token: agent,
+        body: JSON.stringify({ bucket, from: kept, to: `${folder}/copied.txt` }),
+      }),
+      await json('/storage/v1/object/move', {
+        method: 'POST',
+        token: agent,
+        body: JSON.stringify({ bucket, from: kept, to: `${folder}/moved.txt` }),
+      }),
+      await json(`/storage/v1/object/${bucket}`, {
+        method: 'DELETE',
+        token: agent,
+        body: JSON.stringify({ prefixes: [kept] }),
+      }),
+      await json(`/storage/v1/object/sign/${bucket}/${kept}`, {
+        method: 'POST',
+        token: agent,
+        body: JSON.stringify({ expiresIn: 60, method: 'PUT' }),
+      }),
+      await json('/storage/v1/bucket', {
+        method: 'POST',
+        token: agent,
+        body: JSON.stringify({ name: `agent-grant-1099-${folder.slice(-12)}` }),
+      }),
+      await json(`/storage/v1/bucket/${bucket}`, { method: 'DELETE', token: agent }),
+    ]
+    for (const response of refused) {
+      expect(response.status).toBe(403)
+      expect(await response.json()).toEqual({
+        statusCode: '403',
+        error: '403',
+        message: 'An agent grant is read-only',
+      })
+    }
+
+    // Reading stays open: a signed download for its own tenant's object.
+    const signedGet = await json(`/storage/v1/object/sign/${bucket}/${kept}`, {
+      method: 'POST',
+      token: agent,
+      body: JSON.stringify({ expiresIn: 60 }),
+    })
+    expect(signedGet.status).toBe(200)
+
+    const store = app.getFileStore()
+    if (!store) throw new Error('The file store must be configured')
+    expect(Buffer.from(await store.read(bucket, kept)).toString()).toBe('original')
+    for (const path of ['agent.txt', 'copied.txt', 'moved.txt'])
+      await expect(store.read(bucket, `${folder}/${path}`)).rejects.toBeDefined()
+    const objects = await pool.query(
+      `SELECT name FROM storage.objects WHERE bucket_id = $1 AND name LIKE $2 ORDER BY name`,
+      [bucket, `${folder}/%`],
+    )
+    expect(objects.rows.map((row: { name: string }) => row.name)).toEqual([kept])
+    const buckets = await pool.query(`SELECT 1 FROM storage.buckets WHERE id = $1`, [
+      `agent-grant-1099-${folder.slice(-12)}`,
+    ])
+    expect(buckets.rowCount).toBe(0)
   })
 
   it('exposes only the OAuth client endpoints and issues no client-credential tokens', async () => {

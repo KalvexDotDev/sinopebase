@@ -289,6 +289,18 @@ async function resolveStorageAccess(options: StoragePluginOptions, request: Requ
   return { context, access: undefined }
 }
 
+/**
+ * Resolve access for an operation that writes, deletes or mints write access. An agent grant
+ * (a tenant-bound context, sinope#1099) is read-only: it is refused here, before the store is
+ * touched, because the store saves bytes outside the request transaction.
+ */
+async function resolveStorageWriteAccess(options: StoragePluginOptions, request: Request) {
+  const resolved = await resolveStorageAccess(options, request)
+  if (resolved.context.tenantId)
+    throw new StorageAccessError(403, '403', 'An agent grant is read-only')
+  return resolved
+}
+
 async function storageOperation<T>(
   set: { status?: number | string },
   operation: () => Promise<T>,
@@ -410,7 +422,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
-      const { context, access } = await resolveStorageAccess(options, request)
+      const { context, access } = await resolveStorageWriteAccess(options, request)
       if (access) {
         await access.createBucket(
           context,
@@ -446,7 +458,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       return { statusCode: '400', error: '400', message: 'Invalid bucket name' }
     }
     return storageOperation(set, async () => {
-      const { context, access } = await resolveStorageAccess(options, request)
+      const { context, access } = await resolveStorageWriteAccess(options, request)
       if (context.role !== 'service_role') {
         throw new StorageAccessError(403, '403', 'Only service_role can delete buckets')
       }
@@ -579,7 +591,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
       return storageOperation(set, async () => {
         requireObjectName(path)
-        const { context, access } = await resolveStorageAccess(options, request)
+        const { context, access } = await resolveStorageWriteAccess(options, request)
         if (access) {
           await access.upload(
             context,
@@ -691,7 +703,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     }
     return storageOperation(set, async () => {
       const names = paths.map(requireObjectName)
-      const { context, access } = await resolveStorageAccess(options, request)
+      const { context, access } = await resolveStorageWriteAccess(options, request)
       const deleted = access
         ? await access.remove(context, bucket, names, (allowed) => store.delete(bucket, allowed))
         : await store.delete(bucket, names)
@@ -756,7 +768,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     return storageOperation(set, async () => {
       requireObjectName(from)
       requireObjectName(to)
-      const { context, access } = await resolveStorageAccess(options, request)
+      const { context, access } = await resolveStorageWriteAccess(options, request)
       // Supabase contract: copying onto an existing object is a 400.
       await existsOrThrow(access, context, store, bucket, to)
       // ponytail: Buffer → ArrayBuffer cast — Buffer is a Uint8Array view.
@@ -797,7 +809,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     return storageOperation(set, async () => {
       requireObjectName(from)
       requireObjectName(to)
-      const { context, access } = await resolveStorageAccess(options, request)
+      const { context, access } = await resolveStorageWriteAccess(options, request)
       await existsOrThrow(access, context, store, bucket, to)
       const buffer = access
         ? await access.download(context, bucket, from, () => store.read(bucket, from))
@@ -898,7 +910,12 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     const rawMethod = b.method
     return storageOperation(set, async () => {
       requireObjectName(path)
-      const { context, access } = await resolveStorageAccess(options, request)
+      const method: 'GET' | 'PUT' = rawMethod === 'PUT' ? 'PUT' : 'GET'
+      // A signed PUT URL is write access: minting one is a write.
+      const { context, access } =
+        method === 'PUT'
+          ? await resolveStorageWriteAccess(options, request)
+          : await resolveStorageAccess(options, request)
       if (access) await access.authorizeSignedUrl(context, bucket, path)
       const expiresInSec =
         typeof rawExpiresIn === 'number'
@@ -906,7 +923,6 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
           : typeof rawExpiresIn === 'string'
             ? parseInt(rawExpiresIn, 10) || 3600
             : 3600
-      const method: 'GET' | 'PUT' = rawMethod === 'PUT' ? 'PUT' : 'GET'
       const token = signUrl(bucket, path, expiresInSec, method)
       const signedURL = `/storage/v1/object/signed/${token}`
       return { signedURL }
