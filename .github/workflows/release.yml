@@ -39,7 +39,7 @@ jobs:
           bun run build
 
       - name: Compile binary
-        run: bun build cmd/serve.ts --compile --minify --target bun --outfile ${{ matrix.artifact }}
+        run: bun run compile:release --target bun --outfile ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

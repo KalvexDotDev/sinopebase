@@ -1,3 +1,4 @@
+export * from './agent-grants'
 export * from './databases'
 export * from './infrastructure'
 export * from './inventory'

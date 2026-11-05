@@ -12,6 +12,7 @@
 - The Better Auth tables (`user`, `session`, `account`, `verification`, `refresh_tokens`) are internal. Every startup revokes table and column privileges on them from `PUBLIC`, `anon` and `authenticated`, and startup fails before listening if any browser privilege remains. A failed PostgreSQL auth setup now refuses startup instead of falling back to in-memory auth (KalvexDotDev/sinope#861).
 
 ### Fixed
+- The release binary (Docker image and release artifacts) answers Better Auth's POST endpoints again: dynamic client registration, email sign-in, the OAuth token endpoint and token revocation returned an empty 500 with `TypeError: Body already used` (KalvexDotDev/sinope#1144). Elysia decides which request parts a route reads from the source text of its handler and hooks; `--minify` renamed the metrics hooks' context to `t`, which Elysia mistook for passing the whole context on, so it parsed every request body before Better Auth could read it. The binary is now built by the `compile:release` script with whitespace and syntax minified and identifiers kept, and a test builds that binary and drives a full agent grant through it over HTTP.
 - On PostgreSQL 16 and later, the connection role is granted the request roles `WITH SET TRUE`. A role's creator receives ADMIN membership without SET permission there, so switching to `anon`, `authenticated` or `service_role` failed (KalvexDotDev/sinope#861).
 - Replicas starting together on a new database take turns creating and hardening the Better Auth tables. Previously they could deadlock and refuse startup.
 
