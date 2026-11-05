@@ -1,11 +1,18 @@
 import type { PostgresRequestContext } from '~/core/db-postgres'
 
-/** Public downloads and signed GETs enforce their own storage authorization. */
+/**
+ * Public downloads, signed GETs and signed uploads enforce their own storage authorization:
+ * the HMAC token is the credential, so a client holding only a signed upload URL (an External
+ * Agent, sinope#1103) can PUT without a key.
+ */
 export function requiresApiAuthorization(request: Request): boolean {
   const path = new URL(request.url).pathname
   if (!/^\/(?:rest|storage)\/v1\//.test(path)) return false
   if (request.method === 'OPTIONS') return false
   if (path.startsWith('/storage/v1/object/public/')) return false
+  if (request.method === 'PUT' && /^\/storage\/v1\/object\/signed\/upload\/[^/]+$/.test(path)) {
+    return false
+  }
   return !(request.method === 'GET' && /^\/storage\/v1\/object\/signed\/[^/]+$/.test(path))
 }
 

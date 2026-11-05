@@ -154,7 +154,7 @@ describe('signed download authorization remains narrowly scoped', () => {
       { path: `/object/${bucket}/unwanted.txt`, method: 'POST', body: {} },
       { path: `/object/${bucket}`, method: 'DELETE', body: { paths: [path] } },
       { path: `/object/${bucket}/${path}`, method: 'GET' },
-      { path: '/object/signed/upload/dummy', method: 'PUT', body: {} },
+      { path: '/object/signed/upload/dummy/extra', method: 'PUT', body: {} },
       { path: '/object/signed/dummy', method: 'POST', body: {} },
       { path: '/object/signed/dummy/extra', method: 'GET' },
     ]
@@ -170,6 +170,14 @@ describe('signed download authorization remains narrowly scoped', () => {
         code: '401',
       })
     }
+    // A signed upload's token is its only credential (sinope#1103): without a valid one it is
+    // refused by the token check, never written.
+    const keyless = await fetch(`${origin}/storage/v1/object/signed/upload/dummy`, {
+      method: 'PUT',
+      body: 'unwanted',
+    })
+    expect(keyless.status).toBe(403)
+    expect(await keyless.json()).toMatchObject({ message: 'Malformed token' })
     const unchanged = await admin.storage.from(bucket).download(path)
     expect(unchanged.error).toBeNull()
     expect(await unchanged.data?.text()).toBe(content)

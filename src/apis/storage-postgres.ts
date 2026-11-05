@@ -2,12 +2,17 @@ import { sql } from 'kysely'
 import type { PostgresDatabase, PostgresRequestContext } from '../core/db-postgres'
 import type { Bucket, FileObject } from '../tools/filesystem/store-interface'
 import {
+  type SignedUploadInput,
+  type SignedUploadUse,
   StorageAccessError,
   type StorageAccessPolicy,
   type StorageBucketInput,
   type StorageUploadInput,
   validateBucketConstraints,
 } from './storage-access'
+
+/** Thrown to roll back a probe transaction; never escapes `authorizeSignedUpload`. */
+const PROBE_ROLLBACK = Symbol('probe rollback')
 
 interface BucketRow {
   id: string
@@ -74,6 +79,26 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
         UNIQUE (bucket_id, name)
       )
     `.execute(writer)
+
+    // Signed upload tokens are single-use (sinope#1103): each consumed token's jti is kept
+    // here until a day after it expires. Only this server's own connection reads or writes it.
+    await sql`
+      CREATE TABLE IF NOT EXISTS storage.consumed_upload_tokens (
+        jti uuid PRIMARY KEY,
+        bucket_id text NOT NULL,
+        name text NOT NULL,
+        expires_at timestamptz NOT NULL,
+        consumed_at timestamptz NOT NULL DEFAULT now()
+      )
+    `.execute(writer)
+    await sql`
+      CREATE INDEX IF NOT EXISTS consumed_upload_tokens_expires_at_idx
+        ON storage.consumed_upload_tokens (expires_at)
+    `.execute(writer)
+    await sql`ALTER TABLE storage.consumed_upload_tokens ENABLE ROW LEVEL SECURITY`.execute(writer)
+    await sql`REVOKE ALL ON storage.consumed_upload_tokens FROM PUBLIC, anon, authenticated, service_role`
+      .execute(writer)
+      .catch(() => undefined)
 
     // Grant schema access and table permissions to request roles.
     await sql`GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role`
@@ -296,23 +321,8 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     input: StorageUploadInput,
     persist: () => Promise<unknown>,
   ): Promise<void> {
-    const bucket = await this.getBucket(input.bucket)
-    if (!bucket) throw new StorageAccessError(404, '404', 'Bucket not found')
-    validateBucketConstraints(
-      {
-        fileSizeLimit: bucket.file_size_limit === null ? null : Number(bucket.file_size_limit),
-        allowedMimeTypes: bucket.allowed_mime_types,
-      },
-      input,
-    )
-
+    const metadata = await this.objectMetadata(input, input.cacheControl)
     await this.scoped(context, async (db) => {
-      const metadata = JSON.stringify({
-        mimetype:
-          input.contentType.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream',
-        size: input.data.byteLength,
-        cacheControl: input.cacheControl,
-      })
       if (input.upsert) {
         await sql`
           INSERT INTO storage.objects (bucket_id, name, owner_id, metadata)
@@ -382,6 +392,64 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     })
   }
 
+  async authorizeSignedUpload(
+    context: PostgresRequestContext,
+    bucket: string,
+    path: string,
+  ): Promise<void> {
+    // The upload itself runs outside any request role, so the minting caller's own insert
+    // rules are proved now: the row is inserted under its role, then rolled back. A missing
+    // bucket is a 404, a taken name a 409 and a refused insert a 403.
+    try {
+      await this.db.withRequestContext(context, async (db) => {
+        await sql`
+          INSERT INTO storage.objects (bucket_id, name, owner_id)
+          VALUES (${bucket}, ${path}, ${context.userId ?? null})
+        `.execute(db.getWriter())
+        throw PROBE_ROLLBACK
+      })
+    } catch (error) {
+      if (error !== PROBE_ROLLBACK) throw mapDatabaseError(error)
+    }
+  }
+
+  async consumeSignedUpload(upload: SignedUploadUse): Promise<boolean> {
+    // One statement: concurrent uses of one token queue on the primary key and only the
+    // first inserts. Rows a day past expiry go, as verification already refuses them.
+    try {
+      const result = await sql<{ jti: string }>`
+        WITH expired AS (
+          DELETE FROM storage.consumed_upload_tokens WHERE expires_at < now() - interval '1 day'
+        )
+        INSERT INTO storage.consumed_upload_tokens (jti, bucket_id, name, expires_at)
+        VALUES (${upload.jti}, ${upload.bucket}, ${upload.path}, to_timestamp(${upload.expiresAt}))
+        ON CONFLICT (jti) DO NOTHING
+        RETURNING jti
+      `.execute(this.db.getWriter())
+      return result.rows.length === 1
+    } catch (error) {
+      throw mapDatabaseError(error)
+    }
+  }
+
+  async uploadSigned(input: SignedUploadInput, persist: () => Promise<unknown>): Promise<void> {
+    const metadata = await this.objectMetadata(input)
+    try {
+      await this.db
+        .getWriter()
+        .transaction()
+        .execute(async (transaction) => {
+          await sql`
+            INSERT INTO storage.objects (bucket_id, name, owner_id, metadata)
+            VALUES (${input.bucket}, ${input.path}, NULL, ${metadata}::jsonb)
+          `.execute(transaction)
+          await persist()
+        })
+    } catch (error) {
+      throw mapDatabaseError(error)
+    }
+  }
+
   async downloadPublic(bucket: string, path: string, read: () => Promise<Buffer>): Promise<Buffer> {
     try {
       const result = await sql<{ present: number }>`
@@ -398,6 +466,25 @@ export class PostgresStorageAccessPolicy implements StorageAccessPolicy {
     } catch (error) {
       throw mapDatabaseError(error)
     }
+  }
+
+  /** The new object's metadata once the bucket exists and admits it (size and type limits). */
+  private async objectMetadata(input: SignedUploadInput, cacheControl?: string): Promise<string> {
+    const bucket = await this.getBucket(input.bucket)
+    if (!bucket) throw new StorageAccessError(404, '404', 'Bucket not found')
+    validateBucketConstraints(
+      {
+        fileSizeLimit: bucket.file_size_limit === null ? null : Number(bucket.file_size_limit),
+        allowedMimeTypes: bucket.allowed_mime_types,
+      },
+      input,
+    )
+    return JSON.stringify({
+      mimetype:
+        input.contentType.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream',
+      size: input.data.byteLength,
+      cacheControl,
+    })
   }
 
   private async getBucket(id: string): Promise<BucketRow | undefined> {

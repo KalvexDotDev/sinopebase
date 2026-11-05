@@ -14,8 +14,21 @@ import { isValidObjectName, isValidObjectPrefix } from '../tools/filesystem/obje
 import type { IFileStore } from '../tools/filesystem/store-interface'
 import { RequestEntityTooLargeError } from './api_error_aliases'
 import { DEFAULT_MAX_UPLOAD_SIZE, uploadBodyLimit } from './middlewares_body_limit'
-import { SignedUrlError, signUrl, verifySignedUrl } from './signed-url'
-import { StorageAccessError, type StorageAccessPolicy } from './storage-access'
+import {
+  isByteLimit,
+  isContentType,
+  SignedUrlError,
+  signUrl,
+  type UploadLimits,
+  type VerifiedToken,
+  type VerifiedUpload,
+  verifySignedUrl,
+} from './signed-url'
+import {
+  type SignedUploadUse,
+  StorageAccessError,
+  type StorageAccessPolicy,
+} from './storage-access'
 
 interface ParsedUploadBody {
   data: ArrayBuffer
@@ -372,12 +385,79 @@ async function existsOrThrow(
   }
 }
 
+/** A signed token's claims, or the 403 refusing it. */
+function signedTokenClaims(token: string): VerifiedToken {
+  try {
+    return verifySignedUrl(token)
+  } catch (err) {
+    const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
+    throw new StorageAccessError(403, '403', message)
+  }
+}
+
+/** A signed PUT token's claims, single use included, or the 403 refusing it. */
+function signedUploadClaims(token: string): VerifiedToken & { upload: VerifiedUpload } {
+  const { upload, ...claims } = signedTokenClaims(token)
+  if (!upload) throw new StorageAccessError(403, '403', 'Token method mismatch: expected PUT')
+  return { ...claims, upload }
+}
+
+/** A signed PUT's limits from its sign request: at most the upload limit, and a valid type. */
+function uploadLimits(body: Record<string, unknown>, maxUploadSize: number): UploadLimits {
+  const { maxBytes = maxUploadSize, contentType } = body
+  if (!isByteLimit(maxBytes) || maxBytes > maxUploadSize) {
+    throw new StorageAccessError(
+      400,
+      '400',
+      `maxBytes must be a whole number from 1 to ${maxUploadSize}`,
+    )
+  }
+  if (contentType !== undefined && !isContentType(contentType)) {
+    throw new StorageAccessError(400, '400', 'contentType must be a lowercase type/subtype')
+  }
+  return { maxBytes, contentType }
+}
+
+/** The upload's content type; a token bound to one type accepts only that type. */
+function signedUploadType(request: Request, upload: VerifiedUpload): string {
+  const declared = (request.headers.get('content-type') ?? '')
+    .replace(/;.*$/s, '')
+    .trim()
+    .toLowerCase()
+  if (upload.contentType !== null && declared !== upload.contentType) {
+    throw new StorageAccessError(415, '415', 'The upload content type differs from the signed one')
+  }
+  return declared || 'application/octet-stream'
+}
+
+/** The body, read while it streams and refused (413) as soon as it passes `limit`. */
+async function signedUploadBody(request: Request, limit: number): Promise<ArrayBuffer> {
+  const data = await readBodyStreamed(request, limit).catch((error: unknown) => {
+    throw error instanceof RequestEntityTooLargeError
+      ? new StorageAccessError(413, '413', error.message)
+      : error
+  })
+  if (data.byteLength === 0) throw new StorageAccessError(400, '400', 'File body is required')
+  return data
+}
+
+/** Single use without a metadata database (the local store): this process remembers each use. */
+function consumeLocally(consumed: Map<string, number>, use: SignedUploadUse): boolean {
+  const now = Math.floor(Date.now() / 1000)
+  for (const [jti, expiresAt] of consumed) if (expiresAt < now) consumed.delete(jti)
+  if (consumed.has(use.jti)) return false
+  consumed.set(use.jti, use.expiresAt)
+  return true
+}
+
 /**
  * Create an Elysia plugin that registers all /storage/v1/* routes.
  */
 export function createStoragePlugin(store: IFileStore, options: StoragePluginOptions = {}) {
   const app = new Elysia({ name: 'sinopebase-storage' })
   const maxUploadSize = options.maxUploadSize ?? DEFAULT_MAX_UPLOAD_SIZE
+  /** Signed upload tokens this process has consumed, when no metadata database records them. */
+  const consumedUploads = new Map<string, number>()
 
   // Upload body limit — checks Content-Length before body parsing,
   // then the parse function streams the body with full enforcement.
@@ -910,20 +990,18 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     const rawMethod = b.method
     return storageOperation(set, async () => {
       requireObjectName(path)
-      const method: 'GET' | 'PUT' = rawMethod === 'PUT' ? 'PUT' : 'GET'
-      // A signed PUT URL is write access: minting one is a write.
-      const { context, access } =
-        method === 'PUT'
-          ? await resolveStorageWriteAccess(options, request)
-          : await resolveStorageAccess(options, request)
-      if (access) await access.authorizeSignedUrl(context, bucket, path)
       const expiresInSec =
         typeof rawExpiresIn === 'number'
           ? rawExpiresIn
           : typeof rawExpiresIn === 'string'
             ? parseInt(rawExpiresIn, 10) || 3600
             : 3600
-      const token = signUrl(bucket, path, expiresInSec, method)
+      if (rawMethod === 'PUT') {
+        return signUpload(request, bucket, path, expiresInSec, uploadLimits(b, maxUploadSize))
+      }
+      const { context, access } = await resolveStorageAccess(options, request)
+      if (access) await access.authorizeSignedUrl(context, bucket, path)
+      const token = signUrl(bucket, path, expiresInSec, 'GET')
       const signedURL = `/storage/v1/object/signed/${token}`
       return { signedURL }
     })
@@ -945,15 +1023,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
       }
     }
     return storageOperation(set, async () => {
-      let bucket: string
-      let path: string
-      let method: string
-      try {
-        ;({ bucket, path, method } = verifySignedUrl(token))
-      } catch (err) {
-        const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
-        throw new StorageAccessError(403, '403', message)
-      }
+      const { bucket, path, method } = signedTokenClaims(token)
       if (method !== 'GET') {
         throw new StorageAccessError(403, '403', 'Token method mismatch: expected GET')
       }
@@ -963,7 +1033,7 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
     })
   })
 
-  // PUT /storage/v1/object/signed/upload/:token — Verify HMAC token and upload file
+  // PUT /storage/v1/object/signed/upload/:token — one upload through a single-use signed token
   app.put(
     '/storage/v1/object/signed/upload/:token',
     async ({ params, request, set }) => {
@@ -980,31 +1050,59 @@ export function createStoragePlugin(store: IFileStore, options: StoragePluginOpt
           },
         }
       }
-      return storageOperation(set, async () => {
-        let bucket: string
-        let path: string
-        let method: string
-        try {
-          ;({ bucket, path, method } = verifySignedUrl(token))
-        } catch (err) {
-          const message = err instanceof SignedUrlError ? err.message : 'Invalid token'
-          throw new StorageAccessError(403, '403', message)
-        }
-        if (method !== 'PUT') {
-          throw new StorageAccessError(403, '403', 'Token method mismatch: expected PUT')
-        }
-        requireObjectName(path)
-        const data = await request.arrayBuffer()
-        if (!data || data.byteLength === 0) {
-          throw new StorageAccessError(400, '400', 'File body is required')
-        }
-        await store.ensureBucket(bucket)
-        await store.save(bucket, path, data)
-        return { Id: `${bucket}/${path}`, Key: `${bucket}/${path}` }
-      })
+      return storageOperation(set, () => receiveSignedUpload(token, request))
     },
     { parse: () => undefined },
   )
+
+  /** A single-use upload URL for a new object. Minting one is a write: agent grants are refused. */
+  async function signUpload(
+    request: Request,
+    bucket: string,
+    path: string,
+    expiresInSec: number,
+    limits: UploadLimits,
+  ) {
+    const { context, access } = await resolveStorageWriteAccess(options, request)
+    if (access) await access.authorizeSignedUpload(context, bucket, path)
+    const token = signUrl(bucket, path, expiresInSec, 'PUT', limits)
+    return { signedURL: `/storage/v1/object/signed/upload/${token}` }
+  }
+
+  /** Spend a token's single use: in the metadata database, or in this process without one. */
+  async function spendSignedUpload(use: SignedUploadUse): Promise<void> {
+    const fresh = options.access
+      ? await options.access.consumeSignedUpload(use)
+      : consumeLocally(consumedUploads, use)
+    if (!fresh) throw new StorageAccessError(403, '403', 'Token already used')
+  }
+
+  /**
+   * One upload through a signed PUT token (sinope#1103). The token names the only bucket and
+   * path it writes. Its content type and declared length are checked before its single use is
+   * spent; the body is then read only up to its byte limit. With a metadata database it never
+   * overwrites an object (409); the local store, like its other uploads, does not check.
+   */
+  async function receiveSignedUpload(token: string, request: Request) {
+    const { bucket, path, upload } = signedUploadClaims(token)
+    requireObjectName(path)
+    const contentType = signedUploadType(request, upload)
+    const limit = Math.min(upload.maxBytes, maxUploadSize)
+    // A declared length over the limit is refused before the single use is spent.
+    if (Number(request.headers.get('content-length') ?? 0) > limit) {
+      throw new StorageAccessError(413, '413', `Upload body exceeds the ${limit} byte limit.`)
+    }
+    await spendSignedUpload({ jti: upload.jti, bucket, path, expiresAt: upload.expiresAt })
+    const data = await signedUploadBody(request, limit)
+    const persist = async () => {
+      await store.ensureBucket(bucket)
+      await store.save(bucket, path, data)
+    }
+    if (options.access)
+      await options.access.uploadSigned({ bucket, path, data, contentType }, persist)
+    else await persist()
+    return { Id: `${bucket}/${path}`, Key: `${bucket}/${path}` }
+  }
 
   return app
 }
