@@ -32,10 +32,14 @@ import type { PostgresChange, PostgrestChangePublisher, PreparedRealtimeChange }
 
 /**
  * The only functions an agent grant may call read-write (sinope#1102): Sinope's supply
- * functions, which record what an External Agent supplies and decide nothing. Every other
- * request of an agent grant runs read-only (sinope#1099). Fixed in code, never configured.
+ * functions, which record the Input an External Agent supplies and the guardrail detections
+ * on it, and decide nothing. Every other request of an agent grant runs read-only
+ * (sinope#1099). Fixed in code, never configured.
  */
-export const AGENT_SUPPLY_FUNCTIONS: readonly string[] = Object.freeze(['fulfil_input_request'])
+export const AGENT_SUPPLY_FUNCTIONS: readonly string[] = Object.freeze([
+  'fulfil_input_request',
+  'record_agent_guardrail_detection',
+])
 
 // ---------------------------------------------------------------------------
 // Helper types

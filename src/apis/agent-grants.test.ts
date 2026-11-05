@@ -550,16 +550,17 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
   })
 
   it('lets an agent token write only through an agent supply function, naming its tenant and client (sinope#1102)', async () => {
-    // A stand-in for Sinope's supply function: it writes, and answers with the claims it ran under.
-    await pool.query(`
-      CREATE OR REPLACE FUNCTION public.fulfil_input_request(p_id text) RETURNS jsonb
-        LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
-        AS $$ BEGIN
-          INSERT INTO public.agent_grant_test_rows (id, tenant_id) VALUES (p_id, '${tenantA}');
-          RETURN current_setting('request.jwt.claims')::jsonb;
-        END $$;
-      GRANT EXECUTE ON FUNCTION public.fulfil_input_request(text) TO authenticated;
-    `)
+    // Stand-ins for Sinope's supply functions: each writes, and answers with the claims it ran under.
+    for (const name of ['fulfil_input_request', 'record_agent_guardrail_detection'])
+      await pool.query(`
+        CREATE OR REPLACE FUNCTION public.${name}(p_id text) RETURNS jsonb
+          LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+          AS $$ BEGIN
+            INSERT INTO public.agent_grant_test_rows (id, tenant_id) VALUES (p_id, '${tenantA}');
+            RETURN current_setting('request.jwt.claims')::jsonb;
+          END $$;
+        GRANT EXECUTE ON FUNCTION public.${name}(text) TO authenticated;
+      `)
     const clientId = await registerClient('Agent 1102 supplier')
     const { tokens } = await grant(clientId, tenantA)
     const post = (token: string, path: string, body: unknown) =>
@@ -582,7 +583,13 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
         client_id: clientId,
       })
       expect(claims).not.toHaveProperty('channel')
-      expect(await rows()).toEqual(['a-row', 'agent-supplied-row', 'b-row'])
+      const detected = await post(
+        tokens.access_token,
+        '/rest/v1/rpc/record_agent_guardrail_detection',
+        { p_id: 'agent-detection-row' },
+      )
+      expect(detected.status).toBe(200)
+      expect(await rows()).toEqual(['a-row', 'agent-detection-row', 'agent-supplied-row', 'b-row'])
 
       // Everything else the same token sends stays read-only.
       const insert = await post(tokens.access_token, '/rest/v1/agent_grant_test_rows', {
@@ -591,7 +598,7 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
       })
       expect(insert.status).toBe(405)
       expect(((await insert.json()) as { code: string }).code).toBe('25006')
-      expect(await rows()).toEqual(['a-row', 'agent-supplied-row', 'b-row'])
+      expect(await rows()).toEqual(['a-row', 'agent-detection-row', 'agent-supplied-row', 'b-row'])
 
       // A first-party session names no client and no tenant.
       const session = await post(memberSession, '/rest/v1/rpc/fulfil_input_request', {
@@ -604,6 +611,7 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
       expect(sessionClaims).not.toHaveProperty('tenant_id')
     } finally {
       await pool.query(`DROP FUNCTION IF EXISTS public.fulfil_input_request(text)`)
+      await pool.query(`DROP FUNCTION IF EXISTS public.record_agent_guardrail_detection(text)`)
       await pool.query(`DELETE FROM agent_grant_test_rows WHERE id NOT IN ('a-row', 'b-row')`)
     }
   })
