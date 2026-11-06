@@ -211,6 +211,10 @@ describe('DELETE /auth/v1/user', () => {
       late.id,
     ])
     expect((await call('GET', '/auth/v1/user', late.accessToken)).status).toBe(401)
+    const update = await call('PUT', '/auth/v1/user', late.accessToken, {
+      email: `squat-${run}@example.com`,
+    })
+    expect(update.status).toBe(401)
     const refreshed = await call('POST', '/auth/v1/token?grant_type=refresh_token', anonKey, {
       refresh_token: late.refreshToken,
     })

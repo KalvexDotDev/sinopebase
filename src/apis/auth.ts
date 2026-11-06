@@ -29,6 +29,7 @@ import {
 import { removeSignInMethod } from '~/tools/auth-better/identity-linking-policy'
 import {
   RECOVERY_EMAIL_PREFIX,
+  RECOVERY_SENT_PREFIX,
   RESET_PREFIX,
   retireRecoveryLinks,
 } from '~/tools/auth-better/recovery-links'
@@ -739,6 +740,7 @@ async function lockUpdatingSession(transaction: Transaction<BetterAuthDatabase>,
     .selectFrom('user')
     .selectAll()
     .where('id', '=', owner.userId)
+    .where('deletedAt', 'is', null)
     .forUpdate()
     .executeTakeFirst()
   // Revalidate the session under the user lock: it may have been revoked meanwhile.
@@ -845,7 +847,6 @@ async function updateNativeUser(
 /** GoTrue SMTP_MAX_FREQUENCY default: one recovery email per user per 60 seconds. */
 const RECOVERY_INTERVAL_MS = 60_000
 /** Verification row marking a user's live recovery interval (GoTrue recovery_sent_at). */
-const RECOVERY_SENT_PREFIX = 'recovery-sent:'
 const recoverBody = z.object({ email: z.string().trim().email() })
 
 /** redirect_to is honoured only for Better Auth trusted origins (SINOPEBASE_EXTRA_ORIGINS). */

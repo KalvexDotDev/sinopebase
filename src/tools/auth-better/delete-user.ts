@@ -13,7 +13,7 @@ import type { Kysely } from 'kysely'
 import type { BetterAuthDatabase } from './adapter'
 import { revokeUserAgentGrants } from './agent-grants'
 import { retireEmailChanges } from './email-change'
-import { retireRecoveryLinks } from './recovery-links'
+import { RECOVERY_SENT_PREFIX, retireRecoveryLinks } from './recovery-links'
 
 /** How recently the deleting session must have signed in (Better Auth `freshAge` semantics). */
 export const REAUTHENTICATION_WINDOW_MS = 10 * 60_000
@@ -41,7 +41,10 @@ export async function tombstoneUser(db: Kysely<BetterAuthDatabase>, userId: stri
     .executeTakeFirstOrThrow()
   await revokeUserAgentGrants(db, userId)
   await retireRecoveryLinks(db, userId)
-  await db.deleteFrom('verification').where('identifier', '=', `recovery-sent:${userId}`).execute()
+  await db
+    .deleteFrom('verification')
+    .where('identifier', '=', RECOVERY_SENT_PREFIX + userId)
+    .execute()
   await retireEmailChanges(db, userId)
   await db.deleteFrom('refresh_tokens').where('user_id', '=', userId).execute()
   await db.deleteFrom('session').where('userId', '=', userId).execute()
