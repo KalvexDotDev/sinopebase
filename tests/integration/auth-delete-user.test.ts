@@ -8,6 +8,8 @@
  * @new-code-test negative src/tools/auth-better/adapter.ts
  * @new-code-test positive src/tools/auth-better/delete-user.ts
  * @new-code-test negative src/tools/auth-better/delete-user.ts
+ * @new-code-test positive src/tools/auth-better/recovery-links.ts
+ * @new-code-test negative src/tools/auth-better/recovery-links.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
