@@ -403,3 +403,16 @@ export async function revokeAgentGrant(
     return true
   })
 }
+
+/**
+ * Revoke every grant the User holds, with every token issued under them, inside
+ * the caller's transaction (account deletion, sinope#1189).
+ */
+export async function revokeUserAgentGrants(
+  db: Kysely<BetterAuthDatabase>,
+  userId: string,
+): Promise<void> {
+  const grants = db as unknown as GrantDb
+  for (const table of ['oauthConsent', 'oauthAccessToken', 'oauthRefreshToken'] as const)
+    await grants.deleteFrom(table).where('userId', '=', userId).execute()
+}

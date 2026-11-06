@@ -20,6 +20,7 @@ export interface BetterAuthDatabase {
     emailVerified: boolean
     emailVerifiedAt: Date | null
     userMetadata: Generated<Record<string, unknown>>
+    deletedAt: Generated<Date | null>
     name: string | null
     image: string | null
     role: string
@@ -159,6 +160,8 @@ export async function createAuthTables(db: Kysely<BetterAuthDatabase>): Promise<
   await sql`ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "userMetadata" jsonb NOT NULL DEFAULT '{}'::jsonb`.execute(
     db,
   )
+  // GoTrue deleted_at: a deleted account stays as a tombstone so records naming it keep their key.
+  await sql`ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS "deletedAt" timestamptz`.execute(db)
   // GoTrue amr: recovery sessions may set a password without the current one.
   await sql`ALTER TABLE public."session" ADD COLUMN IF NOT EXISTS "authMethod" text`.execute(db)
   await sql`

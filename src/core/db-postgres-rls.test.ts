@@ -305,27 +305,47 @@ describePostgres('PostgreSQL request RLS context', () => {
       claims(process.env.SINOPEBASE_SERVICE_ROLE_KEY ?? 'test-service-role-key'),
     ])
 
-    expect(member).toEqual({ sub: memberA, role: 'authenticated', channel: 'first_party' })
+    // The session also says when it signed in (sinope#1189).
+    expect(member).toEqual({
+      sub: memberA,
+      role: 'authenticated',
+      channel: 'first_party',
+      auth_time: expect.any(Number),
+    })
     expect(anon).toEqual({ role: 'anon' })
     expect(service).toEqual({ role: 'service_role' })
   })
 
-  it('emits the first_party claim only for an identified user whose context asserts it', async () => {
+  it('emits the first_party and auth_time claims only for an identified user whose context asserts it', async () => {
     const claimsFor = (context: PostgresRequestContext) =>
       db.withRequestContext(context, (requestDb) => requestDb.rpc('sinopebase_request_claims', {}))
+    const authTime = 1_800_000_000
 
-    const [plain, firstParty, service, anonymous, unidentified] = await Promise.all([
-      claimsFor({ role: 'authenticated', userId: memberA }),
-      claimsFor({ role: 'authenticated', userId: memberA, channel: 'first_party' }),
-      claimsFor({ role: 'service_role', userId: memberA, channel: 'first_party' }),
-      claimsFor({ role: 'anon', channel: 'first_party' }),
-      claimsFor({ role: 'authenticated', channel: 'first_party' }),
+    const [plain, firstParty, service, anonymous, unidentified, grant] = await Promise.all([
+      claimsFor({ role: 'authenticated', userId: memberA, authTime }),
+      claimsFor({ role: 'authenticated', userId: memberA, channel: 'first_party', authTime }),
+      claimsFor({ role: 'service_role', userId: memberA, channel: 'first_party', authTime }),
+      claimsFor({ role: 'anon', channel: 'first_party', authTime }),
+      claimsFor({ role: 'authenticated', channel: 'first_party', authTime }),
+      claimsFor({
+        role: 'authenticated',
+        userId: memberA,
+        channel: 'first_party',
+        authTime,
+        tenantId: 'tenant-a',
+      }),
     ])
 
     expect(plain).toEqual({ sub: memberA, role: 'authenticated' })
-    expect(firstParty).toEqual({ sub: memberA, role: 'authenticated', channel: 'first_party' })
+    expect(firstParty).toEqual({
+      sub: memberA,
+      role: 'authenticated',
+      channel: 'first_party',
+      auth_time: authTime,
+    })
     expect(service).toEqual({ sub: memberA, role: 'service_role' })
     expect(anonymous).toEqual({ role: 'anon' })
     expect(unidentified).toEqual({ role: 'authenticated' })
+    expect(grant).toEqual({ sub: memberA, role: 'authenticated', tenant_id: 'tenant-a' })
   })
 })
