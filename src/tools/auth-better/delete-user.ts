@@ -41,6 +41,7 @@ export async function tombstoneUser(db: Kysely<BetterAuthDatabase>, userId: stri
     .executeTakeFirstOrThrow()
   await revokeUserAgentGrants(db, userId)
   await retireRecoveryLinks(db, userId)
+  await db.deleteFrom('verification').where('identifier', '=', `recovery-sent:${userId}`).execute()
   await retireEmailChanges(db, userId)
   await db.deleteFrom('refresh_tokens').where('user_id', '=', userId).execute()
   await db.deleteFrom('session').where('userId', '=', userId).execute()

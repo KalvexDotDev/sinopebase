@@ -968,6 +968,7 @@ async function recoverPassword(
     .selectFrom('user')
     .select('id')
     .where(sql<string>`lower(email)`, '=', email)
+    .where('deletedAt', 'is', null)
     .executeTakeFirst()
   if (user) await sendRecovery(auth, user.id, email, redirectTo)
   return {}

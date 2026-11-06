@@ -630,6 +630,7 @@ export async function lookupSessionByToken(
       ])
       .where('session.token', '=', token)
       .where('session.expiresAt', '>', new Date())
+      .where('user.deletedAt', 'is', null)
       .execute()
     return rows[0] ?? null
   } catch {

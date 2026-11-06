@@ -199,4 +199,31 @@ describe('DELETE /auth/v1/user', () => {
       `)
     }
   })
+
+  test('a tombstone fails closed: a session or recovery that outlives the deletion opens nothing', async () => {
+    const user = await signedInUser('racer')
+    const late = await signedInUser('racer-late')
+    expect((await call('DELETE', '/auth/v1/user', user.accessToken)).status).toBe(200)
+    // A sign-in that committed around the deletion: re-point a live session at the tombstone.
+    await pool.query(`UPDATE session SET "userId" = $1 WHERE "userId" = $2`, [user.id, late.id])
+    await pool.query(`UPDATE refresh_tokens SET user_id = $1 WHERE user_id = $2`, [
+      user.id,
+      late.id,
+    ])
+    expect((await call('GET', '/auth/v1/user', late.accessToken)).status).toBe(401)
+    const refreshed = await call('POST', '/auth/v1/token?grant_type=refresh_token', anonKey, {
+      refresh_token: late.refreshToken,
+    })
+    expect(refreshed.status).toBe(400)
+
+    const recover = await call('POST', '/auth/v1/recover', anonKey, {
+      email: `deleted-${user.id}@deleted.invalid`,
+    })
+    expect(recover.status).toBe(200)
+    const { rows } = await pool.query(
+      `SELECT count(*) FROM verification WHERE value = $1 OR identifier = $2`,
+      [user.id, `recovery-sent:${user.id}`],
+    )
+    expect(Number(rows[0].count)).toBe(0)
+  })
 })

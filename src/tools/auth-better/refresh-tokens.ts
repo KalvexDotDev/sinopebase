@@ -40,9 +40,11 @@ function opaqueToken(): string {
 function liveSession(db: AuthDb, column: 'token' | 'id', value: string) {
   return db
     .selectFrom('session')
-    .select(['id', 'userId', 'token'])
-    .where(column, '=', value)
-    .where('expiresAt', '>', new Date())
+    .innerJoin('user', 'user.id', 'session.userId')
+    .select(['session.id', 'session.userId', 'session.token'])
+    .where(`session.${column}`, '=', value)
+    .where('session.expiresAt', '>', new Date())
+    .where('user.deletedAt', 'is', null)
     .executeTakeFirst()
 }
 
@@ -114,6 +116,7 @@ function rotate(db: AuthDb, row: RefreshTokenRow): Promise<SessionPair | 'reused
       .set({ token: accessToken, updatedAt: new Date() })
       .where('id', '=', row.session_id)
       .where('expiresAt', '>', new Date())
+      .where('userId', 'in', trx.selectFrom('user').select('id').where('deletedAt', 'is', null))
       .executeTakeFirst()
     if (rotated.numUpdatedRows === 0n) return null
     const refreshToken = await insertToken(trx, { ...row, parent_token_id: row.token_id })
