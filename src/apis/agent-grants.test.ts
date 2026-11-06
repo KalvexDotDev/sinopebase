@@ -97,12 +97,12 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
   }
 
   /** Full flow: authorize, consent for `tenant`, exchange the code. */
-  async function grant(clientId: string, tenant: string) {
+  async function grant(clientId: string, tenant: string, session = memberSession) {
     const verifier = randomBytes(32).toString('base64url')
     const oauthQuery = await authorize(clientId, verifier)
     const consent = await json('/auth/v1/agent-grants', {
       method: 'POST',
-      token: memberSession,
+      token: session,
       body: JSON.stringify({ oauth_query: oauthQuery, tenant_id: tenant }),
     })
     expect(consent.status).toBe(200)
@@ -209,11 +209,17 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
       tenant_id: tenantA,
       client_id: clientId,
     })
-    // The member's first-party session keeps the channel claim and no tenant.
+    // The member's first-party session keeps the channel claim and no tenant, and says when it
+    // signed in (sinope#1189): `auth_time`, the session's creation in epoch seconds.
+    const signedIn = await pool.query<{ epoch: number }>(
+      `SELECT floor(extract(epoch FROM "createdAt"))::int AS epoch FROM "session" WHERE "token" = $1`,
+      [memberSession],
+    )
     expect(await (await claims(memberSession)).json()).toEqual({
       sub: member,
       role: 'authenticated',
       channel: 'first_party',
+      auth_time: signedIn.rows[0]?.epoch,
     })
     // Bound to tenant A: the member's tenant B row stays invisible to the grant.
     expect((await tenantRows(tokens.access_token)).rows.map((row) => row.id)).toEqual(['a-row'])
@@ -474,6 +480,7 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
       ['POST', '/api/auth/change-password', '{"currentPassword":"x","newPassword":"y"}'],
       ['POST', '/api/auth/revoke-sessions', '{}'],
       ['POST', '/api/auth/delete-user', '{}'],
+      ['DELETE', '/auth/v1/user'],
     ]
     for (const [method, path, body] of attempts) {
       const response = await json(path, { method, token: tokens.access_token, body })
@@ -483,6 +490,50 @@ describePostgres('OAuth agent grants (sinope#1098)', () => {
     expect(user.rows[0]).toEqual({ email: `${member}@agent-grants.test`, name: 'Agent grant user' })
     expect((await grants()).map((entry) => entry.id)).toContain(listedId)
     expect((await json('/auth/v1/user', { token: memberSession })).status).toBe(200)
+  })
+
+  it("ends the User's agent grants when the User deletes their account (sinope#1189)", async () => {
+    const leaver = 'a0981098-0000-4000-8000-000000001189'
+    const leaverSession = 'agent-grant-leaver-session-token-1189'
+    await pool.query(
+      `INSERT INTO "user" ("id", "email", "emailVerified", "name", "role", "createdAt", "updatedAt")
+       VALUES ($1, $2, true, 'Leaver', 'user', now(), now())`,
+      [leaver, `${leaver}@agent-grants.test`],
+    )
+    await pool.query(
+      `INSERT INTO "session" ("id", "userId", "token", "expiresAt", "createdAt", "updatedAt")
+       VALUES ($1, $1, $2, now() + interval '1 day', now(), now())`,
+      [leaver, leaverSession],
+    )
+    await pool.query(`INSERT INTO agent_grant_test_memberships VALUES ($1, $2)`, [leaver, tenantA])
+    try {
+      const { tokens } = await grant(
+        await registerClient('Agent 1098 leaver'),
+        tenantA,
+        leaverSession,
+      )
+      expect((await json('/auth/v1/agent-grant', { token: tokens.access_token })).status).toBe(200)
+      const memberGrants = (await grants()).length
+
+      expect((await json('/auth/v1/user', { method: 'DELETE', token: leaverSession })).status).toBe(
+        200,
+      )
+
+      expect((await json('/auth/v1/agent-grant', { token: tokens.access_token })).status).toBe(401)
+      expect((await claims(tokens.access_token)).status).toBe(401)
+      const left = await pool.query(
+        `SELECT (SELECT count(*) FROM "oauthConsent" WHERE "userId" = $1)::int AS consents,
+                (SELECT count(*) FROM "oauthAccessToken" WHERE "userId" = $1)::int AS access,
+                (SELECT count(*) FROM "oauthRefreshToken" WHERE "userId" = $1)::int AS refresh`,
+        [leaver],
+      )
+      expect(left.rows[0]).toEqual({ consents: 0, access: 0, refresh: 0 })
+      // Another User's grants are untouched.
+      expect((await grants()).length).toBe(memberGrants)
+    } finally {
+      await pool.query(`DELETE FROM agent_grant_test_memberships WHERE user_id = $1`, [leaver])
+      await pool.query(`DELETE FROM "user" WHERE "id" = $1`, [leaver])
+    }
   })
 
   it('runs an agent token read-only on REST and RPC, SECURITY DEFINER included (sinope#1099)', async () => {

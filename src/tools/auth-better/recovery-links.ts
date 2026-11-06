@@ -12,6 +12,8 @@ import type { BetterAuthDatabase } from './adapter'
 
 /** Better Auth's identifier prefix for single-use password reset tokens. */
 export const RESET_PREFIX = 'reset-password:'
+/** Marks a user's live recovery interval (one recovery mail per interval). */
+export const RECOVERY_SENT_PREFIX = 'recovery-sent:'
 /** Companion row: the lower-cased address a recovery token was mailed to. */
 export const RECOVERY_EMAIL_PREFIX = 'recovery-email:'
 /** Better Auth's default resetPasswordTokenExpiresIn (one hour). */

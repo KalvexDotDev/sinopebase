@@ -156,6 +156,27 @@
         "ISO 27001 and SOC 2 seed data",
         "SINOPEBASE_TEST_* environment"
       ]
+    },
+    {
+      "id": "auth.account-deletion-and-recent-sign-in",
+      "status": "verified-local",
+      "expectations": [
+        "DELETE /auth/v1/user tombstones the session's own user (deletedAt, obfuscated address, no name or metadata) and ends its sessions, refresh tokens, credentials, identities, emailed links and agent grants in one transaction",
+        "it needs a session signed in within ten minutes (reauthentication_needed) and refuses agent tokens and keys",
+        "a deployment trigger raising restrict_violation on the user row refuses it with 409 user_deletion_restricted",
+        "first-party request.jwt.claims carry auth_time, the session's sign-in time, which a refresh never moves",
+        "Sinope's company deletion removes oauthConsent, oauthAccessToken and oauthRefreshToken rows by referenceId (its tenant id)"
+      ],
+      "evidence": [
+        "tests/integration/auth-delete-user.test.ts",
+        "src/apis/agent-grants.test.ts",
+        "src/core/db-postgres-rls.test.ts"
+      ],
+      "dependencies": [
+        "better-auth",
+        "PostgreSQL session store",
+        "Sinope triggers on public.\"user\""
+      ]
     }
   ],
   "providerGaps": [

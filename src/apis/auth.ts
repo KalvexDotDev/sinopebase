@@ -17,6 +17,7 @@ import {
   type SinopebaseAuth,
 } from '~/tools/auth-better'
 import type { BetterAuthDatabase } from '~/tools/auth-better/adapter'
+import { REAUTHENTICATION_WINDOW_MS, tombstoneUser } from '~/tools/auth-better/delete-user'
 import {
   consumeEmailChange,
   dropEmailChange,
@@ -28,6 +29,7 @@ import {
 import { removeSignInMethod } from '~/tools/auth-better/identity-linking-policy'
 import {
   RECOVERY_EMAIL_PREFIX,
+  RECOVERY_SENT_PREFIX,
   RESET_PREFIX,
   retireRecoveryLinks,
 } from '~/tools/auth-better/recovery-links'
@@ -583,6 +585,8 @@ interface UpdatingSession {
   id: string
   userId: string
   authMethod: string | null
+  /** When the session signed in; a refresh never moves it. */
+  createdAt: Date
 }
 
 /**
@@ -736,12 +740,13 @@ async function lockUpdatingSession(transaction: Transaction<BetterAuthDatabase>,
     .selectFrom('user')
     .selectAll()
     .where('id', '=', owner.userId)
+    .where('deletedAt', 'is', null)
     .forUpdate()
     .executeTakeFirst()
   // Revalidate the session under the user lock: it may have been revoked meanwhile.
   const session = await transaction
     .selectFrom('session')
-    .select(['id', 'userId', 'authMethod'])
+    .select(['id', 'userId', 'authMethod', 'createdAt'])
     .where('token', '=', token)
     .where('userId', '=', owner.userId)
     .where('expiresAt', '>', new Date())
@@ -842,7 +847,6 @@ async function updateNativeUser(
 /** GoTrue SMTP_MAX_FREQUENCY default: one recovery email per user per 60 seconds. */
 const RECOVERY_INTERVAL_MS = 60_000
 /** Verification row marking a user's live recovery interval (GoTrue recovery_sent_at). */
-const RECOVERY_SENT_PREFIX = 'recovery-sent:'
 const recoverBody = z.object({ email: z.string().trim().email() })
 
 /** redirect_to is honoured only for Better Auth trusted origins (SINOPEBASE_EXTRA_ORIGINS). */
@@ -965,6 +969,7 @@ async function recoverPassword(
     .selectFrom('user')
     .select('id')
     .where(sql<string>`lower(email)`, '=', email)
+    .where('deletedAt', 'is', null)
     .executeTakeFirst()
   if (user) await sendRecovery(auth, user.id, email, redirectTo)
   return {}
@@ -1228,6 +1233,58 @@ async function unlinkIdentity(
   }
 }
 
+/**
+ * Tombstone the session's own user (see tombstoneUser), in the caller's
+ * transaction. Like Better Auth's deleteUser, it needs a recent sign-in.
+ */
+async function deleteSessionUser(transaction: Transaction<BetterAuthDatabase>, token: string) {
+  const { user, session } = await lockUpdatingSession(transaction, token)
+  if (Date.now() - session.createdAt.getTime() > REAUTHENTICATION_WINDOW_MS)
+    throw new UserUpdateRefused(
+      400,
+      'reauthentication_needed',
+      'Sign in again to delete this account.',
+    )
+  await tombstoneUser(transaction, user.id).catch((error: unknown) => {
+    // A deployment record still needs the user: its trigger raised restrict_violation.
+    if (error instanceof Error && 'code' in error && error.code === '23001')
+      throw new UserUpdateRefused(
+        409,
+        'user_deletion_restricted',
+        'This account cannot be deleted yet.',
+      )
+    throw error
+  })
+  return user.id
+}
+
+/**
+ * Self-service account deletion (sinope#1189). GoTrue has no self-delete, so
+ * this follows its soft delete: the session's own user becomes a tombstone and
+ * every session, credential and agent grant ends.
+ */
+async function deleteNativeUser(
+  auth: BetterAuthInstance,
+  context: { headers: Record<string, string | undefined>; set: { status?: number | string } },
+) {
+  const { headers, set } = context
+  const token = headers.authorization?.startsWith('Bearer ')
+    ? headers.authorization.slice(7).trim()
+    : ''
+  if (!token) return goTrueError(set, 401, 'no_authorization', 'Invalid authorization header')
+  try {
+    const userId = await authDb(auth)
+      .transaction()
+      .execute((transaction) => deleteSessionUser(transaction, token))
+    console.info(`[AUTH] Account deleted: user=${userId}`)
+    return {}
+  } catch (error) {
+    if (error instanceof UserUpdateRefused)
+      return goTrueError(set, error.status, error.errorCode, error.message)
+    throw error
+  }
+}
+
 export function createAuthPlugin(
   auth: BetterAuthInstance,
   oauthProviderIds?: string[],
@@ -1461,6 +1518,7 @@ export function createAuthPlugin(
         }
       })
       .delete('/auth/v1/user/identities/:id', (context) => unlinkIdentity(auth, context))
+      .delete('/auth/v1/user', (context) => deleteNativeUser(auth, context))
       .get('/auth/v1/authorize', ({ query }) => authorize(oauthFlowAuth(auth), query))
       .get('/auth/v1/user/identities/authorize', ({ request, query }) =>
         authorizeLink(oauthFlowAuth(auth), request, query),

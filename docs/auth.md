@@ -133,6 +133,16 @@ Which provider identity may sign in, create a user, or link to an existing one i
 - An explicit link (`linkIdentity`) links the provider account to the signed-in user, unless it is already linked to someone else (`account_already_linked_to_different_user`). A new link counts only once its code is redeemed with the verifier of the browser that asked for it; until then the identity signs in to nobody (`identity_link_pending`), and a wrong verifier or an abandoned code removes it.
 - A recovery link that confirms an address for the first time removes the account's provider identities and sessions.
 
+## Account Deletion
+
+`DELETE /auth/v1/user` (Bearer: a session token) deletes the caller's own account. GoTrue has no self-delete, so it follows GoTrue's soft delete. The user row stays as a tombstone so that records naming its id keep their key: `deletedAt` is set, the address becomes `deleted-<id>@deleted.invalid` (the real address can be used again), and the name, image and metadata are cleared. In the same transaction, every session, refresh token, password, linked identity, pending recovery or email-change link and agent grant of the user is removed. It answers `200 {}`.
+
+- The session must have signed in within the last 10 minutes (Better Auth's `freshAge` idea); otherwise `400 reauthentication_needed`. Sign in again, with a password or a provider, then retry.
+- Agent grant tokens, the anon key and the service role key are refused (`401`).
+- A deployment can veto a deletion with a `BEFORE UPDATE` trigger on `public."user"` that raises `restrict_violation` (SQLSTATE `23001`) when `deletedAt` is set. The answer is then `409 user_deletion_restricted`, nothing changes, and the trigger's message is not returned. Sinope uses this to refuse the last owner of a company.
+
+First-party requests also carry `auth_time` (epoch seconds) in `request.jwt.claims`: when their session signed in. A refresh never moves it. A database can use it to require a recent sign-in before a destructive change.
+
 ## Enterprise SSO
 
 ### Path A: Direct OIDC (recommended)

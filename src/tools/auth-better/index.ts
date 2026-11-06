@@ -584,6 +584,8 @@ export interface SessionLookup {
   role: string
   createdAt: Date
   updatedAt: Date
+  /** When the session signed in (its creation); a refresh never moves it. */
+  authenticatedAt: Date
 }
 
 /**
@@ -624,9 +626,11 @@ export async function lookupSessionByToken(
         'user.role',
         'user.createdAt',
         'user.updatedAt',
+        'session.createdAt as authenticatedAt',
       ])
       .where('session.token', '=', token)
       .where('session.expiresAt', '>', new Date())
+      .where('user.deletedAt', 'is', null)
       .execute()
     return rows[0] ?? null
   } catch {

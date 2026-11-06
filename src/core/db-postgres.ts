@@ -76,6 +76,13 @@ export interface PostgresRequestContext {
    * request of a tenant-bound context stays read-only.
    */
   supplyCall?: true
+  /**
+   * Set only with `channel`: when the first-party session signed in, in epoch
+   * seconds (OIDC `auth_time`; a refresh never moves it). Emitted as the
+   * `auth_time` claim so database rules can require a recent sign-in before a
+   * destructive change (sinope#1189).
+   */
+  authTime?: number
 }
 
 /**
@@ -337,14 +344,14 @@ export class PostgresDatabase implements IDatabase {
       if (context.tenantId && !context.supplyCall)
         await sql`SET TRANSACTION READ ONLY`.execute(transaction)
       const userId = context.userId ?? ''
+      // Only an identified user can hold a first-party session, and a grant-bound one never does.
+      const firstParty =
+        context.role === 'authenticated' && userId && !context.tenantId && context.channel
       const claims = JSON.stringify({
         sub: userId || undefined,
         role: context.role,
-        // Only an identified user can hold a first-party session, and a grant-bound one never does.
-        channel:
-          context.role === 'authenticated' && userId && !context.tenantId
-            ? context.channel
-            : undefined,
+        channel: firstParty ? context.channel : undefined,
+        auth_time: firstParty ? context.authTime : undefined,
         // Tenant claims only ever narrow access, so a bound context always emits its tenant.
         tenant_id: context.tenantId || undefined,
         // Provenance for supply functions; only an agent grant names a client.

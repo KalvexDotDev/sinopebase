@@ -146,6 +146,12 @@ describe('refreshTokenForSession', () => {
     })
   }
 
+  it('refuses the session of a deleted (tombstoned) user', async () => {
+    const session = await createSession()
+    await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', userId).execute()
+    await expect(refreshTokenForSession(db, session.token)).rejects.toThrow('Authentication failed')
+  })
+
   it('rejects an unknown or expired session token', async () => {
     await expect(refreshTokenForSession(db, 'unknown')).rejects.toThrow('Authentication failed')
     const expired = await createSession(userId, -1000)
@@ -154,6 +160,14 @@ describe('refreshTokenForSession', () => {
 })
 
 describe('exchangeRefreshToken', () => {
+  it('rotates nothing for a deleted (tombstoned) user', async () => {
+    const session = await createSession()
+    const token = await refreshTokenForSession(db, session.token)
+    await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', userId).execute()
+    expect(await exchangeRefreshToken(db, token)).toBeNull()
+    expect((await sessionRow(session.id))?.token).toBe(session.token)
+  })
+
   it('rotates the refresh token in its family and the access token in the session', async () => {
     const session = await createSession()
     const initial = await refreshTokenForSession(db, session.token)
