@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- `SINOPEBASE_RATE_LIMIT_MAX` sets the global per-client rate limit in requests per minute (KalvexDotDev/sinope#1266). Unset keeps the default of 1000; a value that is not a positive integer refuses startup. Sinope's exact-image release proof sets it to match its disposable test backend. Deployments leave it unset.
 - `DELETE /auth/v1/user` deletes the caller's own account (KalvexDotDev/sinope#1189). It follows GoTrue's soft delete: the user row stays as a tombstone (`deletedAt` set, the address obfuscated to `deleted-<id>@deleted.invalid`, the name, image and metadata cleared), and in the same transaction every session, refresh token, password, linked identity, pending emailed link and agent grant of the user ends. The session must have signed in within 10 minutes (`400 reauthentication_needed`), agent tokens and keys are refused, and a deployment trigger raising `restrict_violation` on the user row refuses it with `409 user_deletion_restricted`. First-party requests now also carry `auth_time`, the session's sign-in time, in `request.jwt.claims`.
 
 ### Security

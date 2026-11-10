@@ -48,7 +48,7 @@
 - **Biome version**: use `./node_modules/.bin/biome`, never `npx biome` (resolves to wrong global version). The project scripts (`bun run format`, `bun run lint`) use the correct version automatically.
 - **`typecheck` vs `typecheck:ci`**: `bun run typecheck` just runs tsc. `bun run typecheck:ci` diffs against the baseline and fails on NEW errors. Use `typecheck:ci` before pushing.
 - **GHCR requires lowercase**: Docker tags must be all lowercase. Use `tr '[:upper:]' '[:lower:]'` for org/repo names with capitals.
-- **Rate limit defaults**: the server defaults to 1000 req/min. Tests that set explicit `rateLimitMax` are unaffected. Path exemptions (`/api/admin/*`, `/api/logs`, `/api/health`, `/api/ready`) skip rate limiting.
+- **Rate limit defaults**: the server defaults to 1000 req/min; `SINOPEBASE_RATE_LIMIT_MAX` overrides it for `cmd/serve.ts`. Tests that set explicit `rateLimitMax` are unaffected. Path exemptions (`/api/admin/*`, `/api/logs`, `/api/health`, `/api/ready`) skip rate limiting.
 - **`Record<string, unknown>` breaks property access**: pg row types need proper interfaces, not loose records. Define `interface XxxRow { ... }` and use `pool.query<XxxRow>(...)`.
 
 ## Architecture

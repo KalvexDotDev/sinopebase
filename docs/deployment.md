@@ -40,6 +40,7 @@ await app.start()
 | `SINOPEBASE_PG_NOTIFY` | Multi-replica | Enable PostgreSQL row-change notifications. |
 | `SINOPEBASE_MULTI_REPLICA` | Multi-replica | Enforce shared storage and disable local admin mutations. |
 | `SINOPEBASE_EXTERNAL_RATE_LIMIT` | Multi-replica | Assert a shared ingress rate limit is configured. |
+| `SINOPEBASE_RATE_LIMIT_MAX` | No | Requests per client per minute (default `1000`). Must be a positive integer, or startup fails. |
 | `TRUSTED_PROXIES` | Behind sanitizing ingress | Enable rightmost forwarded IP selection; ingress must overwrite forwarding headers. |
 | `SINOPEBASE_OAUTH_PROVIDERS_JSON` | If OAuth is used across pods | Common provider array from a Secret. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For Google sign-in | Built-in Google provider; set both. Redirect URI `<BETTER_AUTH_URL>/api/auth/callback/google`. |

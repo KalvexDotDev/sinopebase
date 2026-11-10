@@ -58,6 +58,22 @@ describe('shared deployment configuration', () => {
     })
   })
 
+  test('SINOPEBASE_RATE_LIMIT_MAX sets requests per client per window; unset keeps the default', () => {
+    expect(deploymentConfigFromEnv({}).rateLimitMax).toBeUndefined()
+    expect(deploymentConfigFromEnv({ SINOPEBASE_RATE_LIMIT_MAX: '' }).rateLimitMax).toBeUndefined()
+    expect(deploymentConfigFromEnv({ SINOPEBASE_RATE_LIMIT_MAX: '1' }).rateLimitMax).toBe(1)
+    expect(deploymentConfigFromEnv({ SINOPEBASE_RATE_LIMIT_MAX: '100000' }).rateLimitMax).toBe(
+      100_000,
+    )
+  })
+
+  test('a rate limit that is not a positive integer refuses to start', () => {
+    for (const value of ['0', '-5', '1.5', 'many', 'Infinity', '9007199254740993'])
+      expect(() => deploymentConfigFromEnv({ SINOPEBASE_RATE_LIMIT_MAX: value })).toThrow(
+        'SINOPEBASE_RATE_LIMIT_MAX must be a positive integer',
+      )
+  })
+
   test('scheme URLs use standard ports and bare hosts keep RustFS default', () => {
     expect(parseS3Endpoint('https://objects.example.test')).toEqual({
       host: 'objects.example.test',
