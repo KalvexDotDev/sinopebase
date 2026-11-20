@@ -98,6 +98,7 @@
     "js-yaml": ">=5.4.2",
     "minimatch": "11.0.3",
     "qs": "6.17.1",
+    "set-cookie-parser": ">=3.2.0 <4",
     "stream-json": "3.7.0"
   },
   "patchedDependencies": {
